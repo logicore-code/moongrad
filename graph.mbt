@@ -72,6 +72,12 @@ pub fn Stats::slots_saved(self : Stats) -> Int {
 /// `nodes`, `var_count`, `param_shapes` — is read-only.
 pub(all) struct Graph {
   mut nodes : Array[Node]
+  /// Slot of the `Var(i)` node for each declared variable. Tracked
+  /// separately because `Var(i)` is interned lazily: a variable that
+  /// the caller never referenced in an expression has no node at all
+  /// until something asks for one, and asking must not silently
+  /// append above the region the reverse sweep is walking.
+  var_slots : Array[Int]
   mut var_count : Int
   mut param_shapes : Array[Int]
   /// Hash-cons table. Maps a node shape to the slot that already
@@ -85,6 +91,7 @@ pub(all) struct Graph {
 pub fn Graph::new() -> Graph {
   {
     nodes: [],
+    var_slots: [],
     var_count: 0,
     param_shapes: [],
     intern_table: @hashmap.HashMap([]),
@@ -107,6 +114,17 @@ pub fn Graph::new_vars(self : Graph, n : Int) -> Int {
   let first = self.var_count
   self.var_count = self.var_count + n
   first
+}
+
+///|
+/// The interned slot of variable `i`, or `None` when the caller
+/// never mentioned it. A gradient of `None` is zero by definition.
+pub fn Graph::var_slot(self : Graph, i : Int) -> Int? {
+  if i < 0 || i >= self.var_slots.length() {
+    None
+  } else {
+    Some(self.var_slots[i])
+  }
 }
 
 ///|
@@ -155,12 +173,20 @@ pub fn Graph::constant(self : Graph, value : Double) -> Int {
 }
 
 ///|
-/// The slot of differentiation variable `i`.
+/// The slot of differentiation variable `i`, interning it on first
+/// use. The slot is remembered in `var_slots` so the reverse sweep
+/// can find it again without having to intern during the sweep —
+/// interning mid-sweep would append above the region being walked.
 pub fn Graph::variable(self : Graph, i : Int) -> Int raise ADError {
   if i < 0 || i >= self.var_count {
     raise UnknownVar(i)
   }
-  self.intern(Node::Var(i))
+  if i < self.var_slots.length() {
+    return self.var_slots[i]
+  }
+  let slot = self.intern(Node::Var(i))
+  self.var_slots.push(slot)
+  slot
 }
 
 ///|

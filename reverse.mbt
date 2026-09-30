@@ -120,7 +120,12 @@ pub fn compile_gradient(
   }
   let var_adj : Array[Int] = []
   for slot = 0; slot < g.var_count; slot = slot + 1 {
-    var_adj.push(adj[g.variable(slot)])
+    // A variable the caller declared but never used has no node and
+    // therefore no adjoint: its gradient is exactly zero.
+    match g.var_slot(slot) {
+      Some(node) => var_adj.push(adj[node])
+      None => var_adj.push(zero)
+    }
   }
   { graph: h, primal_size: n, var_adj, param_adj, }
 }
@@ -142,6 +147,12 @@ pub fn mirror(g : Graph) -> Graph raise ADError {
   }
   for i = 0; i < g.nodes.length(); i = i + 1 {
     ignore(reintern(h, g.nodes[i]))
+  }
+  // Re-interning the `Var(i)` leaves makes `h`'s own `var_slots`
+  // agree with `g`'s, which is what lets a second sweep over the
+  // gradient graph find the same variables.
+  for slot = 0; slot < g.var_count; slot = slot + 1 {
+    ignore(h.variable(slot))
   }
   h
 }
