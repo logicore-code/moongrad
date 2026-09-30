@@ -1,0 +1,270 @@
+// graph.mbt
+//
+// The builder. Every arithmetic operation in a moongrad program goes
+// through a `Graph` method, which does three things in order:
+//
+//   1. simplify — recognise identities (`x + 0`, `x * 1`, `x - x`, …)
+//      and constant-fold subtrees whose children are both literals;
+//   2. intern — look the resulting node up in a hash table and reuse
+//      an existing slot if an identical node is already there;
+//   3. append — otherwise give it a fresh slot at the end.
+//
+// Step 1 shrinks the graph before it grows, step 2 makes the graph a
+// DAG rather than a tree. Both matter for a training loop that
+// rebuilds the same expression thousands of times per epoch: the
+// difference is visible in `Stats` and reported by
+// `examples/cse_savings`.
+//
+// Because the simplifier runs before interning, two structurally
+// identical computations that differ only in algebraic form
+// (`a + b + b + a` versus `2 * (a + b)`) still land on the same slot.
+
+///|
+/// Counters describing what the builder did. These are not
+/// diagnostics; they are the measurable output of the optimisation
+/// passes, and the examples assert on them.
+pub(all) struct Stats {
+  /// Slots handed out. Equals the length of `Graph::nodes`.
+  mut nodes_built : Int
+  /// Times interning returned an existing slot. Each hit is a
+  /// subexpression that would otherwise have been computed twice.
+  mut cse_hits : Int
+  /// Times a node was replaced by a peephole identity (`x*1` → `x`).
+  mut identities : Int
+  /// Times a subtree was evaluated at build time because all of its
+  /// leaves were literals.
+  mut folds : Int
+  /// Times a node was shortened by an annihilator (`x*0` → `0`).
+  mut annihilated : Int
+} derive(Debug, Eq)
+
+///|
+/// An empty `Stats`.
+pub fn Stats::new() -> Stats {
+  { nodes_built: 0, cse_hits: 0, identities: 0, folds: 0, annihilated: 0, }
+}
+
+///|
+/// Structural complexity of the graph as it stands: one unit per
+/// distinct node. A naive builder that skipped both simplification
+/// and interning would report a much larger number for the same
+/// program, which is exactly the comparison
+/// `examples/cse_savings` makes.
+pub fn Stats::distinct_nodes(self : Stats) -> Int {
+  self.nodes_built
+}
+
+///|
+/// Total subexpressions that sharing removed. `cse_hits` plus
+/// `identities` plus `annihilated` plus `folds` is the number of
+/// node slots the naive builder would have needed.
+pub fn Stats::slots_saved(self : Stats) -> Int {
+  self.cse_hits + self.identities + self.folds + self.annihilated
+}
+
+///|
+/// A computation under construction.
+///
+/// `Graph` is mutable on purpose. It is a builder: a program is
+/// assembled once, then differentiated many times, and threading a
+/// fresh `Graph` value through every intermediate expression would
+/// be noise without adding safety. Everything the user can observe —
+/// `nodes`, `var_count`, `param_shapes` — is read-only.
+pub(all) struct Graph {
+  mut nodes : Array[Node]
+  mut var_count : Int
+  mut param_shapes : Array[Int]
+  /// Hash-cons table. Maps a node shape to the slot that already
+  /// holds it.
+  intern_table : @hashmap.HashMap[Node, Int]
+  mut stats : Stats
+} derive(Debug)
+
+///|
+/// A graph with no nodes and no inputs.
+pub fn Graph::new() -> Graph {
+  {
+    nodes: [],
+    var_count: 0,
+    param_shapes: [],
+    intern_table: @hashmap.HashMap([]),
+    stats: Stats::new(),
+  }
+}
+
+///|
+/// Number of slots in the graph. Since every edge points to a lower
+/// index, this is also the index of the next slot to be handed out.
+pub fn Graph::len(self : Graph) -> Int {
+  self.nodes.length()
+}
+
+///|
+/// Declare `n` differentiation variables and return the index of the
+/// first one. Slots are numbered consecutively, so a graph with three
+/// variables exposes `0, 1, 2`.
+pub fn Graph::new_vars(self : Graph, n : Int) -> Int {
+  let first = self.var_count
+  self.var_count = self.var_count + n
+  first
+}
+
+///|
+/// Declare a parameter vector of `size` scalars and return its slot.
+pub fn Graph::new_param(self : Graph, size : Int) -> Int {
+  let slot = self.param_shapes.length()
+  self.param_shapes.push(size)
+  slot
+}
+
+///|
+/// Read a `Graph` slot. Returns the node so callers can inspect the
+/// program; differentiation passes use the index form below.
+pub fn Graph::get(self : Graph, id : Int) -> Node raise ADError {
+  if id < 0 || id >= self.nodes.length() {
+    raise DanglingNode(id)
+  }
+  self.nodes[id]
+}
+
+///|
+/// Append `node` unless an identical node is already present, in
+/// which case return the existing slot. This is the hash-cons
+/// operation; every other builder method funnels through it.
+pub fn Graph::intern(self : Graph, node : Node) -> Int {
+  match self.intern_table.get(node) {
+    Some(existing) => {
+      self.stats.cse_hits = self.stats.cse_hits + 1
+      existing
+    }
+    None => {
+      let id = self.nodes.length()
+      self.nodes.push(node)
+      self.intern_table.set(node, id)
+      self.stats.nodes_built = self.stats.nodes_built + 1
+      id
+    }
+  }
+}
+
+///|
+/// Emit a literal. Literals are interned too, so the graph of a
+/// program that mentions `2.0` a hundred times stores it once.
+pub fn Graph::constant(self : Graph, value : Double) -> Int {
+  self.intern(Node::Const(value))
+}
+
+///|
+/// The slot of differentiation variable `i`.
+pub fn Graph::variable(self : Graph, i : Int) -> Int raise ADError {
+  if i < 0 || i >= self.var_count {
+    raise UnknownVar(i)
+  }
+  self.intern(Node::Var(i))
+}
+
+///|
+/// Read element `index` of parameter vector `slot`.
+pub fn Graph::param(self : Graph, slot : Int, index : Int) -> Int raise ADError {
+  if slot < 0 || slot >= self.param_shapes.length() {
+    raise UnknownParam(slot)
+  }
+  let size = self.param_shapes[slot]
+  if index < 0 || index >= size {
+    raise ParamIndexOutOfRange(slot, index, size)
+  }
+  self.intern(Node::ParamGet(slot, index))
+}
+
+///|
+/// Build `op(child)` after simplification.
+pub fn Graph::unary(self : Graph, op : UnaryOp, child : Int) -> Int raise ADError {
+  self.simplify_unary(op, child)
+}
+
+///|
+/// Build `left op right` after simplification and constant folding.
+pub fn Graph::binary(self : Graph, op : BinaryOp, left : Int, right : Int) -> Int raise ADError {
+  self.simplify_binary(op, left, right)
+}
+
+///|
+/// Shorthand for `Add`.
+pub fn Graph::add(self : Graph, a : Int, b : Int) -> Int raise ADError {
+  self.binary(BinaryOp::Add, a, b)
+}
+
+///|
+/// Shorthand for `Sub`.
+pub fn Graph::sub(self : Graph, a : Int, b : Int) -> Int raise ADError {
+  self.binary(BinaryOp::Sub, a, b)
+}
+
+///|
+/// Shorthand for `Mul`.
+pub fn Graph::mul(self : Graph, a : Int, b : Int) -> Int raise ADError {
+  self.binary(BinaryOp::Mul, a, b)
+}
+
+///|
+/// Shorthand for `Div`.
+pub fn Graph::div(self : Graph, a : Int, b : Int) -> Int raise ADError {
+  self.binary(BinaryOp::Div, a, b)
+}
+
+///|
+/// `a ^ c` for a real exponent. The exponent rides along inside the
+/// node so that the reverse pass can apply `c * a^(c-1)` without a
+/// side table.
+pub fn Graph::pow(self : Graph, a : Int, c : Double) -> Int raise ADError {
+  self.simplify_pow(c, a)
+}
+
+// Shorthands for the unary operators. Each is `unary(op, child)`;
+// spelling them out at every call site is noise, and the
+// mathematical names read better in the formulas that follow.
+
+///|
+pub fn Graph::neg(self : Graph, x : Int) -> Int raise ADError {
+  self.unary(UnaryOp::Neg, x)
+}
+
+///|
+pub fn Graph::exp(self : Graph, x : Int) -> Int raise ADError {
+  self.unary(UnaryOp::Exp, x)
+}
+
+///|
+pub fn Graph::ln(self : Graph, x : Int) -> Int raise ADError {
+  self.unary(UnaryOp::Ln, x)
+}
+
+///|
+pub fn Graph::sqrt(self : Graph, x : Int) -> Int raise ADError {
+  self.unary(UnaryOp::Sqrt, x)
+}
+
+///|
+pub fn Graph::sin(self : Graph, x : Int) -> Int raise ADError {
+  self.unary(UnaryOp::Sin, x)
+}
+
+///|
+pub fn Graph::cos(self : Graph, x : Int) -> Int raise ADError {
+  self.unary(UnaryOp::Cos, x)
+}
+
+///|
+pub fn Graph::tanh(self : Graph, x : Int) -> Int raise ADError {
+  self.unary(UnaryOp::Tanh, x)
+}
+
+///|
+pub fn Graph::sigmoid(self : Graph, x : Int) -> Int raise ADError {
+  self.unary(UnaryOp::Sigmoid, x)
+}
+
+///|
+pub fn Graph::softplus(self : Graph, x : Int) -> Int raise ADError {
+  self.unary(UnaryOp::Softplus, x)
+}
