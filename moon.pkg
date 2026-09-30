@@ -1,0 +1,12 @@
+// moongrad's core package.
+//
+// The only imports are the MoonBit standard library. `math` supplies
+// the double-precision transcendentals; `hashmap` backs the
+// graph's hash-cons table; `ref` provides the interior mutability the
+// counter in `Graph::intern` needs.
+
+import {
+  "moonbitlang/core/math",
+  "moonbitlang/core/ref",
+  "moonbitlang/core/hashmap",
+}
