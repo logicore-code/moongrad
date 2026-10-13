@@ -23,80 +23,6 @@
 // iterations".
 
 ///|
-/// A dense square matrix of doubles, row-major. Row-major because
-/// the only consumer is `cholesky` and the test suite, and both
-/// walk rows.
-pub(all) struct Matrix {
-  rows : Int
-  cols : Int
-  data : Array[Double]
-} derive(Debug)
-
-///|
-/// An `rows x cols` matrix of zeros.
-pub fn Matrix::zeros(rows : Int, cols : Int) -> Matrix {
-  let data : Array[Double] = []
-  for _i = 0; _i < rows * cols; _i = _i + 1 {
-    data.push(0.0)
-  }
-  { rows, cols, data, }
-}
-
-///|
-/// The all-ones `n x n` matrix, which is the identity in the
-/// symmetric positive definite sense that Gauss-Newton's damping
-/// term is measured against.
-pub fn Matrix::identity(n : Int) -> Matrix {
-  let m = Matrix::zeros(n, n)
-  for i = 0; i < n; i = i + 1 {
-    m.set(i, i, 1.0)
-  }
-  m
-}
-
-///|
-/// Element at `(row, col)`.
-pub fn Matrix::get(self : Matrix, row : Int, col : Int) -> Double {
-  self.data[row * self.cols + col]
-}
-
-///|
-/// Write `v` at `(row, col)`.
-pub fn Matrix::set(self : Matrix, row : Int, col : Int, v : Double) -> Unit {
-  self.data[row * self.cols + col] = v
-}
-
-///|
-/// `self + other`, both square.
-pub fn Matrix::add(self : Matrix, other : Matrix) -> Matrix {
-  let out = Matrix::zeros(self.rows, self.cols)
-  for i = 0; i < self.data.length(); i = i + 1 {
-    out.data[i] = self.data[i] + other.data[i]
-  }
-  out
-}
-
-///|
-/// `self - other`, both square.
-pub fn Matrix::sub(self : Matrix, other : Matrix) -> Matrix {
-  let out = Matrix::zeros(self.rows, self.cols)
-  for i = 0; i < self.data.length(); i = i + 1 {
-    out.data[i] = self.data[i] - other.data[i]
-  }
-  out
-}
-
-///|
-/// `self * scalar`.
-pub fn Matrix::scale(self : Matrix, k : Double) -> Matrix {
-  let out = Matrix::zeros(self.rows, self.cols)
-  for i = 0; i < self.data.length(); i = i + 1 {
-    out.data[i] = self.data[i] * k
-  }
-  out
-}
-
-///|
 /// Symmetrise: `(A + A^T) / 2`. A numerical Hessian built by two
 /// separate differentiation passes can pick up asymmetry of order
 /// the floating-point noise, and the noise is not harmless — it
@@ -121,11 +47,7 @@ pub fn Matrix::symmetrise(self : Matrix) -> Matrix {
 /// and this sweeps the same graph again to compile
 /// d^2 f / d x_j d x_i out of it. Nothing about the second sweep is
 /// special-cased.
-pub fn hessian(
-  g : Graph,
-  b : Binding,
-  target : Int,
-) -> Matrix raise ADError {
+pub fn hessian(g : Graph, b : Binding, target : Int) -> Matrix raise ADError {
   let primal_values = forward_values(g, b)
   let first = compile_gradient(g, b, primal_values, target)
   let n = g.var_count
@@ -142,43 +64,6 @@ pub fn hessian(
 }
 
 ///|
-/// The Hessian of the primal with respect to the model parameters,
-/// in the same slot-indexed layout the optimiser expects: one row
-/// per scalar parameter.
-///
-/// Parameter gradients are accumulated numerically by the sweep, so
-/// the second sweep accumulates `d^2 f / d p^2` the same way and the
-/// two never disagree about layout.
-pub fn param_hessian(
-  g : Graph,
-  b : Binding,
-  target : Int,
-) -> Array[Array[Double]] raise ADError {
-  let primal_values = forward_values(g, b)
-  let first = compile_gradient(g, b, primal_values, target)
-  let out : Array[Array[Double]] = []
-  let total = total_params(g)
-  for _i = 0; _i < total; _i = _i + 1 {
-    let row : Array[Double] = []
-    for _j = 0; _j < total; _j = _j + 1 {
-      row.push(0.0)
-    }
-    out.push(row)
-  }
-  // Second sweep over the gradient graph, targeting each parameter
-  // gradient node in turn.
-  let gp = Program::{
-    primal: first.graph,
-    grad: first,
-    primal_values,
-    output: 0.0,
-  }
-  let second = param_gradients_of_graph(gp)
-  flatten_param_hessian(second, out)
-  out
-}
-
-///|
 /// Total number of scalars across every parameter slot.
 pub fn total_params(g : Graph) -> Int {
   let mut n = 0
@@ -186,38 +71,6 @@ pub fn total_params(g : Graph) -> Int {
     n = n + g.param_shapes[i]
   }
   n
-}
-
-///|
-/// Sweep the gradient graph's own parameter adjoints into a dense
-/// layout.
-fn param_gradients_of_graph(p : Program) -> Array[Array[Double]] {
-  let out : Array[Array[Double]] = []
-  for i = 0; i < p.grad.param_adj.length(); i = i + 1 {
-    let row : Array[Double] = []
-    let src = p.grad.param_adj[i]
-    for j = 0; j < src.length(); j = j + 1 {
-      row.push(src[j])
-    }
-    out.push(row)
-  }
-  out
-}
-
-///|
-/// Copy a slot-indexed parameter gradient into the flat layout
-/// `param_hessian` reports.
-fn flatten_param_hessian(
-  src : Array[Array[Double]],
-  dst : Array[Array[Double]],
-) -> Unit {
-  let mut k = 0
-  for i = 0; i < src.length(); i = i + 1 {
-    for j = 0; j < src[i].length(); j = j + 1 {
-      dst[k][k] = dst[k][k] + src[i][j]
-      k = k + 1
-    }
-  }
 }
 
 ///|
@@ -266,10 +119,7 @@ pub fn newton_step(
 ///
 /// Returns `None` when a pivot goes non-positive, which is how a
 /// non-convex region announces itself to a Newton solver.
-pub fn cholesky_solve(
-  a_in : Matrix,
-  b : Array[Double],
-) -> Array[Double]? {
+pub fn cholesky_solve(a_in : Matrix, b : Array[Double]) -> Array[Double]? {
   let n = a_in.rows
   if n == 0 {
     return Some([])
@@ -325,6 +175,7 @@ pub fn cholesky_solve(
 /// Newton solvers are usually driven by eigen-decomposition rather
 /// than a Cholesky factorisation, and the test suite wants to check
 // that the Hessian really does have the curvature the closed-form
+///|
 /// second derivative predicts. Jacobi is not the fastest option but
 // it is short, unconditionally accurate for symmetric input, and
 // has no failure mode to guard against.
