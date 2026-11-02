@@ -69,7 +69,11 @@ pub(all) struct ForwardResult {
 /// representable range. Failing loudly here is deliberate: a NaN
 /// that survives into a gradient is much harder to trace than a
 /// domain error at the node that caused it.
-pub fn forward(g : Graph, b : Binding, target : Int) -> ForwardResult raise ADError {
+pub fn forward(
+  g : Graph,
+  b : Binding,
+  target : Int,
+) -> ForwardResult raise ADError {
   let values = forward_values(g, b)
   if target < 0 || target >= values.length() {
     raise DanglingNode(target)
@@ -174,11 +178,7 @@ pub fn Dual::constant(v : Double) -> Dual {
 /// Lift variable `slot` from a binding, with unit tangent when
 /// `direction` selects it.
 pub fn Dual::from_var(b : Binding, slot : Int, direction : Int) -> Dual {
-  let v = if slot >= 0 && slot < b.vars.length() {
-    b.vars[slot]
-  } else {
-    0.0
-  }
+  let v = if slot >= 0 && slot < b.vars.length() { b.vars[slot] } else { 0.0 }
   { value: v, tangent: if slot == direction { 1.0 } else { 0.0 }, }
 }
 

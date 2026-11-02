@@ -34,6 +34,7 @@ pub(all) enum UnaryOp {
   Tanh
   Sigmoid
   Softplus
+  Relu
 } derive(Hash, Eq, Debug)
 
 ///|
@@ -79,6 +80,7 @@ pub fn UnaryOp::symbol(self : UnaryOp) -> String {
     Tanh => "tanh"
     Sigmoid => "sigmoid"
     Softplus => "softplus"
+    Relu => "relu"
   }
 }
 

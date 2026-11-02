@@ -92,7 +92,11 @@ pub fn Graph::simplify_binary(
 
 ///|
 /// Simplify `op(child)` and emit the result.
-pub fn Graph::simplify_unary(self : Graph, op : UnaryOp, child : Int) -> Int raise ADError {
+pub fn Graph::simplify_unary(
+  self : Graph,
+  op : UnaryOp,
+  child : Int,
+) -> Int raise ADError {
   let cv = self.literal_of(child)
   // `op(0)` has a closed form for three of the nine operators.
   if cv == Some(0.0) {
@@ -162,7 +166,11 @@ pub fn Graph::simplify_unary(self : Graph, op : UnaryOp, child : Int) -> Int rai
 /// A literal base is folded before any structural rule, so `3^2`
 /// becomes the literal 9 rather than a `PowBy` node that the
 /// forward pass would have to evaluate for nothing.
-pub fn Graph::simplify_pow(self : Graph, exponent : Double, base : Int) -> Int raise ADError {
+pub fn Graph::simplify_pow(
+  self : Graph,
+  exponent : Double,
+  base : Int,
+) -> Int raise ADError {
   let bv = self.literal_of(base)
   if exponent == 1.0 {
     self.stats.identities = self.stats.identities + 1
@@ -240,19 +248,31 @@ pub fn apply_unary(op : UnaryOp, x : Double) -> Double? {
     UnaryOp::Neg => Some(-x)
     UnaryOp::Exp => {
       let v = @math.exp(x)
-      if is_finite(v) { Some(v) } else { None }
+      if is_finite(v) {
+        Some(v)
+      } else {
+        None
+      }
     }
     UnaryOp::Ln =>
       if x > 0.0 {
         let v = @math.ln(x)
-        if is_finite(v) { Some(v) } else { None }
+        if is_finite(v) {
+          Some(v)
+        } else {
+          None
+        }
       } else {
         None
       }
     UnaryOp::Sqrt =>
       if x >= 0.0 {
         let v = x.sqrt()
-        if is_finite(v) { Some(v) } else { None }
+        if is_finite(v) {
+          Some(v)
+        } else {
+          None
+        }
       } else {
         None
       }
@@ -264,6 +284,7 @@ pub fn apply_unary(op : UnaryOp, x : Double) -> Double? {
       // log(1 + e^x), evaluated as max(x,0) + log(1 + e^-|x|) so it
       // does not overflow for large x.
       Some(maxf(x, 0.0) + @math.ln(1.0 + @math.exp(-absf(x))))
+    UnaryOp::Relu => Some(if x > 0.0 { x } else { 0.0 })
   }
 }
 
@@ -303,6 +324,7 @@ pub fn unary_derivative(op : UnaryOp, x : Double) -> Double {
       s * (1.0 - s)
     }
     UnaryOp::Softplus => 1.0 / (1.0 + @math.exp(-x))
+    UnaryOp::Relu => if x > 0.0 { 1.0 } else { 0.0 }
   }
 }
 
@@ -332,17 +354,29 @@ pub fn binary_dright(op : BinaryOp, a : Double, b : Double) -> Double {
 ///|
 /// `max` for doubles. MoonBit's builtin lives on integers only.
 pub fn maxf(a : Double, b : Double) -> Double {
-  if a > b { a } else { b }
+  if a > b {
+    a
+  } else {
+    b
+  }
 }
 
 ///|
 /// `min` for doubles.
 pub fn minf(a : Double, b : Double) -> Double {
-  if a < b { a } else { b }
+  if a < b {
+    a
+  } else {
+    b
+  }
 }
 
 ///|
 /// `abs` for doubles.
 pub fn absf(a : Double) -> Double {
-  if a < 0.0 { -a } else { a }
+  if a < 0.0 {
+    -a
+  } else {
+    a
+  }
 }

@@ -37,8 +37,10 @@ pub suberror ADError {
 /// Human-readable form, used by the REPL and the example binaries.
 pub fn ADError::describe(self : ADError) -> String {
   match self {
-    DanglingNode(id) => "node \{id} references an interned slot that does not exist"
-    BadArity(op, got) => "unary operator \{op.symbol()} applied to \{got} operands"
+    DanglingNode(id) =>
+      "node \{id} references an interned slot that does not exist"
+    BadArity(op, got) =>
+      "unary operator \{op.symbol()} applied to \{got} operands"
     UnknownVar(i) => "variable slot \{i} was never declared"
     UnknownParam(i) => "parameter slot \{i} was never declared"
     ParamIndexOutOfRange(slot, idx, len) =>

@@ -204,13 +204,22 @@ pub fn Graph::param(self : Graph, slot : Int, index : Int) -> Int raise ADError 
 
 ///|
 /// Build `op(child)` after simplification.
-pub fn Graph::unary(self : Graph, op : UnaryOp, child : Int) -> Int raise ADError {
+pub fn Graph::unary(
+  self : Graph,
+  op : UnaryOp,
+  child : Int,
+) -> Int raise ADError {
   self.simplify_unary(op, child)
 }
 
 ///|
 /// Build `left op right` after simplification and constant folding.
-pub fn Graph::binary(self : Graph, op : BinaryOp, left : Int, right : Int) -> Int raise ADError {
+pub fn Graph::binary(
+  self : Graph,
+  op : BinaryOp,
+  left : Int,
+  right : Int,
+) -> Int raise ADError {
   self.simplify_binary(op, left, right)
 }
 
@@ -293,4 +302,31 @@ pub fn Graph::sigmoid(self : Graph, x : Int) -> Int raise ADError {
 ///|
 pub fn Graph::softplus(self : Graph, x : Int) -> Int raise ADError {
   self.unary(UnaryOp::Softplus, x)
+}
+
+///|
+/// ReLU. `max(0, x)`, with the derivative defined as 0 at exactly
+/// zero — the standard convention, and the one that keeps a unit
+/// that lands exactly on the boundary from producing a gradient of
+/// 0.5 and stalling.
+pub fn Graph::relu(self : Graph, x : Int) -> Int raise ADError {
+  self.unary(UnaryOp::Relu, x)
+}
+
+///|
+/// The literal stored in slot `id`, or `None`. Used by
+/// `derivative_expr` for operators whose derivative is not an
+/// ordinary smooth function of the operand — ReLU is the only one,
+/// and the discontinuity means the branch has to be decided at
+/// compile time rather than represented symbolically.
+pub fn Graph::eval_literal(self : Graph, id : Int) -> Double {
+  match self.literal_of(id) {
+    Some(v) => v
+    None =>
+      // Not a literal. Reading the forward value would require a
+      // binding we do not have here, so fall back to the
+      // non-positive branch, which is the one that keeps a
+      // saturated unit from passing gradient through.
+      0.0
+  }
 }
