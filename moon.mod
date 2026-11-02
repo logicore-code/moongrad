@@ -20,4 +20,3 @@ keywords = [
 preferred_target = "wasm"
 
 description = "Reverse-mode automatic differentiation for MoonBit. Forward pass is constant propagation over a hash-consed DAG; the backward pass is a symbolic compiler that emits a gradient program. Includes common-subexpression elimination, algebraic simplification, forward-over-reverse Hessians, and segment-recomputation gradient checkpointing."
-

@@ -123,10 +123,13 @@ pub fn segment_bounds(size : Int, count : Int) -> Array[Segment] {
 ///|
 /// Peak number of values the sweep holds at once.
 ///
-/// With k segments over a graph of n nodes, the sweep carries the
-/// boundary values of the segments it has not yet finished, plus
-/// the window of the segment it is inside. Worst case that is k
-/// boundaries plus the widest window.
+/// The sweep carries the boundary value of every segment it has not
+/// yet entered, plus the window of the segment it is inside. With k
+/// segments that is k-1 boundaries plus the widest window — and
+/// with a single segment it is just the window, which is the same
+/// as the naive tape. That last case is why one segment has to
+/// report a reduction of exactly zero rather than a slightly
+/// negative one.
 pub fn peak_occupancy(bounds : Array[Segment], size : Int) -> Int {
   if bounds.length() == 0 {
     return size
@@ -137,7 +140,7 @@ pub fn peak_occupancy(bounds : Array[Segment], size : Int) -> Int {
       widest = s.width()
     }
   }
-  bounds.length() + widest
+  bounds.length() - 1 + widest
 }
 
 ///|
@@ -203,6 +206,7 @@ pub fn checkpointed_grad(
 /// The adjoint array is the one thing that is genuinely O(n) and
 /// genuinely has to be: every node can be a consumer of an adjoint,
 // and the sweep visits them out of order relative to arrival. In a
+
 ///|
 /// production system this is where the gradient slots would live, and
 /// it is the part that scales with model size rather than with graph
@@ -241,7 +245,7 @@ fn sweep(
       if adj[i] == zero {
         continue
       }
-      push_adjoints(g, h, b, window, adj, param_adj, i)
+      push_adjoints(g, h, window, adj, param_adj, i)
     }
   }
   let out : Array[Double] = []

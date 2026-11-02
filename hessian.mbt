@@ -49,7 +49,7 @@ pub fn Matrix::symmetrise(self : Matrix) -> Matrix {
 /// special-cased.
 pub fn hessian(g : Graph, b : Binding, target : Int) -> Matrix raise ADError {
   let primal_values = forward_values(g, b)
-  let first = compile_gradient(g, b, primal_values, target)
+  let first = compile_gradient(g, primal_values, target)
   let n = g.var_count
   let h = Matrix::zeros(n, n)
   for i = 0; i < n; i = i + 1 {
@@ -175,6 +175,7 @@ pub fn cholesky_solve(a_in : Matrix, b : Array[Double]) -> Array[Double]? {
 /// Newton solvers are usually driven by eigen-decomposition rather
 /// than a Cholesky factorisation, and the test suite wants to check
 // that the Hessian really does have the curvature the closed-form
+
 ///|
 /// second derivative predicts. Jacobi is not the fastest option but
 // it is short, unconditionally accurate for symmetric input, and

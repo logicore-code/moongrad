@@ -91,7 +91,6 @@ pub(all) struct Program {
 /// compiled.
 pub fn compile_gradient(
   g : Graph,
-  b : Binding,
   primal_values : Array[Double],
   target : Int,
 ) -> GradGraph raise ADError {
@@ -121,7 +120,7 @@ pub fn compile_gradient(
     if adj[i] == zero {
       continue
     }
-    push_adjoints(g, h, b, primal_values, adj, param_adj, i)
+    push_adjoints(g, h, primal_values, adj, param_adj, i)
   }
   let var_adj : Array[Int] = []
   for slot = 0; slot < g.var_count; slot = slot + 1 {
@@ -189,12 +188,11 @@ fn reintern(h : Graph, node : Node) -> Int raise ADError {
 fn push_adjoints(
   g : Graph,
   h : Graph,
-  b : Binding,
   primal_values : Array[Double],
   adj : Array[Int],
   param_adj : Array[Array[Int]],
   i : Int,
-) -> Unit raise ADError {
+) -> Unit {
   let incoming = adj[i]
   match g.nodes[i] {
     Node::Const(_) => ()
@@ -246,7 +244,7 @@ pub fn derivative_expr(
   op : UnaryOp,
   x : Int,
   x_value : Double,
-) -> Int raise ADError {
+) -> Int {
   match op {
     UnaryOp::Neg => h.constant(-1.0)
     UnaryOp::Exp => h.exp(x)
@@ -277,12 +275,7 @@ pub fn derivative_expr(
 
 ///|
 /// Partial derivative of `a op b` with respect to `a`.
-pub fn derivative_left(
-  h : Graph,
-  op : BinaryOp,
-  a : Int,
-  b : Int,
-) -> Int raise ADError {
+pub fn derivative_left(h : Graph, op : BinaryOp, a : Int, b : Int) -> Int {
   ignore(a)
   match op {
     BinaryOp::Add => h.constant(1.0)
@@ -294,12 +287,7 @@ pub fn derivative_left(
 
 ///|
 /// Partial derivative of `a op b` with respect to `b`.
-pub fn derivative_right(
-  h : Graph,
-  op : BinaryOp,
-  a : Int,
-  b : Int,
-) -> Int raise ADError {
+pub fn derivative_right(h : Graph, op : BinaryOp, a : Int, b : Int) -> Int {
   match op {
     BinaryOp::Add => h.constant(1.0)
     BinaryOp::Sub => h.constant(-1.0)
@@ -417,7 +405,7 @@ pub fn grad(
   target : Int,
 ) -> (Array[Double], Program) raise ADError {
   let primal_values = forward_values(g, b)
-  let compiled = compile_gradient(g, b, primal_values, target)
+  let compiled = compile_gradient(g, primal_values, target)
   let prog = Program::{
     primal: g,
     grad: compiled,
@@ -450,10 +438,7 @@ pub fn evaluate_gradients(
 /// Each entry is a partial evaluation of the accumulated adjoint
 /// circuit, so the values are correct at any binding rather than at
 /// the one the sweep ran against.
-pub fn param_gradients(
-  p : Program,
-  b : Binding,
-) -> Array[Array[Double]] raise ADError {
+pub fn param_gradients(p : Program, b : Binding) -> Array[Array[Double]] {
   let out : Array[Array[Double]] = []
   for i = 0; i < p.grad.param_adj_node.length(); i = i + 1 {
     let row : Array[Double] = []
@@ -469,10 +454,7 @@ pub fn param_gradients(
 ///|
 /// Parameter gradients as one flat array, in slot-then-index order,
 /// which is the layout an optimiser wants.
-pub fn flat_param_gradients(
-  p : Program,
-  b : Binding,
-) -> Array[Double] raise ADError {
+pub fn flat_param_gradients(p : Program, b : Binding) -> Array[Double] {
   let nested = param_gradients(p, b)
   let out : Array[Double] = []
   for i = 0; i < nested.length(); i = i + 1 {

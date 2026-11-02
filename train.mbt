@@ -195,7 +195,7 @@ pub fn Trainer::new(
   let out = g.div(acc, g.constant(n_samples.to_double()))
   let b = trainer_binding(g, data, flat, net)
   let values = forward_values(g, b)
-  let compiled = compile_gradient(g, b, values, out)
+  let compiled = compile_gradient(g, values, out)
   let opt_state = OptimizerState::new(opt_kind, flat.length())
   {
     graph: g,
@@ -217,14 +217,14 @@ pub fn Trainer::new(
 
 ///|
 /// `(pred - y)^2` for one scalar prediction.
-pub fn mse_one(g : Graph, pred : Int, y : Double) -> Int raise ADError {
+pub fn mse_one(g : Graph, pred : Int, y : Double) -> Int {
   let d = g.sub(pred, g.constant(y))
   g.mul(d, d)
 }
 
 ///|
 /// `softplus(z) - z*y` for one scalar prediction.
-pub fn bce_one(g : Graph, z : Int, y : Double) -> Int raise ADError {
+pub fn bce_one(g : Graph, z : Int, y : Double) -> Int {
   g.sub(g.softplus(z), g.mul(z, g.constant(y)))
 }
 
@@ -306,14 +306,38 @@ pub fn Trainer::train_step(
       self.opt_state.step_adam(self.flat, param_grads, self.step_count)
     _ => self.opt_state.step(self.flat, param_grads)
   }
-  // 4. The next step reads the parameters through the binding, so
-  //    nothing else has to happen here — the next `trainer_binding`
-  //    call picks up the new values.
+  // 4. Write the updated weights back into the parameter matrices.
+  //    The optimiser works on `flat`, which is a separate array from
+  //    the one the parameters hold, so without this the parameters
+  //    would keep reporting the values they were initialised with
+  //    while the training run happily converged on the new ones.
+  self.sync_params()
   self.history.push(loss_value)
   {
     loss: loss_value,
     grad_norm: gn,
     ok: is_finite(loss_value) && is_finite(gn),
+  }
+}
+
+///|
+/// Copy the flat parameter array back into the parameter matrices.
+///
+/// The optimiser steps over one flat array because that is the
+/// layout a gradient arrives in. The parameters hold matrices,
+/// because that is the layout a layer reads. This is the join
+/// between the two, and it has to happen after every step.
+pub fn Trainer::sync_params(self : Trainer) -> Unit {
+  let params = self.net.params()
+  let mut offset = 0
+  for p in params {
+    let n = p.weights.len()
+    let slice : Array[Double] = []
+    for i = 0; i < n; i = i + 1 {
+      slice.push(self.flat[offset + i])
+    }
+    p.set_values(slice)
+    offset = offset + n
   }
 }
 

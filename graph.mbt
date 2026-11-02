@@ -36,12 +36,23 @@ pub(all) struct Stats {
   mut folds : Int
   /// Times a node was shortened by an annihilator (`x*0` → `0`).
   mut annihilated : Int
+  /// Builder calls that were made. A call that hits the intern
+  /// table still counts here, so the difference between this and
+  /// `nodes_built` is exactly what sharing saved.
+  mut requests : Int
 } derive(Debug, Eq)
 
 ///|
 /// An empty `Stats`.
 pub fn Stats::new() -> Stats {
-  { nodes_built: 0, cse_hits: 0, identities: 0, folds: 0, annihilated: 0, }
+  {
+    nodes_built: 0,
+    cse_hits: 0,
+    identities: 0,
+    folds: 0,
+    annihilated: 0,
+    requests: 0,
+  }
 }
 
 ///|
@@ -52,6 +63,15 @@ pub fn Stats::new() -> Stats {
 /// `examples/cse_savings` makes.
 pub fn Stats::distinct_nodes(self : Stats) -> Int {
   self.nodes_built
+}
+
+///|
+/// Number of builder calls that found an existing slot. This is
+/// the size of the sharing win: a naive builder that allocated a
+/// fresh node for every operation would have needed this many more
+/// slots than the graph actually has.
+pub fn Stats::shared_away(self : Stats) -> Int {
+  self.cse_hits + self.identities + self.folds + self.annihilated
 }
 
 ///|
@@ -150,6 +170,7 @@ pub fn Graph::get(self : Graph, id : Int) -> Node raise ADError {
 /// which case return the existing slot. This is the hash-cons
 /// operation; every other builder method funnels through it.
 pub fn Graph::intern(self : Graph, node : Node) -> Int {
+  self.stats.requests = self.stats.requests + 1
   match self.intern_table.get(node) {
     Some(existing) => {
       self.stats.cse_hits = self.stats.cse_hits + 1
@@ -204,11 +225,7 @@ pub fn Graph::param(self : Graph, slot : Int, index : Int) -> Int raise ADError 
 
 ///|
 /// Build `op(child)` after simplification.
-pub fn Graph::unary(
-  self : Graph,
-  op : UnaryOp,
-  child : Int,
-) -> Int raise ADError {
+pub fn Graph::unary(self : Graph, op : UnaryOp, child : Int) -> Int {
   self.simplify_unary(op, child)
 }
 
@@ -219,31 +236,31 @@ pub fn Graph::binary(
   op : BinaryOp,
   left : Int,
   right : Int,
-) -> Int raise ADError {
+) -> Int {
   self.simplify_binary(op, left, right)
 }
 
 ///|
 /// Shorthand for `Add`.
-pub fn Graph::add(self : Graph, a : Int, b : Int) -> Int raise ADError {
+pub fn Graph::add(self : Graph, a : Int, b : Int) -> Int {
   self.binary(BinaryOp::Add, a, b)
 }
 
 ///|
 /// Shorthand for `Sub`.
-pub fn Graph::sub(self : Graph, a : Int, b : Int) -> Int raise ADError {
+pub fn Graph::sub(self : Graph, a : Int, b : Int) -> Int {
   self.binary(BinaryOp::Sub, a, b)
 }
 
 ///|
 /// Shorthand for `Mul`.
-pub fn Graph::mul(self : Graph, a : Int, b : Int) -> Int raise ADError {
+pub fn Graph::mul(self : Graph, a : Int, b : Int) -> Int {
   self.binary(BinaryOp::Mul, a, b)
 }
 
 ///|
 /// Shorthand for `Div`.
-pub fn Graph::div(self : Graph, a : Int, b : Int) -> Int raise ADError {
+pub fn Graph::div(self : Graph, a : Int, b : Int) -> Int {
   self.binary(BinaryOp::Div, a, b)
 }
 
@@ -251,7 +268,7 @@ pub fn Graph::div(self : Graph, a : Int, b : Int) -> Int raise ADError {
 /// `a ^ c` for a real exponent. The exponent rides along inside the
 /// node so that the reverse pass can apply `c * a^(c-1)` without a
 /// side table.
-pub fn Graph::pow(self : Graph, a : Int, c : Double) -> Int raise ADError {
+pub fn Graph::pow(self : Graph, a : Int, c : Double) -> Int {
   self.simplify_pow(c, a)
 }
 
@@ -260,47 +277,47 @@ pub fn Graph::pow(self : Graph, a : Int, c : Double) -> Int raise ADError {
 // mathematical names read better in the formulas that follow.
 
 ///|
-pub fn Graph::neg(self : Graph, x : Int) -> Int raise ADError {
+pub fn Graph::neg(self : Graph, x : Int) -> Int {
   self.unary(UnaryOp::Neg, x)
 }
 
 ///|
-pub fn Graph::exp(self : Graph, x : Int) -> Int raise ADError {
+pub fn Graph::exp(self : Graph, x : Int) -> Int {
   self.unary(UnaryOp::Exp, x)
 }
 
 ///|
-pub fn Graph::ln(self : Graph, x : Int) -> Int raise ADError {
+pub fn Graph::ln(self : Graph, x : Int) -> Int {
   self.unary(UnaryOp::Ln, x)
 }
 
 ///|
-pub fn Graph::sqrt(self : Graph, x : Int) -> Int raise ADError {
+pub fn Graph::sqrt(self : Graph, x : Int) -> Int {
   self.unary(UnaryOp::Sqrt, x)
 }
 
 ///|
-pub fn Graph::sin(self : Graph, x : Int) -> Int raise ADError {
+pub fn Graph::sin(self : Graph, x : Int) -> Int {
   self.unary(UnaryOp::Sin, x)
 }
 
 ///|
-pub fn Graph::cos(self : Graph, x : Int) -> Int raise ADError {
+pub fn Graph::cos(self : Graph, x : Int) -> Int {
   self.unary(UnaryOp::Cos, x)
 }
 
 ///|
-pub fn Graph::tanh(self : Graph, x : Int) -> Int raise ADError {
+pub fn Graph::tanh(self : Graph, x : Int) -> Int {
   self.unary(UnaryOp::Tanh, x)
 }
 
 ///|
-pub fn Graph::sigmoid(self : Graph, x : Int) -> Int raise ADError {
+pub fn Graph::sigmoid(self : Graph, x : Int) -> Int {
   self.unary(UnaryOp::Sigmoid, x)
 }
 
 ///|
-pub fn Graph::softplus(self : Graph, x : Int) -> Int raise ADError {
+pub fn Graph::softplus(self : Graph, x : Int) -> Int {
   self.unary(UnaryOp::Softplus, x)
 }
 
@@ -309,7 +326,7 @@ pub fn Graph::softplus(self : Graph, x : Int) -> Int raise ADError {
 /// zero — the standard convention, and the one that keeps a unit
 /// that lands exactly on the boundary from producing a gradient of
 /// 0.5 and stalling.
-pub fn Graph::relu(self : Graph, x : Int) -> Int raise ADError {
+pub fn Graph::relu(self : Graph, x : Int) -> Int {
   self.unary(UnaryOp::Relu, x)
 }
 

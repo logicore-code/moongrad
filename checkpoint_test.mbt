@@ -13,7 +13,7 @@
 ///|
 /// Build a moderately deep polynomial in one variable, which is the
 /// shape where segment recomputation actually has something to do.
-fn deep_graph(g : Graph, x : Int, depth : Int) -> Int raise ADError {
+fn deep_graph(g : Graph, x : Int, depth : Int) -> Int {
   // A contraction, not an expansion: repeated squaring would leave
   // the finite reals long before the interesting depths, and the
   // point here is the segmentation, not the numerics.

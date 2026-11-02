@@ -13,12 +13,14 @@
 /// one means a single `moon test` run reports every broken gradient
 /// rather than only the first, which matters a lot when the thing
 /// under test is a chain rule.
-let failures : @ref.Ref[Array[String]] = @ref.new([])
+// A plain array is enough: MoonBit's Array is mutable in place,
+// so pushing onto a top-level binding works without a Ref.
+let failures : Array[String] = []
 
 ///|
 fn check(cond : Bool, msg : String) -> Unit {
   if !cond {
-    failures.val.push(msg)
+    failures.push(msg)
   }
 }
 
@@ -198,6 +200,7 @@ test "simplifier_keeps_0_times_a_subtree_it_cannot_see" {
   ignore(g.new_vars(1))
   let x = g.variable(0)
   let negative = g.constant(-1.0)
+  let _ = x
   let would_be_bad = g.ln(negative) // unfolded: log of a negative
   let zero = g.constant(0.0)
   assert_eq(g.mul(would_be_bad, zero), zero)
@@ -328,7 +331,7 @@ test "forward_reads_parameters" {
 
 ///|
 fn grad_of_x(
-  f_of_x : (Graph, Int) -> Int raise ADError,
+  f_of_x : (Graph, Int) -> Int,
   x_value : Double,
 ) -> Double raise ADError {
   let g = Graph::new()
@@ -341,7 +344,13 @@ fn grad_of_x(
 ///|
 test "gradient_of_the_identity_is_one" {
   assert_close(
-    grad_of_x(fn(g, x) -> Int raise ADError { x }, 7.0),
+    grad_of_x(
+      fn(g, x) -> Int {
+        let _ = g
+        x
+      },
+      7.0,
+    ),
     1.0,
     1.0e-12,
     "d/dx x",
@@ -351,7 +360,7 @@ test "gradient_of_the_identity_is_one" {
 ///|
 test "gradient_of_a_constant_is_zero" {
   assert_close(
-    grad_of_x(fn(g, _x) -> Int raise ADError { g.constant(3.0) }, 7.0),
+    grad_of_x(fn(g, _x) -> Int { g.constant(3.0) }, 7.0),
     0.0,
     1.0e-12,
     "d/dx 3",
@@ -361,7 +370,7 @@ test "gradient_of_a_constant_is_zero" {
 ///|
 test "gradient_of_a_square" {
   // f(x) = x^2, f' = 2x
-  let f = fn(g : Graph, x : Int) -> Int raise ADError { g.pow(x, 2.0) }
+  let f = fn(g : Graph, x : Int) -> Int { g.pow(x, 2.0) }
   assert_close(grad_of_x(f, 3.0), 6.0, 1.0e-12, "d/dx x^2 at 3")
   assert_close(grad_of_x(f, -2.0), -4.0, 1.0e-12, "d/dx x^2 at -2")
 }
@@ -370,33 +379,33 @@ test "gradient_of_a_square" {
 test "gradient_of_a_cube_built_from_products" {
   // Built as ((x*x)*x) rather than x^3, so the rule under test is
   // the product rule, not the power rule.
-  let f = fn(g : Graph, x : Int) -> Int raise ADError { g.mul(g.mul(x, x), x) }
+  let f = fn(g : Graph, x : Int) -> Int { g.mul(g.mul(x, x), x) }
   assert_close(grad_of_x(f, 3.0), 27.0, 1.0e-12, "d/dx x^3 at 3")
 }
 
 ///|
 test "gradient_of_exponential_is_itself" {
-  let f = fn(g : Graph, x : Int) -> Int raise ADError { g.exp(x) }
+  let f = fn(g : Graph, x : Int) -> Int { g.exp(x) }
   let at = 1.0
   assert_close(grad_of_x(f, at), @math.exp(at), 1.0e-9, "d/dx e^x at 1")
 }
 
 ///|
 test "gradient_of_log_is_reciprocal" {
-  let f = fn(g : Graph, x : Int) -> Int raise ADError { g.ln(x) }
+  let f = fn(g : Graph, x : Int) -> Int { g.ln(x) }
   assert_close(grad_of_x(f, 4.0), 0.25, 1.0e-12, "d/dx log x at 4")
 }
 
 ///|
 test "gradient_of_sine_is_cosine" {
-  let f = fn(g : Graph, x : Int) -> Int raise ADError { g.sin(x) }
+  let f = fn(g : Graph, x : Int) -> Int { g.sin(x) }
   let at = 0.7
   assert_close(grad_of_x(f, at), @math.cos(at), 1.0e-9, "d/dx sin x")
 }
 
 ///|
 test "gradient_of_tanh_is_one_minus_its_square" {
-  let f = fn(g : Graph, x : Int) -> Int raise ADError { g.tanh(x) }
+  let f = fn(g : Graph, x : Int) -> Int { g.tanh(x) }
   let at = 0.4
   let t = @math.tanh(at)
   assert_close(grad_of_x(f, at), 1.0 - t * t, 1.0e-9, "d/dx tanh x")
@@ -405,23 +414,21 @@ test "gradient_of_tanh_is_one_minus_its_square" {
 ///|
 test "gradient_of_a_quotient" {
   // f(x) = 1/x, f' = -1/x^2
-  let f = fn(g : Graph, x : Int) -> Int raise ADError {
-    g.div(g.constant(1.0), x)
-  }
+  let f = fn(g : Graph, x : Int) -> Int { g.div(g.constant(1.0), x) }
   assert_close(grad_of_x(f, 3.0), -1.0 / 9.0, 1.0e-12, "d/dx 1/x at 3")
 }
 
 ///|
 test "gradient_of_a_real_power" {
   // f(x) = x^1.5, f' = 1.5 * x^0.5
-  let f = fn(g : Graph, x : Int) -> Int raise ADError { g.pow(x, 1.5) }
+  let f = fn(g : Graph, x : Int) -> Int { g.pow(x, 1.5) }
   assert_close(grad_of_x(f, 4.0), 3.0, 1.0e-9, "d/dx x^1.5 at 4")
 }
 
 ///|
 test "gradient_of_a_composition" {
   // f(x) = sin(x^2), f' = 2x cos(x^2)
-  let f = fn(g : Graph, x : Int) -> Int raise ADError { g.sin(g.pow(x, 2.0)) }
+  let f = fn(g : Graph, x : Int) -> Int { g.sin(g.pow(x, 2.0)) }
   let at = 0.5
   assert_close(
     grad_of_x(f, at),
@@ -630,7 +637,7 @@ test "a_higher_order_polynomial_has_exact_second_derivative_behaviour" {
 /// test so the report prints in full rather than stopping at the
 /// first failure.
 test "zz_summary_of_gradient_mismatches" {
-  let list = failures.val
+  let list = failures
   for f in list {
     println("  FAIL \{f}")
   }

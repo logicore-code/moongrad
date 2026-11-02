@@ -21,7 +21,7 @@ test "hessian_of_a_quadratic_is_constant" {
   // f(x, y) = x^2 + x*y + y^2.
   // H = [[2, 1], [1, 2]].
   let h = hess_of(
-    fn(g : Graph, x : Int, y : Int) -> Int raise ADError {
+    fn(g : Graph, x : Int, y : Int) -> Int {
       g.add(g.add(g.pow(x, 2.0), g.mul(x, y)), g.pow(y, 2.0))
     },
     [3.0, 4.0],
@@ -37,7 +37,7 @@ test "hessian_of_a_cubic_matches_the_closed_form" {
   // f(x, y) = x^3 + y^2 * x.
   // d2f/dx2 = 6x, d2f/dxdy = 2y, d2f/dy2 = 2x.
   let h = hess_of(
-    fn(g : Graph, x : Int, y : Int) -> Int raise ADError {
+    fn(g : Graph, x : Int, y : Int) -> Int {
       g.add(g.pow(x, 3.0), g.mul(g.pow(y, 2.0), x))
     },
     [2.0, 5.0],
@@ -56,7 +56,7 @@ test "hessian_of_a_transcendental_matches_the_closed_form" {
   // contributes a plain 1 alongside the exponential, and an engine
   // that only propagates through the exponential gets it wrong.
   let h = hess_of(
-    fn(g : Graph, x : Int, y : Int) -> Int raise ADError { g.exp(g.mul(x, y)) },
+    fn(g : Graph, x : Int, y : Int) -> Int { g.exp(g.mul(x, y)) },
     [0.5, 1.5],
   )
   let e = @math.exp(0.75)
@@ -87,7 +87,7 @@ test "hessian_agrees_with_a_numerical_second_difference" {
 ///|
 test "hessian_of_a_linear_function_is_zero" {
   let h = hess_of(
-    fn(g : Graph, x : Int, y : Int) -> Int raise ADError {
+    fn(g : Graph, x : Int, y : Int) -> Int {
       g.add(g.mul(x, g.constant(3.0)), g.mul(y, g.constant(-1.0)))
     },
     [5.0, 7.0],
@@ -175,16 +175,20 @@ test "hessian_of_a_strictly_convex_function_is_positive_definite" {
   // which is the condition a Newton solver needs to take a full
   // step without damping.
   let h = hess_of(
-    fn(g : Graph, x : Int, y : Int) -> Int raise ADError {
+    fn(g : Graph, x : Int, y : Int) -> Int {
       g.add(g.pow(x, 2.0), g.mul(g.constant(4.0), g.pow(y, 2.0)))
     },
     [1.0, 1.0],
   )
   let ev = jacobi_eigenvalues(h)
   let smallest = minf(ev[0], ev[1])
+  // `ev` goes into the message as text rather than through the
+  // formatter, because the formatter would use the deprecated
+  // Show trait for arrays.
+  let rendered = ev[0].to_string() + ", " + ev[1].to_string()
   check(
     smallest > 0.0,
-    "a strictly convex function has a positive Hessian, got \{ev}",
+    "a strictly convex function has a positive Hessian, got " + rendered,
   )
 }
 

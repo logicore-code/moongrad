@@ -35,7 +35,7 @@ pub(all) enum Activation {
 
 ///|
 /// Apply an activation to one scalar node.
-pub fn activate(g : Graph, a : Activation, x : Int) -> Int raise ADError {
+pub fn activate(g : Graph, a : Activation, x : Int) -> Int {
   match a {
     Activation::Identity => x
     Activation::Tanh => g.tanh(x)
@@ -79,9 +79,15 @@ pub fn Param::to_array(self : Param) -> Array[Double] {
 }
 
 ///|
-/// Write a flat gradient back into the parameter.
-pub fn Param::set_grad(self : Param, grad : Array[Double]) -> Unit {
-  self.weights = Matrix::from_flat(self.weights.rows, self.weights.cols, grad)
+/// Overwrite the parameter's weights with a flat array.
+///
+/// This is the join between the two layouts a parameter lives in:
+/// the optimiser steps over one flat array because that is the shape
+/// a gradient arrives in, and the layer reads a matrix because that
+/// is the shape it multiplies. The trainer calls this after every
+/// step.
+pub fn Param::set_values(self : Param, values : Array[Double]) -> Unit {
+  self.weights = Matrix::from_flat(self.weights.rows, self.weights.cols, values)
 }
 
 ///|
@@ -109,7 +115,7 @@ pub fn Dense::new(
   fan_out : Int,
   act : Activation,
   seed : Int,
-) -> Dense raise ADError {
+) -> Dense {
   let w = new_param(g, fan_out, fan_in)
   let limit = (6.0 / (fan_in + fan_out).to_double()).sqrt()
   let rng = Lcg::new(seed)
@@ -171,7 +177,7 @@ pub fn MLP::new(
   sizes : Array[Int],
   acts : Array[Activation],
   seed : Int,
-) -> MLP raise ADError {
+) -> MLP {
   let layers : Array[Dense] = []
   let param_slots : Array[Int] = []
   for i = 1; i < sizes.length(); i = i + 1 {
@@ -239,11 +245,7 @@ pub fn MLP::size(self : MLP) -> Int {
 /// Divided by the batch count rather than by `2 * batch`, so the
 /// reported number is the actual average squared error and can be
 /// compared against a variance.
-pub fn mse_loss(
-  g : Graph,
-  pred : Array[Int],
-  target : Array[Double],
-) -> Int raise ADError {
+pub fn mse_loss(g : Graph, pred : Array[Int], target : Array[Double]) -> Int {
   let mut acc = g.constant(0.0)
   for i = 0; i < pred.length(); i = i + 1 {
     let d = g.sub(pred[i], g.constant(target[i]))
@@ -262,11 +264,7 @@ pub fn mse_loss(
 /// confident correct prediction. This form has no such cliff: the
 /// softplus primitive is evaluated as `max(z,0) + log(1 + e^-|z|)`,
 /// which stays finite everywhere.
-pub fn bce_loss(
-  g : Graph,
-  pred : Array[Int],
-  target : Array[Double],
-) -> Int raise ADError {
+pub fn bce_loss(g : Graph, pred : Array[Int], target : Array[Double]) -> Int {
   let mut acc = g.constant(0.0)
   for i = 0; i < pred.length(); i = i + 1 {
     let y = target[i]
@@ -336,14 +334,11 @@ pub fn Lcg::new(seed : Int) -> Lcg {
 fn Lcg::step(self : Lcg) -> Int {
   let a_hi = 0x5851F42D
   let a_lo = 0x4C957F2D
-  let c_hi = 0x14057B7E
-  let c_lo = 0xF7679F1C
   // (hi:a_lo : lo) * (a_hi:a_lo)
   let t0 = self.lo * a_lo
   let t1 = self.hi * a_lo + (t0 >> 32)
   let lo = (t1 << 32) | (t0 & 0xFFFFFFFF)
-  let hi = self.hi * a_hi + (t1 >> 32) + 0x5851F42D * 0
-  let hi = hi + 0x14057B7E
+  let hi = self.hi * a_hi + (t1 >> 32) + 0x14057B7E
   self.hi = hi
   self.lo = lo
   hi

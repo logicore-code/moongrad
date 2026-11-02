@@ -251,7 +251,7 @@ pub fn forward_mode(
   b : Binding,
   target : Int,
   direction : Int,
-) -> (Double, Double) raise ADError {
+) -> (Double, Double) {
   let values = forward_dual(g, b, direction)
   if target < 0 || target >= values.length() {
     return (0.0, 0.0)
@@ -261,11 +261,7 @@ pub fn forward_mode(
 
 ///|
 /// Evaluate every node in forward mode.
-pub fn forward_dual(
-  g : Graph,
-  b : Binding,
-  direction : Int,
-) -> Array[Dual] raise ADError {
+pub fn forward_dual(g : Graph, b : Binding, direction : Int) -> Array[Dual] {
   let n = g.nodes.length()
   let values : Array[Dual] = []
   for i = 0; i < n; i = i + 1 {

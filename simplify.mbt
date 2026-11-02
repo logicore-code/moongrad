@@ -30,7 +30,7 @@ pub fn Graph::simplify_binary(
   op : BinaryOp,
   left : Int,
   right : Int,
-) -> Int raise ADError {
+) -> Int {
   let lv = self.literal_of(left)
   let rv = self.literal_of(right)
   // Rule 1: annihilator. `x * 0` is 0 for any finite x, and `x - x`
@@ -92,11 +92,7 @@ pub fn Graph::simplify_binary(
 
 ///|
 /// Simplify `op(child)` and emit the result.
-pub fn Graph::simplify_unary(
-  self : Graph,
-  op : UnaryOp,
-  child : Int,
-) -> Int raise ADError {
+pub fn Graph::simplify_unary(self : Graph, op : UnaryOp, child : Int) -> Int {
   let cv = self.literal_of(child)
   // `op(0)` has a closed form for three of the nine operators.
   if cv == Some(0.0) {
@@ -136,12 +132,17 @@ pub fn Graph::simplify_unary(
   // `neg(neg(x))` is `x`. Trivial, and surprisingly common once a
   // caller composes several layers symbolically.
   if op == UnaryOp::Neg {
-    match self.get(child) {
-      Node::Unary(UnaryOp::Neg, inner) => {
-        self.stats.identities = self.stats.identities + 1
-        return inner
+    // `neg(neg(x))` is `x`. Read the child's shape directly rather
+    // than through `get`, which raises for a slot that does not
+    // exist.
+    if child >= 0 && child < self.nodes.length() {
+      match self.nodes[child] {
+        Node::Unary(UnaryOp::Neg, inner) => {
+          self.stats.identities = self.stats.identities + 1
+          return inner
+        }
+        _ => ()
       }
-      _ => ()
     }
   }
   if cv != None {
@@ -166,11 +167,7 @@ pub fn Graph::simplify_unary(
 /// A literal base is folded before any structural rule, so `3^2`
 /// becomes the literal 9 rather than a `PowBy` node that the
 /// forward pass would have to evaluate for nothing.
-pub fn Graph::simplify_pow(
-  self : Graph,
-  exponent : Double,
-  base : Int,
-) -> Int raise ADError {
+pub fn Graph::simplify_pow(self : Graph, exponent : Double, base : Int) -> Int {
   let bv = self.literal_of(base)
   if exponent == 1.0 {
     self.stats.identities = self.stats.identities + 1

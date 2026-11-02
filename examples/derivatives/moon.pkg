@@ -1,0 +1,7 @@
+// Derivative table example — see main.mbt.
+
+import {
+  "logicore-code/moongrad",
+}
+
+pkgtype(kind: "executable")
