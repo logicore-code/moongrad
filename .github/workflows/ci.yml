@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    name: moon check + test + fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the MoonBit toolchain
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Cache the MoonBit core library
+        uses: actions/cache@v4
+        with:
+          path: ~/.moon
+          key: moon-core-${{ runner.os }}-${{ hashFiles('**/moon.mod') }}
+          restore-keys: moon-core-${{ runner.os }}-
+
+      - name: Format check
+        run: moon fmt --check
+
+      - name: Static type check
+        run: moon check
+
+      - name: Unit tests
+        run: moon test
+
+      - name: Smoke-test every example on the native target
+        run: |
+          for ex in derivatives polyfit xor hessian checkpoint cse; do
+            echo "--- examples/$ex"
+            moon run "examples/$ex" --target native
+          done
+
+      - name: Confirm every target compiles
+        run: moon check --target all
