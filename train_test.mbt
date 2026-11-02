@@ -11,7 +11,7 @@
 
 ///|
 /// A small well-separated dataset: two clusters on the unit square.
-fn toy_dataset() -> Dataset {
+fn toy_dataset() -> @moongrad.Dataset {
   let xs : Array[Array[Double]] = [
     [0.0, 0.0],
     [0.1, 0.0],
@@ -23,19 +23,19 @@ fn toy_dataset() -> Dataset {
     [1.0, 1.0],
   ]
   let ys : Array[Double] = [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]
-  let d = Dataset::new(xs, ys, 1)
+  let d = @moongrad.Dataset::new(xs, ys, 1)
   match d {
     Some(v) => v
     None => {
       check(false, "the toy dataset is well formed")
-      Dataset::{ samples: [], n_in: 2, n_out: 1, }
+      @moongrad.Dataset::{ samples: [], n_in: 2, n_out: 1, }
     }
   }
 }
 
 ///|
 test "dataset_rejects_mismatched_lengths" {
-  let bad = Dataset::new([[1.0], [2.0]], [0.0], 1)
+  let bad = @moongrad.Dataset::new([[1.0], [2.0]], [0.0], 1)
   let rejected = match bad {
     None => true
     Some(_) => false
@@ -45,7 +45,7 @@ test "dataset_rejects_mismatched_lengths" {
 
 ///|
 test "dataset_rejects_a_ragged_feature_matrix" {
-  let bad = Dataset::new([[1.0, 2.0], [3.0]], [0.0, 1.0], 1)
+  let bad = @moongrad.Dataset::new([[1.0, 2.0], [3.0]], [0.0, 1.0], 1)
   let rejected = match bad {
     None => true
     Some(_) => false
@@ -63,7 +63,7 @@ test "dataset_records_its_shape" {
 
 ///|
 test "shuffled_indices_are_a_permutation" {
-  let idx = shuffled_indices(20, Lcg::new(3))
+  let idx = @moongrad.shuffled_indices(20, @moongrad.Lcg::new(3))
   assert_eq(idx.length(), 20)
   let mut seen = 0
   for i in idx {
@@ -75,8 +75,8 @@ test "shuffled_indices_are_a_permutation" {
 
 ///|
 test "shuffled_indices_are_deterministic_for_a_seed" {
-  let a = shuffled_indices(10, Lcg::new(7))
-  let b = shuffled_indices(10, Lcg::new(7))
+  let a = @moongrad.shuffled_indices(10, @moongrad.Lcg::new(7))
+  let b = @moongrad.shuffled_indices(10, @moongrad.Lcg::new(7))
   for i = 0; i < 10; i = i + 1 {
     assert_eq(a[i], b[i])
   }
@@ -87,7 +87,7 @@ test "shuffled_indices_actually_reorder" {
   // A shuffle that returns the identity every time is a plausible
   // bug in Fisher-Yates and would quietly bias any batched
   // training.
-  let idx = shuffled_indices(50, Lcg::new(11))
+  let idx = @moongrad.shuffled_indices(50, @moongrad.Lcg::new(11))
   let mut moved = 0
   for i = 0; i < 50; i = i + 1 {
     if idx[i] != i {
@@ -103,12 +103,12 @@ test "training_actually_moves_the_loss" {
   // parameters but never refreshes the binding, so the graph keeps
   // reading the initial weights. The loss stays exactly flat.
   let d = toy_dataset()
-  let trainer = Trainer::new(
+  let trainer = @moongrad.Trainer::new(
     [2, 8, 1],
-    [Activation::Tanh, Activation::Identity],
+    [@moongrad.Activation::Tanh, @moongrad.Activation::Identity],
     d,
-    LossKind::Mse,
-    Optimizer::Adam(0.05),
+    @moongrad.LossKind::Mse,
+    @moongrad.Optimizer::Adam(0.05),
     42,
   )
   let first = trainer.train_step(-1.0)
@@ -126,12 +126,12 @@ test "training_actually_moves_the_loss" {
 ///|
 test "loss_history_has_one_entry_per_step" {
   let d = toy_dataset()
-  let trainer = Trainer::new(
+  let trainer = @moongrad.Trainer::new(
     [2, 4, 1],
-    [Activation::Tanh, Activation::Identity],
+    [@moongrad.Activation::Tanh, @moongrad.Activation::Identity],
     d,
-    LossKind::Mse,
-    Optimizer::Adam(0.05),
+    @moongrad.LossKind::Mse,
+    @moongrad.Optimizer::Adam(0.05),
     1,
   )
   for _i = 0; _i < 17; _i = _i + 1 {
@@ -147,12 +147,12 @@ test "loss_history_is_non_increasing_on_average" {
   // mean of the first fifth and the last fifth is the honest
   // measure of whether the optimiser is working at all.
   let d = toy_dataset()
-  let trainer = Trainer::new(
+  let trainer = @moongrad.Trainer::new(
     [2, 6, 1],
-    [Activation::Tanh, Activation::Identity],
+    [@moongrad.Activation::Tanh, @moongrad.Activation::Identity],
     d,
-    LossKind::Mse,
-    Optimizer::Adam(0.05),
+    @moongrad.LossKind::Mse,
+    @moongrad.Optimizer::Adam(0.05),
     9,
   )
   for _i = 0; _i < 200; _i = _i + 1 {
@@ -180,12 +180,12 @@ fn mean_slice(xs : Array[Double], lo : Int, hi : Int) -> Double {
 ///|
 test "binary_cross_entropy_training_reduces_the_loss" {
   let d = toy_dataset()
-  let trainer = Trainer::new(
+  let trainer = @moongrad.Trainer::new(
     [2, 6, 1],
-    [Activation::Tanh, Activation::Sigmoid],
+    [@moongrad.Activation::Tanh, @moongrad.Activation::Sigmoid],
     d,
-    LossKind::Bce,
-    Optimizer::Adam(0.05),
+    @moongrad.LossKind::Bce,
+    @moongrad.Optimizer::Adam(0.05),
     4,
   )
   let first = trainer.train_step(-1.0)
@@ -202,12 +202,12 @@ test "binary_cross_entropy_training_reduces_the_loss" {
 ///|
 test "gradient_norm_falls_as_the_run_converges" {
   let d = toy_dataset()
-  let trainer = Trainer::new(
+  let trainer = @moongrad.Trainer::new(
     [2, 6, 1],
-    [Activation::Tanh, Activation::Identity],
+    [@moongrad.Activation::Tanh, @moongrad.Activation::Identity],
     d,
-    LossKind::Mse,
-    Optimizer::Adam(0.05),
+    @moongrad.LossKind::Mse,
+    @moongrad.Optimizer::Adam(0.05),
     6,
   )
   let first = trainer.train_step(-1.0)
@@ -224,12 +224,12 @@ test "gradient_norm_falls_as_the_run_converges" {
 ///|
 test "a_learning_rate_override_takes_effect" {
   let d = toy_dataset()
-  let trainer = Trainer::new(
+  let trainer = @moongrad.Trainer::new(
     [2, 4, 1],
-    [Activation::Tanh, Activation::Identity],
+    [@moongrad.Activation::Tanh, @moongrad.Activation::Identity],
     d,
-    LossKind::Mse,
-    Optimizer::Adam(0.05),
+    @moongrad.LossKind::Mse,
+    @moongrad.Optimizer::Adam(0.05),
     8,
   )
   // The first step uses the configured optimiser and moves the
@@ -247,17 +247,17 @@ test "a_learning_rate_override_takes_effect" {
 ///|
 test "fit_runs_the_requested_number_of_steps" {
   let d = toy_dataset()
-  let trainer = Trainer::new(
+  let trainer = @moongrad.Trainer::new(
     [2, 4, 1],
-    [Activation::Tanh, Activation::Identity],
+    [@moongrad.Activation::Tanh, @moongrad.Activation::Identity],
     d,
-    LossKind::Mse,
-    Optimizer::Adam(0.05),
+    @moongrad.LossKind::Mse,
+    @moongrad.Optimizer::Adam(0.05),
     2,
   )
   let final_loss = trainer.fit(20)
   assert_eq(trainer.step_count, 20)
-  check(is_finite(final_loss), "fit should return a finite loss")
+  check(@moongrad.is_finite(final_loss), "fit should return a finite loss")
 }
 
 ///|
@@ -266,12 +266,12 @@ test "the_graph_is_built_once_and_reused" {
   // not grow as training proceeds. If it did, a long run would
   // slowly run out of memory for no visible reason.
   let d = toy_dataset()
-  let trainer = Trainer::new(
+  let trainer = @moongrad.Trainer::new(
     [2, 6, 1],
-    [Activation::Tanh, Activation::Identity],
+    [@moongrad.Activation::Tanh, @moongrad.Activation::Identity],
     d,
-    LossKind::Mse,
-    Optimizer::Adam(0.05),
+    @moongrad.LossKind::Mse,
+    @moongrad.Optimizer::Adam(0.05),
     3,
   )
   let nodes_before = trainer.graph.len()
@@ -286,12 +286,12 @@ test "the_graph_is_built_once_and_reused" {
 ///|
 test "the_trainer_reports_its_initial_and_final_loss" {
   let d = toy_dataset()
-  let trainer = Trainer::new(
+  let trainer = @moongrad.Trainer::new(
     [2, 4, 1],
-    [Activation::Tanh, Activation::Identity],
+    [@moongrad.Activation::Tanh, @moongrad.Activation::Identity],
     d,
-    LossKind::Mse,
-    Optimizer::Adam(0.05),
+    @moongrad.LossKind::Mse,
+    @moongrad.Optimizer::Adam(0.05),
     5,
   )
   assert_eq(trainer.initial_loss(), 0.0)
@@ -307,12 +307,12 @@ test "the_trainer_reports_its_initial_and_final_loss" {
 ///|
 test "initial_loss_of_an_untouched_trainer_is_zero" {
   let d = toy_dataset()
-  let trainer = Trainer::new(
+  let trainer = @moongrad.Trainer::new(
     [2, 4, 1],
-    [Activation::Tanh, Activation::Identity],
+    [@moongrad.Activation::Tanh, @moongrad.Activation::Identity],
     d,
-    LossKind::Mse,
-    Optimizer::Adam(0.05),
+    @moongrad.LossKind::Mse,
+    @moongrad.Optimizer::Adam(0.05),
     5,
   )
   assert_eq(trainer.initial_loss(), 0.0)

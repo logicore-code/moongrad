@@ -6,7 +6,7 @@
 
 ///|
 test "zeros_has_the_requested_shape" {
-  let m = Matrix::zeros(3, 4)
+  let m = @moongrad.Matrix::zeros(3, 4)
   assert_eq(m.rows, 3)
   assert_eq(m.cols, 4)
   assert_eq(m.len(), 12)
@@ -15,7 +15,7 @@ test "zeros_has_the_requested_shape" {
 
 ///|
 test "set_and_get_round_trip" {
-  let m = Matrix::zeros(2, 3)
+  let m = @moongrad.Matrix::zeros(2, 3)
   m.set(1, 2, 7.5)
   assert_eq(m.get(1, 2), 7.5)
   assert_eq(m.get(1, 1), 0.0)
@@ -26,14 +26,14 @@ test "indexing_is_row_major" {
   // (1,2) of a 2x3 is element 5 of the flat array. Getting this
   // wrong would silently transpose every matrix product in the
   // layer code, so it is worth pinning.
-  let m = Matrix::zeros(2, 3)
+  let m = @moongrad.Matrix::zeros(2, 3)
   m.set(1, 2, 9.0)
   assert_eq(m.data[5], 9.0)
 }
 
 ///|
 test "identity_is_the_identity" {
-  let m = Matrix::identity(3)
+  let m = @moongrad.Matrix::identity(3)
   for i = 0; i < 3; i = i + 1 {
     assert_eq(m.get(i, i), 1.0)
     for j = 0; j < 3; j = j + 1 {
@@ -46,7 +46,7 @@ test "identity_is_the_identity" {
 
 ///|
 test "from_array_rejects_a_length_mismatch" {
-  let bad = Matrix::from_array(2, 2, [1.0, 2.0])
+  let bad = @moongrad.Matrix::from_array(2, 2, [1.0, 2.0])
   let rejected = match bad {
     None => true
     Some(_) => false
@@ -56,7 +56,7 @@ test "from_array_rejects_a_length_mismatch" {
 
 ///|
 test "from_array_accepts_a_matching_length" {
-  let ok = Matrix::from_array(2, 2, [1.0, 2.0, 3.0, 4.0])
+  let ok = @moongrad.Matrix::from_array(2, 2, [1.0, 2.0, 3.0, 4.0])
   match ok {
     Some(m) => {
       assert_eq(m.get(0, 0), 1.0)
@@ -69,8 +69,8 @@ test "from_array_accepts_a_matching_length" {
 ///|
 test "matrix_product_matches_the_hand_computation" {
   // [[1,2],[3,4]] * [[5,6],[7,8]] = [[19,22],[43,50]]
-  let a = Matrix::from_flat(2, 2, [1.0, 2.0, 3.0, 4.0])
-  let b = Matrix::from_flat(2, 2, [5.0, 6.0, 7.0, 8.0])
+  let a = @moongrad.Matrix::from_flat(2, 2, [1.0, 2.0, 3.0, 4.0])
+  let b = @moongrad.Matrix::from_flat(2, 2, [5.0, 6.0, 7.0, 8.0])
   match a.mul(b) {
     Some(c) => {
       assert_eq(c.get(0, 0), 19.0)
@@ -84,8 +84,8 @@ test "matrix_product_matches_the_hand_computation" {
 
 ///|
 test "matrix_product_rejects_mismatched_shapes" {
-  let a = Matrix::zeros(2, 3)
-  let b = Matrix::zeros(4, 5)
+  let a = @moongrad.Matrix::zeros(2, 3)
+  let b = @moongrad.Matrix::zeros(4, 5)
   let r = a.mul(b)
   let rejected = match r {
     None => true
@@ -97,8 +97,8 @@ test "matrix_product_rejects_mismatched_shapes" {
 ///|
 test "mul_t_is_the_transposed_product" {
   // [[1,2],[3,4]] * [[5,7],[6,8]]^T = [[19,22],[43,50]]
-  let a = Matrix::from_flat(2, 2, [1.0, 2.0, 3.0, 4.0])
-  let b = Matrix::from_flat(2, 2, [5.0, 7.0, 6.0, 8.0])
+  let a = @moongrad.Matrix::from_flat(2, 2, [1.0, 2.0, 3.0, 4.0])
+  let b = @moongrad.Matrix::from_flat(2, 2, [5.0, 7.0, 6.0, 8.0])
   match a.mul_t(b) {
     Some(c) => {
       assert_eq(c.get(0, 0), 19.0)
@@ -110,7 +110,7 @@ test "mul_t_is_the_transposed_product" {
 
 ///|
 test "transpose_round_trips" {
-  let a = Matrix::from_flat(2, 3, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+  let a = @moongrad.Matrix::from_flat(2, 3, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
   let t = a.transpose()
   assert_eq(t.rows, 3)
   assert_eq(t.cols, 2)
@@ -123,8 +123,8 @@ test "transpose_round_trips" {
 
 ///|
 test "element_wise_operations" {
-  let a = Matrix::from_flat(2, 2, [1.0, 2.0, 3.0, 4.0])
-  let b = Matrix::from_flat(2, 2, [10.0, 20.0, 30.0, 40.0])
+  let a = @moongrad.Matrix::from_flat(2, 2, [1.0, 2.0, 3.0, 4.0])
+  let b = @moongrad.Matrix::from_flat(2, 2, [10.0, 20.0, 30.0, 40.0])
   assert_eq(a.add(b).get(0, 0), 11.0)
   assert_eq(b.sub(a).get(1, 1), 36.0)
   assert_eq(a.scale(3.0).get(0, 1), 6.0)
@@ -133,7 +133,7 @@ test "element_wise_operations" {
 
 ///|
 test "sum_mean_and_norm" {
-  let m = Matrix::from_flat(2, 2, [3.0, 4.0, 0.0, 0.0])
+  let m = @moongrad.Matrix::from_flat(2, 2, [3.0, 4.0, 0.0, 0.0])
   assert_eq(m.sum(), 7.0)
   assert_eq(m.mean(), 1.75)
   assert_eq(m.norm(), 5.0)
@@ -141,21 +141,21 @@ test "sum_mean_and_norm" {
 
 ///|
 test "max_abs_finds_the_largest_magnitude" {
-  let m = Matrix::from_flat(1, 3, [1.0, -9.0, 4.0])
+  let m = @moongrad.Matrix::from_flat(1, 3, [1.0, -9.0, 4.0])
   assert_eq(m.max_abs(), 9.0)
 }
 
 ///|
 test "all_finite_rejects_a_poisoned_matrix" {
-  let good = Matrix::from_flat(1, 2, [1.0, 2.0])
+  let good = @moongrad.Matrix::from_flat(1, 2, [1.0, 2.0])
   check(good.all_finite(), "1 and 2 are finite")
-  let bad = Matrix::from_flat(1, 2, [1.0, 0.0 / 0.0])
+  let bad = @moongrad.Matrix::from_flat(1, 2, [1.0, 0.0 / 0.0])
   check(!bad.all_finite(), "NaN must be reported")
 }
 
 ///|
 test "column_builds_a_vector" {
-  let v = Matrix::column([1.0, 2.0, 3.0])
+  let v = @moongrad.Matrix::column([1.0, 2.0, 3.0])
   assert_eq(v.rows, 3)
   assert_eq(v.cols, 1)
   assert_eq(v.get(2, 0), 3.0)
@@ -163,8 +163,8 @@ test "column_builds_a_vector" {
 
 ///|
 test "flat_round_trip_preserves_everything" {
-  let a = Matrix::from_flat(3, 2, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
-  let b = Matrix::from_flat(3, 2, a.to_array())
+  let a = @moongrad.Matrix::from_flat(3, 2, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+  let b = @moongrad.Matrix::from_flat(3, 2, a.to_array())
   for i = 0; i < a.len(); i = i + 1 {
     assert_eq(b.data[i], a.data[i])
   }
@@ -172,13 +172,13 @@ test "flat_round_trip_preserves_everything" {
 
 ///|
 test "preview_truncates_wide_rows" {
-  let m = Matrix::zeros(2, 10)
+  let m = @moongrad.Matrix::zeros(2, 10)
   let s = m.preview(3)
   check(s.contains("..."), "a truncated preview should say so: \{s}")
 }
 
 ///|
 test "format_double_rounds_to_four_places" {
-  assert_eq(format_double(1.0 / 3.0), "0.3333")
-  assert_eq(format_double(2.0), "2")
+  assert_eq(@moongrad.format_double(1.0 / 3.0), "0.3333")
+  assert_eq(@moongrad.format_double(2.0), "2")
 }

@@ -32,12 +32,18 @@ pub(all) struct Sample {
 } derive(Debug)
 
 ///|
+pub extend Sample with Debug::{to_repr}
+
+///|
 /// A dataset with a fixed layout.
 pub(all) struct Dataset {
   samples : Array[Sample]
   n_in : Int
   n_out : Int
 } derive(Debug)
+
+///|
+pub extend Dataset with Debug::{to_repr}
 
 ///|
 /// A dataset from parallel arrays. Returns `None` on a ragged
@@ -99,6 +105,9 @@ pub(all) struct StepReport {
 } derive(Debug)
 
 ///|
+pub extend StepReport with Debug::{to_repr}
+
+///|
 /// A training run, holding everything the loop needs between steps.
 pub(all) struct Trainer {
   /// The graph, built once.
@@ -132,6 +141,9 @@ pub(all) struct Trainer {
 } derive(Debug)
 
 ///|
+pub extend Trainer with Debug::{to_repr}
+
+///|
 /// Which loss the trainer should build.
 pub(all) enum LossKind {
   /// Mean squared error. For regression.
@@ -139,6 +151,12 @@ pub(all) enum LossKind {
   /// Binary cross-entropy. For a single sigmoid output.
   Bce
 } derive(Debug, Eq)
+
+///|
+pub extend LossKind with Debug::{to_repr}
+
+///|
+pub extend LossKind with Eq::{equal, not_equal}
 
 ///|
 /// Build a trainer over the whole dataset, as one full batch.

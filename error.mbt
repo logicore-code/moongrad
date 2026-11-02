@@ -26,6 +26,9 @@ pub suberror ADError {
 } derive(Debug)
 
 ///|
+pub extend ADError with Debug::{to_repr}
+
+///|
 /// Human-readable form, used by the REPL and the example binaries.
 pub fn ADError::describe(self : ADError) -> String {
   match self {

@@ -48,6 +48,12 @@ pub(all) enum Optimizer {
 } derive(Debug, Eq)
 
 ///|
+pub extend Optimizer with Debug::{to_repr}
+
+///|
+pub extend Optimizer with Eq::{equal, not_equal}
+
+///|
 /// Per-parameter optimiser state. Held as parallel arrays keyed by
 /// parameter index rather than inside the parameters themselves, so
 /// a single optimiser can drive several networks.
@@ -58,6 +64,9 @@ pub(all) struct OptimizerState {
   /// Squared velocity for Adam.
   v : Array[Double]
 } derive(Debug)
+
+///|
+pub extend OptimizerState with Debug::{to_repr}
 
 ///|
 /// Fresh state for `count` parameters.

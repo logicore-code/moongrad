@@ -6,3 +6,4 @@ target
 .moonagent/
 *.ppm
 *.bmp
+pkg.generated.mbti

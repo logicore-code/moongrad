@@ -23,6 +23,9 @@ pub(all) struct Binding {
 } derive(Debug)
 
 ///|
+pub extend Binding with Debug::{to_repr}
+
+///|
 /// An empty binding.
 pub fn Binding::new() -> Binding {
   { vars: [], params: [], }
@@ -58,6 +61,9 @@ pub(all) struct ForwardResult {
   /// Value of the node the caller asked about.
   output : Double
 } derive(Debug)
+
+///|
+pub extend ForwardResult with Debug::{to_repr}
 
 ///|
 /// Evaluate every node of `g` under `b` and return the value of
@@ -167,6 +173,12 @@ pub(all) struct Dual {
   value : Double
   tangent : Double
 } derive(Debug, Eq)
+
+///|
+pub extend Dual with Debug::{to_repr}
+
+///|
+pub extend Dual with Eq::{equal, not_equal}
 
 ///|
 /// Lift a plain value with zero tangent.

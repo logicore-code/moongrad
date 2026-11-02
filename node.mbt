@@ -38,6 +38,15 @@ pub(all) enum UnaryOp {
 } derive(Hash, Eq, Debug)
 
 ///|
+pub extend UnaryOp with Hash::{hash, hash_combine}
+
+///|
+pub extend UnaryOp with Debug::{to_repr}
+
+///|
+pub extend UnaryOp with Eq::{equal, not_equal}
+
+///|
 /// Infix operators with constant arity.
 pub(all) enum BinaryOp {
   Add
@@ -45,6 +54,15 @@ pub(all) enum BinaryOp {
   Mul
   Div
 } derive(Hash, Eq, Debug)
+
+///|
+pub extend BinaryOp with Hash::{hash, hash_combine}
+
+///|
+pub extend BinaryOp with Debug::{to_repr}
+
+///|
+pub extend BinaryOp with Eq::{equal, not_equal}
 
 ///|
 /// One slot of the computation graph.
@@ -66,6 +84,15 @@ pub(all) enum Node {
   /// direction.
   PowBy(Double, Int)
 } derive(Hash, Eq, Debug)
+
+///|
+pub extend Node with Hash::{hash, hash_combine}
+
+///|
+pub extend Node with Debug::{to_repr}
+
+///|
+pub extend Node with Eq::{equal, not_equal}
 
 ///|
 /// Symbol used when printing a graph in infix form.

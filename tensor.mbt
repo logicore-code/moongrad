@@ -25,6 +25,9 @@ pub(all) struct Matrix {
 } derive(Debug)
 
 ///|
+pub extend Matrix with Debug::{to_repr}
+
+///|
 /// A `rows x cols` matrix of zeros.
 pub fn Matrix::zeros(rows : Int, cols : Int) -> Matrix {
   let data : Array[Double] = []

@@ -49,6 +49,9 @@ pub(all) struct CheckpointReport {
 } derive(Debug)
 
 ///|
+pub extend CheckpointReport with Debug::{to_repr}
+
+///|
 /// Fraction of peak memory saved against the naive tape, in [0, 1].
 pub fn CheckpointReport::reduction(self : CheckpointReport) -> Double {
   if self.naive_live == 0 {
@@ -74,6 +77,9 @@ pub(all) struct Segment {
   lo : Int
   hi : Int
 } derive(Debug)
+
+///|
+pub extend Segment with Debug::{to_repr}
 
 ///|
 /// Width of a segment.

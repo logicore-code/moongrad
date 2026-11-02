@@ -67,6 +67,9 @@ pub(all) struct GradGraph {
 } derive(Debug)
 
 ///|
+pub extend GradGraph with Debug::{to_repr}
+
+///|
 /// A primal graph paired with its compiled gradient.
 pub(all) struct Program {
   primal : Graph
@@ -77,6 +80,9 @@ pub(all) struct Program {
   /// Value of the differentiated node.
   output : Double
 } derive(Debug)
+
+///|
+pub extend Program with Debug::{to_repr}
 
 ///|
 /// Compile the gradient of `target` with respect to every variable

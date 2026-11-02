@@ -43,6 +43,12 @@ pub(all) struct Stats {
 } derive(Debug, Eq)
 
 ///|
+pub extend Stats with Debug::{to_repr}
+
+///|
+pub extend Stats with Eq::{equal, not_equal}
+
+///|
 /// An empty `Stats`.
 pub fn Stats::new() -> Stats {
   {
@@ -105,6 +111,9 @@ pub(all) struct Graph {
   intern_table : @hashmap.HashMap[Node, Int]
   mut stats : Stats
 } derive(Debug)
+
+///|
+pub extend Graph with Debug::{to_repr}
 
 ///|
 /// A graph with no nodes and no inputs.

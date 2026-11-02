@@ -6,6 +6,7 @@
 import {
   "logicore-code/moongrad",
   "moonbitlang/core/bench",
+  "moonbitlang/core/json",
 }
 
 pkgtype(kind: "executable")

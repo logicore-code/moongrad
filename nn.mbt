@@ -34,6 +34,12 @@ pub(all) enum Activation {
 } derive(Debug, Eq)
 
 ///|
+pub extend Activation with Debug::{to_repr}
+
+///|
+pub extend Activation with Eq::{equal, not_equal}
+
+///|
 /// Apply an activation to one scalar node.
 pub fn activate(g : Graph, a : Activation, x : Int) -> Int {
   match a {
@@ -52,6 +58,9 @@ pub(all) struct Param {
   /// Host-side copy, for the optimiser to update.
   mut weights : Matrix
 } derive(Debug)
+
+///|
+pub extend Param with Debug::{to_repr}
 
 ///|
 /// Declare a parameter of `rows x cols` shape in `g` and give it a
@@ -98,6 +107,9 @@ pub(all) struct Dense {
   has_bias : Bool
   act : Activation
 } derive(Debug)
+
+///|
+pub extend Dense with Debug::{to_repr}
 
 ///|
 /// A dense layer with weights drawn from a uniform distribution on
@@ -167,6 +179,9 @@ pub(all) struct MLP {
   layers : Array[Dense]
   param_slots : Array[Int]
 } derive(Debug)
+
+///|
+pub extend MLP with Debug::{to_repr}
 
 ///|
 /// A sequential stack. The last layer's activation is usually
@@ -319,6 +334,9 @@ pub(all) struct Lcg {
   mut hi : Int
   mut lo : Int
 } derive(Debug)
+
+///|
+pub extend Lcg with Debug::{to_repr}
 
 ///|
 /// An LCG with a fixed seed, in the 64-bit constants from Numerical
