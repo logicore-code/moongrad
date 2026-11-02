@@ -56,13 +56,9 @@ test "perf_suite" {
   let build_summary = @bench.single_bench(
     name="grad_compile_400_nodes",
     count=10,
-    fn() {
-      compile_once(400)
-    },
+    fn() { compile_once(400) },
   )
-  results.push(
-    build_summary |> @json.to_json |> (j => j.stringify()),
-  )
+  results.push(build_summary |> @json.to_json |> j => { j.stringify() })
 
   // --- the two passes ----------------------------------------------------
   let g = @moongrad.Graph::new()
@@ -92,9 +88,7 @@ test "perf_suite" {
       }
     },
   )
-  results.push(
-    forward_summary |> @json.to_json |> (j => j.stringify()),
-  )
+  results.push(forward_summary |> @json.to_json |> j => { j.stringify() })
 
   let backward_summary = @bench.single_bench(
     name="backward_400_nodes",
@@ -107,9 +101,7 @@ test "perf_suite" {
       }
     },
   )
-  results.push(
-    backward_summary |> @json.to_json |> (j => j.stringify()),
-  )
+  results.push(backward_summary |> @json.to_json |> j => { j.stringify() })
 
   let checkpoint_summary = @bench.single_bench(
     name="checkpointed_backward_400_nodes_8seg",
@@ -122,50 +114,40 @@ test "perf_suite" {
       }
     },
   )
-  results.push(
-    checkpoint_summary |> @json.to_json |> (j => j.stringify()),
-  )
+  results.push(checkpoint_summary |> @json.to_json |> j => { j.stringify() })
 
   // --- a whole training step --------------------------------------------
-  let step_summary = @bench.single_bench(
-    name="train_step_8x4",
-    count=10,
-    fn() {
-      let data = match @moongrad.Dataset::new(
-        [
-          [0.0, 0.0],
-          [0.1, 0.0],
-          [0.0, 0.1],
-          [1.0, 1.0],
-          [0.9, 1.0],
-          [1.0, 0.9],
-        ],
+  let step_summary = @bench.single_bench(name="train_step_8x4", count=10, fn() {
+    let data = match
+      @moongrad.Dataset::new(
+        [[0.0, 0.0], [0.1, 0.0], [0.0, 0.1], [1.0, 1.0], [0.9, 1.0], [1.0, 0.9]],
         [0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         1,
       ) {
-        Some(d) => d
-        None => return
-      }
-      let trainer = try @moongrad.Trainer::new(
+      Some(d) => d
+      None => return
+    }
+    let trainer = try
+      @moongrad.Trainer::new(
         [2, 8, 1],
         [@moongrad.Activation::Tanh, @moongrad.Activation::Identity],
         data,
         @moongrad.LossKind::Mse,
         @moongrad.Optimizer::Adam(0.05),
         1,
-      ) catch {
-        _ => return
-      } noraise {
-        v => v
-      }
-      let _ = try trainer.train_step(-1.0) catch {
-        _ => return
-      } noraise {
-        v => v
-      }
-    },
-  )
-  results.push(step_summary |> @json.to_json |> (j => j.stringify()))
+      )
+    catch {
+      _ => return
+    } noraise {
+      v => v
+    }
+    let _ = try trainer.train_step(-1.0) catch {
+      _ => return
+    } noraise {
+      v => v
+    }
+  })
+  results.push(step_summary |> @json.to_json |> j => { j.stringify() })
 
   println("=== moongrad benchmark results ===")
   for r in results {
