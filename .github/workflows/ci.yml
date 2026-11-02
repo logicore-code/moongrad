@@ -41,5 +41,8 @@ jobs:
             moon run "examples/$ex" --target native
           done
 
+      - name: Benchmarks (release build)
+        run: moon test --target native --release perf
+
       - name: Confirm every target compiles
         run: moon check --target all

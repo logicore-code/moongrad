@@ -71,6 +71,18 @@ shares no code with the reverse pass.
 
 151 unit tests, 0 compiler warnings.
 
+Measured on the native release build (see `docs/benchmark.md`):
+
+| Operation | Median |
+|---|---|
+| forward pass over 400 nodes | 21 µs |
+| backward pass (re-evaluating the compiled gradient) | 45 µs |
+| build + compile the gradient | 862 µs |
+
+The gap between the last two is the design's main cost, and it is a
+cost worth paying once: the training loop compiles at construction and
+re-evaluates every step.
+
 ## The language subset
 
 Special forms: `quote`, `if`, `define` (both forms), `set!`, `lambda`, `let`,
@@ -117,6 +129,8 @@ moon test          # 151 unit tests
 moon check         # 0 warnings, 0 errors
 moon fmt           # format
 moon build         # build for the preferred target (wasm)
+
+moon test --target native --release perf   # benchmarks
 ```
 
 The library targets `wasm`, `wasm-gc`, `js` and `native` from the same
