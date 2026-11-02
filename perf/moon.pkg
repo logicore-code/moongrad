@@ -1,0 +1,11 @@
+// Performance benchmarks — see bench.mbt.
+//
+// Run with `moon test --target native --release perf`; the timing
+// summary is printed to the test log.
+
+import {
+  "logicore-code/moongrad",
+  "moonbitlang/core/bench",
+}
+
+pkgtype(kind: "executable")
