@@ -6,7 +6,10 @@
 // then a cross-check that the two derivations agree.
 
 ///|
-fn hess_of(f_of : (Graph, Int, Int) -> Int raise ADError, xs : Array[Double]) -> Matrix raise ADError {
+fn hess_of(
+  f_of : (Graph, Int, Int) -> Int raise ADError,
+  xs : Array[Double],
+) -> Matrix raise ADError {
   let g = Graph::new()
   ignore(g.new_vars(xs.length()))
   let f = f_of(g, g.variable(0), g.variable(1))
@@ -53,9 +56,7 @@ test "hessian_of_a_transcendental_matches_the_closed_form" {
   // contributes a plain 1 alongside the exponential, and an engine
   // that only propagates through the exponential gets it wrong.
   let h = hess_of(
-    fn(g : Graph, x : Int, y : Int) -> Int raise ADError {
-      g.exp(g.mul(x, y))
-    },
+    fn(g : Graph, x : Int, y : Int) -> Int raise ADError { g.exp(g.mul(x, y)) },
     [0.5, 1.5],
   )
   let e = @math.exp(0.75)
@@ -290,7 +291,8 @@ test "newton_with_damping_still_descends" {
       let f1 = forward(g, binding_of([v[0]]), f).output
       check(f1 < f0, "a damped Newton step must decrease the objective")
     }
-    None => check(false, "damped newton_step should succeed on a convex quadratic")
+    None =>
+      check(false, "damped newton_step should succeed on a convex quadratic")
   }
 }
 
@@ -318,8 +320,7 @@ test "newton_falls_back_when_the_hessian_is_singular" {
     Some(_) => true
   }
   check(
-    refused,
-    "an undamped Newton step on a singular Hessian must be refused",
+    refused, "an undamped Newton step on a singular Hessian must be refused",
   )
   check(accepted, "damping should make the same step well posed")
 }

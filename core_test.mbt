@@ -24,7 +24,7 @@ fn check(cond : Bool, msg : String) -> Unit {
 
 ///|
 fn approx(a : Double, b : Double, tol : Double) -> Bool {
-  (a - b) < tol && (b - a) < tol
+  a - b < tol && b - a < tol
 }
 
 ///|
@@ -340,7 +340,12 @@ fn grad_of_x(
 
 ///|
 test "gradient_of_the_identity_is_one" {
-  assert_close(grad_of_x(fn(g, x) -> Int raise ADError { x }, 7.0), 1.0, 1.0e-12, "d/dx x")
+  assert_close(
+    grad_of_x(fn(g, x) -> Int raise ADError { x }, 7.0),
+    1.0,
+    1.0e-12,
+    "d/dx x",
+  )
 }
 
 ///|
@@ -373,12 +378,7 @@ test "gradient_of_a_cube_built_from_products" {
 test "gradient_of_exponential_is_itself" {
   let f = fn(g : Graph, x : Int) -> Int raise ADError { g.exp(x) }
   let at = 1.0
-  assert_close(
-    grad_of_x(f, at),
-    @math.exp(at),
-    1.0e-9,
-    "d/dx e^x at 1",
-  )
+  assert_close(grad_of_x(f, at), @math.exp(at), 1.0e-9, "d/dx e^x at 1")
 }
 
 ///|
@@ -405,7 +405,9 @@ test "gradient_of_tanh_is_one_minus_its_square" {
 ///|
 test "gradient_of_a_quotient" {
   // f(x) = 1/x, f' = -1/x^2
-  let f = fn(g : Graph, x : Int) -> Int raise ADError { g.div(g.constant(1.0), x) }
+  let f = fn(g : Graph, x : Int) -> Int raise ADError {
+    g.div(g.constant(1.0), x)
+  }
   assert_close(grad_of_x(f, 3.0), -1.0 / 9.0, 1.0e-12, "d/dx 1/x at 3")
 }
 
@@ -483,7 +485,10 @@ test "gradient_agrees_with_forward_mode" {
   let a = g.mul(x, y)
   let b = g.sin(a)
   let c = g.add(b, g.tanh(x))
-  let d = g.mul(c, g.div(g.constant(3.0), g.add(g.constant(1.0), g.pow(y, 2.0))))
+  let d = g.mul(
+    c,
+    g.div(g.constant(3.0), g.add(g.constant(1.0), g.pow(y, 2.0))),
+  )
   let e = g.exp(g.mul(d, g.constant(0.1)))
   let (grads, _p) = grad(g, binding_of([0.7, 1.3]), e)
   let (value, fdx) = forward_mode(g, binding_of([0.7, 1.3]), e, 0)
@@ -604,7 +609,7 @@ test "an_alternating_chain_matches_the_closed_form" {
   let c = @math.cos(at)
   let e1 = @math.exp(c)
   let s = @math.sin(e1)
-  let expected = @math.exp(s) * @math.cos(e1) * e1 * (-@math.sin(at))
+  let expected = @math.exp(s) * @math.cos(e1) * e1 * -@math.sin(at)
   assert_close(grads[0], expected, 1.0e-9, "d/dx exp(sin(exp(cos x)))")
 }
 

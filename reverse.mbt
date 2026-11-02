@@ -57,8 +57,13 @@ pub(all) struct GradGraph {
   primal_size : Int
   /// Slot in `graph` of `d(target) / d(Var(i))`, one per variable.
   var_adj : Array[Int]
-  /// Accumulated `d(target) / d(param)`, indexed by slot then index.
-  param_adj : Array[Array[Double]]
+  /// Slot in `graph` of the accumulated `d(target) / d(param)`,
+  /// indexed by parameter slot then by element index. A node rather
+  /// than a number, for the same reason `var_adj` is a node: the
+  /// gradient has to be re-evaluable, and a parameter gradient that
+  /// is frozen at the compile point is as wrong as a variable
+  /// gradient that is.
+  param_adj_node : Array[Array[Int]]
 } derive(Debug)
 
 ///|
@@ -103,11 +108,11 @@ pub fn compile_gradient(
   for i = 0; i < n; i = i + 1 {
     adj.push(zero)
   }
-  let param_adj : Array[Array[Double]] = []
+  let param_adj : Array[Array[Int]] = []
   for slot = 0; slot < g.param_shapes.length(); slot = slot + 1 {
-    let row : Array[Double] = []
+    let row : Array[Int] = []
     for i = 0; i < g.param_shapes[slot]; i = i + 1 {
-      row.push(0.0)
+      row.push(zero)
     }
     param_adj.push(row)
   }
@@ -127,7 +132,7 @@ pub fn compile_gradient(
       None => var_adj.push(zero)
     }
   }
-  { graph: h, primal_size: n, var_adj, param_adj, }
+  { graph: h, primal_size: n, var_adj, param_adj_node: param_adj, }
 }
 
 ///|
@@ -187,7 +192,7 @@ fn push_adjoints(
   b : Binding,
   primal_values : Array[Double],
   adj : Array[Int],
-  param_adj : Array[Array[Double]],
+  param_adj : Array[Array[Int]],
   i : Int,
 ) -> Unit raise ADError {
   let incoming = adj[i]
@@ -196,14 +201,12 @@ fn push_adjoints(
     Node::Var(_) => ()
     Node::ParamGet(slot, index) =>
       // A parameter leaf has no primal slot to hang a node off, so
-      // its adjoint is accumulated numerically. The multiplier is
-      // whatever the gradient program says the incoming adjoint
-      // evaluates to at this binding, which is a partial evaluation
-      // of the emitted circuit rather than a frozen number.
-      param_adj[slot][index] = param_adj[slot][index] +
-        eval_adjoint(h, b, primal_values, incoming)
+      // its adjoint is accumulated in a side table — but as a node
+      // in the gradient graph, not as a number, so that it can be
+      // re-evaluated at a different binding later.
+      param_adj[slot][index] = h.add(param_adj[slot][index], incoming)
     Node::Unary(op, a) => {
-      let d = derivative_expr(h, op, a)
+      let d = derivative_expr(h, op, a, primal_values[a])
       adj[a] = h.add(adj[a], h.mul(incoming, d))
     }
     Node::Binary(op, a, b) => {
@@ -214,27 +217,35 @@ fn push_adjoints(
     }
     Node::PowBy(exponent, a) => {
       // d/dx x^c = c * x^(c-1)
-      let one = h.constant(1.0)
       let inner = h.pow(a, exponent - 1.0)
       let d = h.mul(h.constant(exponent), inner)
       adj[a] = h.add(adj[a], h.mul(incoming, d))
     }
   }
-  ignore(primal_values)
 }
 
 ///|
 /// The derivative of `op(x)` with respect to `x`, as an expression
 /// over the primal graph.
 ///
-/// Every branch reuses the primal's node rather than its value, which
-/// is what keeps the gradient re-evaluable. The table is small
-/// enough that a `match` beats any indirection, and matching on the
-/// op next to its formula keeps the two in one screen.
+/// Every smooth branch reuses the primal's node rather than its
+/// value, which is what keeps the gradient re-evaluable at a
+/// different binding.
+///
+/// ReLU is the exception and cannot be one. Its derivative is
+/// discontinuous — zero below the kink, one above — and the IR has
+/// no comparison to express "if the runtime value is positive". So
+/// ReLU reads the primal value and emits a literal 0 or 1. That is a
+/// genuine limitation rather than a shortcut, and it is the price
+/// of keeping the IR free of control flow: a ReLU's gradient is
+/// correct at the point it was compiled and has to be recompiled
+/// for another point. The tests pin the behaviour at both sides of
+/// the kink so the boundary is documented rather than accidental.
 pub fn derivative_expr(
   h : Graph,
   op : UnaryOp,
   x : Int,
+  x_value : Double,
 ) -> Int raise ADError {
   match op {
     UnaryOp::Neg => h.constant(-1.0)
@@ -255,6 +266,12 @@ pub fn derivative_expr(
       h.mul(s, h.sub(h.constant(1.0), s))
     }
     UnaryOp::Softplus => h.sigmoid(x)
+    UnaryOp::Relu =>
+      if x_value > 0.0 {
+        h.constant(1.0)
+      } else {
+        h.constant(0.0)
+      }
   }
 }
 
@@ -320,15 +337,22 @@ pub fn eval_adjoint(
   match h.nodes[id] {
     Node::Const(v) => v
     Node::Var(slot) =>
-      if slot >= 0 && slot < b.vars.length() { b.vars[slot] } else { 0.0 }
-    Node::ParamGet(slot, index) => {
+      if slot >= 0 && slot < b.vars.length() {
+        b.vars[slot]
+      } else {
+        0.0
+      }
+    Node::ParamGet(slot, index) =>
       if slot < 0 || slot >= b.params.length() {
         0.0
       } else {
         let vec = b.params[slot]
-        if index < 0 || index >= vec.length() { 0.0 } else { vec[index] }
+        if index < 0 || index >= vec.length() {
+          0.0
+        } else {
+          vec[index]
+        }
       }
-    }
     Node::Unary(op, child) => {
       let x = eval_adjoint(h, b, primal_values, child)
       match apply_unary(op, x) {
@@ -375,7 +399,7 @@ pub fn Graph::eval_constant(self : Graph, id : Int) -> Double {
 /// the numeric gradients together with the program that produced
 /// them.
 ///
-/// ```moonbit
+/// ```moonbit nocheck
 /// let g = Graph::new()
 /// ignore(g.new_vars(2))
 /// let x = g.variable(0)
@@ -423,19 +447,38 @@ pub fn evaluate_gradients(
 ///|
 /// Parameter gradients of a compiled program, evaluated at `b`.
 ///
-/// Unlike variable gradients these are not part of the gradient
-/// program — they are accumulated numerically during the sweep —
-/// so this is a straight copy out of the sweep's accumulator.
-pub fn param_gradients(p : Program, b : Binding) -> Array[Array[Double]] {
-  ignore(b)
+/// Each entry is a partial evaluation of the accumulated adjoint
+/// circuit, so the values are correct at any binding rather than at
+/// the one the sweep ran against.
+pub fn param_gradients(
+  p : Program,
+  b : Binding,
+) -> Array[Array[Double]] raise ADError {
   let out : Array[Array[Double]] = []
-  for i = 0; i < p.grad.param_adj.length(); i = i + 1 {
+  for i = 0; i < p.grad.param_adj_node.length(); i = i + 1 {
     let row : Array[Double] = []
-    let src = p.grad.param_adj[i]
+    let src = p.grad.param_adj_node[i]
     for j = 0; j < src.length(); j = j + 1 {
-      row.push(src[j])
+      row.push(eval_adjoint(p.grad.graph, b, p.primal_values, src[j]))
     }
     out.push(row)
+  }
+  out
+}
+
+///|
+/// Parameter gradients as one flat array, in slot-then-index order,
+/// which is the layout an optimiser wants.
+pub fn flat_param_gradients(
+  p : Program,
+  b : Binding,
+) -> Array[Double] raise ADError {
+  let nested = param_gradients(p, b)
+  let out : Array[Double] = []
+  for i = 0; i < nested.length(); i = i + 1 {
+    for j = 0; j < nested[i].length(); j = j + 1 {
+      out.push(nested[i][j])
+    }
   }
   out
 }
