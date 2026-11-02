@@ -1,0 +1,320 @@
+// train_test.mbt
+//
+// The training loop.
+//
+// The tests that matter are the ones that would fail if the loop had
+// a wiring mistake rather than a numerical one. A loop that forgets
+// to refresh the parameter binding trains forever on stale weights
+// and produces a perfectly flat loss curve, which is easy to
+// mistake for a learning-rate problem. `training_actually_moves_the
+// _loss` exists to rule that out.
+
+///|
+/// A small well-separated dataset: two clusters on the unit square.
+fn toy_dataset() -> Dataset {
+  let xs : Array[Array[Double]] = [
+    [0.0, 0.0],
+    [0.1, 0.0],
+    [0.0, 0.1],
+    [0.1, 0.1],
+    [0.9, 0.9],
+    [1.0, 0.9],
+    [0.9, 1.0],
+    [1.0, 1.0],
+  ]
+  let ys : Array[Double] = [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]
+  let d = Dataset::new(xs, ys, 1)
+  match d {
+    Some(v) => v
+    None => {
+      check(false, "the toy dataset is well formed")
+      Dataset::{ samples: [], n_in: 2, n_out: 1, }
+    }
+  }
+}
+
+///|
+test "dataset_rejects_mismatched_lengths" {
+  let bad = Dataset::new([[1.0], [2.0]], [0.0], 1)
+  let rejected = match bad {
+    None => true
+    Some(_) => false
+  }
+  check(rejected, "two feature rows and one label is not a dataset")
+}
+
+///|
+test "dataset_rejects_a_ragged_feature_matrix" {
+  let bad = Dataset::new([[1.0, 2.0], [3.0]], [0.0, 1.0], 1)
+  let rejected = match bad {
+    None => true
+    Some(_) => false
+  }
+  check(rejected, "a ragged feature matrix must be rejected, not padded")
+}
+
+///|
+test "dataset_records_its_shape" {
+  let d = toy_dataset()
+  assert_eq(d.n_in, 2)
+  assert_eq(d.n_out, 1)
+  assert_eq(d.samples.length(), 8)
+}
+
+///|
+test "shuffled_indices_are_a_permutation" {
+  let idx = shuffled_indices(20, Lcg::new(3))
+  assert_eq(idx.length(), 20)
+  let mut seen = 0
+  for i in idx {
+    seen = seen + (1 << i)
+  }
+  // Every index set exactly once means the bitmask covers all 20.
+  assert_eq(seen, (1 << 20) - 1)
+}
+
+///|
+test "shuffled_indices_are_deterministic_for_a_seed" {
+  let a = shuffled_indices(10, Lcg::new(7))
+  let b = shuffled_indices(10, Lcg::new(7))
+  for i = 0; i < 10; i = i + 1 {
+    assert_eq(a[i], b[i])
+  }
+}
+
+///|
+test "shuffled_indices_actually_reorder" {
+  // A shuffle that returns the identity every time is a plausible
+  // bug in Fisher-Yates and would quietly bias any batched
+  // training.
+  let idx = shuffled_indices(50, Lcg::new(11))
+  let mut moved = 0
+  for i = 0; i < 50; i = i + 1 {
+    if idx[i] != i {
+      moved = moved + 1
+    }
+  }
+  check(moved > 30, "a shuffle should move most elements, moved \{moved}")
+}
+
+///|
+test "training_actually_moves_the_loss" {
+  // The regression this catches: a loop that updates the host-side
+  // parameters but never refreshes the binding, so the graph keeps
+  // reading the initial weights. The loss stays exactly flat.
+  let d = toy_dataset()
+  let trainer = Trainer::new(
+    [2, 8, 1],
+    [Activation::Tanh, Activation::Identity],
+    d,
+    LossKind::Mse,
+    Optimizer::Adam(0.05),
+    42,
+  )
+  let first = trainer.train_step(-1.0)
+  for _i = 0; _i < 300; _i = _i + 1 {
+    ignore(trainer.train_step(-1.0))
+  }
+  let last = trainer.train_step(-1.0)
+  check(
+    last.loss < first.loss * 0.2,
+    "loss should fall by 5x: first \{first.loss}, last \{last.loss}",
+  )
+  check(last.ok, "the run should stay finite throughout")
+}
+
+///|
+test "loss_history_has_one_entry_per_step" {
+  let d = toy_dataset()
+  let trainer = Trainer::new(
+    [2, 4, 1],
+    [Activation::Tanh, Activation::Identity],
+    d,
+    LossKind::Mse,
+    Optimizer::Adam(0.05),
+    1,
+  )
+  for _i = 0; _i < 17; _i = _i + 1 {
+    ignore(trainer.train_step(-1.0))
+  }
+  assert_eq(trainer.loss_history().length(), 17)
+  assert_eq(trainer.step_count, 17)
+}
+
+///|
+test "loss_history_is_non_increasing_on_average" {
+  // Not a strict decrease: a single Adam step can overshoot. The
+  // mean of the first fifth and the last fifth is the honest
+  // measure of whether the optimiser is working at all.
+  let d = toy_dataset()
+  let trainer = Trainer::new(
+    [2, 6, 1],
+    [Activation::Tanh, Activation::Identity],
+    d,
+    LossKind::Mse,
+    Optimizer::Adam(0.05),
+    9,
+  )
+  for _i = 0; _i < 200; _i = _i + 1 {
+    ignore(trainer.train_step(-1.0))
+  }
+  let h = trainer.loss_history()
+  let n = h.length()
+  let head = mean_slice(h, 0, n / 5)
+  let tail = mean_slice(h, n - n / 5, n)
+  check(tail < head, "late loss \\{tail} should be below early loss \\{head}")
+}
+
+///|
+fn mean_slice(xs : Array[Double], lo : Int, hi : Int) -> Double {
+  let mut acc = 0.0
+  for i = lo; i < hi; i = i + 1 {
+    acc = acc + xs[i]
+  }
+  if hi <= lo {
+    return 0.0
+  }
+  acc / (hi - lo).to_double()
+}
+
+///|
+test "binary_cross_entropy_training_reduces_the_loss" {
+  let d = toy_dataset()
+  let trainer = Trainer::new(
+    [2, 6, 1],
+    [Activation::Tanh, Activation::Sigmoid],
+    d,
+    LossKind::Bce,
+    Optimizer::Adam(0.05),
+    4,
+  )
+  let first = trainer.train_step(-1.0)
+  for _i = 0; _i < 250; _i = _i + 1 {
+    ignore(trainer.train_step(-1.0))
+  }
+  let last = trainer.train_step(-1.0)
+  check(
+    last.loss < first.loss,
+    "BCE should fall: first \{first.loss}, last \{last.loss}",
+  )
+}
+
+///|
+test "gradient_norm_falls_as_the_run_converges" {
+  let d = toy_dataset()
+  let trainer = Trainer::new(
+    [2, 6, 1],
+    [Activation::Tanh, Activation::Identity],
+    d,
+    LossKind::Mse,
+    Optimizer::Adam(0.05),
+    6,
+  )
+  let first = trainer.train_step(-1.0)
+  for _i = 0; _i < 250; _i = _i + 1 {
+    ignore(trainer.train_step(-1.0))
+  }
+  let last = trainer.train_step(-1.0)
+  check(
+    last.grad_norm < first.grad_norm,
+    "gradient norm should fall: \{first.grad_norm} -> \{last.grad_norm}",
+  )
+}
+
+///|
+test "a_learning_rate_override_takes_effect" {
+  let d = toy_dataset()
+  let trainer = Trainer::new(
+    [2, 4, 1],
+    [Activation::Tanh, Activation::Identity],
+    d,
+    LossKind::Mse,
+    Optimizer::Adam(0.05),
+    8,
+  )
+  // The first step uses the configured optimiser and moves the
+  // weights. Every step after that uses the override, and an
+  // override of zero means the weights cannot move at all, so the
+  // loss from step 2 onwards must be constant.
+  ignore(trainer.train_step(-1.0))
+  let a = trainer.train_step(0.0).loss
+  let b = trainer.train_step(0.0).loss
+  let c = trainer.train_step(0.0).loss
+  assert_close(b, a, 1.0e-12, "a zero learning rate freezes the loss (a vs b)")
+  assert_close(c, b, 1.0e-12, "a zero learning rate freezes the loss (b vs c)")
+}
+
+///|
+test "fit_runs_the_requested_number_of_steps" {
+  let d = toy_dataset()
+  let trainer = Trainer::new(
+    [2, 4, 1],
+    [Activation::Tanh, Activation::Identity],
+    d,
+    LossKind::Mse,
+    Optimizer::Adam(0.05),
+    2,
+  )
+  let final_loss = trainer.fit(20)
+  assert_eq(trainer.step_count, 20)
+  check(is_finite(final_loss), "fit should return a finite loss")
+}
+
+///|
+test "the_graph_is_built_once_and_reused" {
+  // The whole point of compiling the gradient once: the graph must
+  // not grow as training proceeds. If it did, a long run would
+  // slowly run out of memory for no visible reason.
+  let d = toy_dataset()
+  let trainer = Trainer::new(
+    [2, 6, 1],
+    [Activation::Tanh, Activation::Identity],
+    d,
+    LossKind::Mse,
+    Optimizer::Adam(0.05),
+    3,
+  )
+  let nodes_before = trainer.graph.len()
+  let grad_before = trainer.grad_graph.len()
+  for _i = 0; _i < 100; _i = _i + 1 {
+    ignore(trainer.train_step(-1.0))
+  }
+  assert_eq(trainer.graph.len(), nodes_before)
+  assert_eq(trainer.grad_graph.len(), grad_before)
+}
+
+///|
+test "the_trainer_reports_its_initial_and_final_loss" {
+  let d = toy_dataset()
+  let trainer = Trainer::new(
+    [2, 4, 1],
+    [Activation::Tanh, Activation::Identity],
+    d,
+    LossKind::Mse,
+    Optimizer::Adam(0.05),
+    5,
+  )
+  assert_eq(trainer.initial_loss(), 0.0)
+  for _i = 0; _i < 10; _i = _i + 1 {
+    ignore(trainer.train_step(-1.0))
+  }
+  check(
+    trainer.initial_loss() != trainer.final_loss(),
+    "the loss should have moved after ten steps",
+  )
+}
+
+///|
+test "initial_loss_of_an_untouched_trainer_is_zero" {
+  let d = toy_dataset()
+  let trainer = Trainer::new(
+    [2, 4, 1],
+    [Activation::Tanh, Activation::Identity],
+    d,
+    LossKind::Mse,
+    Optimizer::Adam(0.05),
+    5,
+  )
+  assert_eq(trainer.initial_loss(), 0.0)
+  assert_eq(trainer.final_loss(), 0.0)
+}
