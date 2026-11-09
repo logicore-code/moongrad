@@ -48,6 +48,13 @@ pub(all) enum TNode {
   Concat(Int, Int, Int)
   /// A slice along one axis.
   Slice(Int, Int, Int, Int)
+  /// Multiply by a constant tensor held in the pool.
+  ScaleBy(Int, Int)
+  /// Read one row of a parameter vector.
+  GatherRow(Int, Int, Int)
+  /// A 2-D convolution. The operands are the input and the weight;
+  /// the rest are the geometry.
+  Conv2d(Int, Int, Int, Int, Int, Int, Int, Int, Int, Int)
 } derive(Debug)
 
 ///|
@@ -62,12 +69,14 @@ pub(all) struct TGraph {
   mut nodes : Array[TNode]
   mut pool : Array[Tensor]
   mut values : Array[Tensor]
+  /// The shape of every node's value, filled by the forward pass.
+  mut shapes : Array[Array[Int]]
 } derive(Debug)
 
 ///|
 /// An empty tensor graph.
 pub fn TGraph::new() -> TGraph {
-  { nodes: [], pool: [], values: [], }
+  { nodes: [], pool: [], values: [], shapes: [], }
 }
 
 ///|
@@ -160,6 +169,62 @@ pub fn TGraph::slice(
 }
 
 ///|
+/// Multiply a node by a constant tensor.
+pub fn TGraph::scale_tensor(self : TGraph, x : Int, k : Tensor) -> Int {
+  let slot = self.constant(k)
+  self.nodes.push(TNode::ScaleBy(x, slot))
+  self.nodes.length() - 1
+}
+
+///|
+/// Read one row of a parameter vector.
+pub fn TGraph::gather_row(
+  self : TGraph,
+  param_slot : Int,
+  index : Int,
+  dim : Int,
+) -> Int {
+  self.nodes.push(TNode::GatherRow(param_slot, index, dim))
+  self.nodes.length() - 1
+}
+
+///|
+/// The shape of a node's value, as recorded by the last forward
+/// pass. Returns an empty shape for a node that has not been
+/// evaluated.
+pub fn TGraph::last_shape(self : TGraph, x : Int) -> Array[Int] {
+  if x >= 0 && x < self.shapes.length() {
+    self.shapes[x].copy()
+  } else {
+    []
+  }
+}
+
+///|
+/// A 2-D convolution node.
+pub fn TGraph::conv2d(
+  self : TGraph,
+  input : Int,
+  weight : Int,
+  in_channels : Int,
+  out_channels : Int,
+  kernel_h : Int,
+  kernel_w : Int,
+  stride_h : Int,
+  stride_w : Int,
+  pad_h : Int,
+  pad_w : Int,
+) -> Int {
+  self.nodes.push(
+    TNode::Conv2d(
+      input, weight, in_channels, out_channels, kernel_h, kernel_w, stride_h, stride_w,
+      pad_h, pad_w,
+    ),
+  )
+  self.nodes.length() - 1
+}
+
+///|
 /// The inputs and parameters a tensor graph is evaluated against.
 pub(all) struct TBinding {
   /// Value of each input tensor, indexed by slot.
@@ -202,6 +267,14 @@ pub fn t_forward(g : TGraph, b : TBinding) -> Array[Tensor] {
   }
   for i = 0; i < n; i = i + 1 {
     values[i] = t_eval_node(g, b, values, i)
+  }
+  // Record the shapes so a layer can ask for a node's shape
+  // without re-running the forward pass.
+  while g.shapes.length() < n {
+    g.shapes.push([])
+  }
+  for i = 0; i < n; i = i + 1 {
+    g.shapes[i] = values[i].shape.copy()
   }
   values
 }
@@ -263,6 +336,45 @@ fn t_eval_node(
         Some(t) => t
         None => Tensor::zeros([])
       }
+    TNode::ScaleBy(child, slot) => t_mul_or(values[child], g.pool[slot])
+    TNode::Conv2d(
+      input,
+      weight,
+      in_channels,
+      out_channels,
+      kernel_h,
+      kernel_w,
+      stride_h,
+      stride_w,
+      pad_h,
+      pad_w
+    ) =>
+      match
+        t_conv2d(
+          values[input],
+          values[weight],
+          None,
+          stride_h,
+          stride_w,
+          pad_h,
+          pad_w,
+        ) {
+        Some(t) => t
+        None => Tensor::zeros([])
+      }
+    TNode::GatherRow(param_slot, index, dim) => {
+      let row = Tensor::zeros([dim])
+      if param_slot >= 0 && param_slot < b.params.length() {
+        let table = b.params[param_slot]
+        for i = 0; i < dim; i = i + 1 {
+          let src = index * dim + i
+          if src >= 0 && src < table.data.length() {
+            row.data[i] = table.data[src]
+          }
+        }
+      }
+      row
+    }
   }
 }
 
@@ -299,7 +411,7 @@ pub fn t_grad(g : TGraph, b : TBinding, target : Int) -> TGrad {
   }
   let param_grads : Array[Tensor] = []
   for i = 0; i < b.params.length(); i = i + 1 {
-    param_grads.push(Tensor::zeros([]))
+    param_grads.push(Tensor::zeros(b.params[i].shape))
   }
   if target < 0 || target >= n {
     return { input_grads, param_grads, output: Tensor::zeros([]), }
@@ -498,6 +610,126 @@ fn t_push_adjoints(
       adj[a] = t_add_or(adj[a], pa)
       adj[c] = t_add_or(adj[c], pc)
     }
+    TNode::ScaleBy(child, slot) => {
+      // d/dx = gbar * k, with k the same constant.
+      let contrib = t_mul_or(gbar, g.pool[slot])
+      adj[child] = t_add_or(adj[child], contrib)
+    }
+    TNode::Conv2d(
+      input,
+      weight,
+      in_channels,
+      out_channels,
+      kernel_h,
+      kernel_w,
+      stride_h,
+      stride_w,
+      pad_h,
+      pad_w
+    ) => {
+      let xi = values[input]
+      let wi = values[weight]
+      if xi.shape.length() != 4 || wi.shape.length() != 4 {
+        return
+      }
+      let batch = xi.shape[0]
+      let height = xi.shape[2]
+      let width = xi.shape[3]
+      let out_h = (height + 2 * pad_h - kernel_h) / stride_h + 1
+      let out_w = (width + 2 * pad_w - kernel_w) / stride_w + 1
+      if out_h <= 0 || out_w <= 0 {
+        return
+      }
+      let row_len = in_channels * kernel_h * kernel_w
+      // The incoming gradient is (batch, out_ch, out_h, out_w); the
+      // matrix form wants (batch*out_h*out_w, out_ch).
+      let gbar_t = match gbar.transpose([0, 2, 3, 1]) {
+        Some(t) => t
+        None => return
+      }
+      let gbar_rows = match
+        gbar_t.reshape([batch * out_h * out_w, out_channels]) {
+        Some(t) => t
+        None => return
+      }
+      // The weight flattened to (out_ch, row_len).
+      let w_flat = Tensor::zeros([out_channels, row_len])
+      for oc = 0; oc < out_channels; oc = oc + 1 {
+        for c = 0; c < in_channels; c = c + 1 {
+          for kh = 0; kh < kernel_h; kh = kh + 1 {
+            for kw = 0; kw < kernel_w; kw = kw + 1 {
+              let src = ((oc * in_channels + c) * kernel_h + kh) * kernel_w + kw
+              let dst = oc * row_len + (c * kernel_h + kh) * kernel_w + kw
+              w_flat.data[dst] = wi.data[src]
+            }
+          }
+        }
+      }
+      // d/d(patches) = d/out @ w
+      let d_patches = match gbar_rows.matmul(w_flat) {
+        Some(t) => t
+        None => return
+      }
+      // d/d(weight) = patches^T @ d/out
+      let padded = t_pad2d(xi, pad_h, pad_w)
+      let patches = t_im2col(
+        padded, out_h, out_w, in_channels, kernel_h, kernel_w, stride_h, stride_w,
+      )
+      let d_w_rows = match patches.transpose([1, 0]) {
+        Some(t) => t
+        None => return
+      }
+      let d_w_rows = match d_w_rows.matmul(gbar_rows) {
+        Some(t) => t
+        None => return
+      }
+      let d_w = match d_w_rows.transpose([1, 0]) {
+        Some(t) => t
+        None => return
+      }
+      let d_w = match
+        d_w.reshape([out_channels, in_channels, kernel_h, kernel_w]) {
+        Some(t) => t
+        None => return
+      }
+      // d/d(input) = col2im(d/d(patches)), cropped back out of the
+      // padding.
+      let d_padded = t_col2im(
+        d_patches,
+        batch,
+        height + 2 * pad_h,
+        width + 2 * pad_w,
+        out_h,
+        out_w,
+        in_channels,
+        kernel_h,
+        kernel_w,
+        stride_h,
+        stride_w,
+      )
+      let d_input = t_crop2d(d_padded, pad_h, pad_w)
+      adj[input] = t_add_or(adj[input], d_input)
+      // The weight's gradient goes to the parameter slot that holds
+      // it. The node only knows the weight's node id, so the
+      // gradient is parked on that node and picked up when the
+      // parameter read is reached.
+      adj[weight] = t_add_or(adj[weight], d_w)
+    }
+    TNode::GatherRow(param_slot, index, dim) =>
+      // The gradient of a gather is a scatter: one row of the
+      // parameter's gradient gets the incoming gradient.
+      if param_slot >= 0 && param_slot < param_grads.length() {
+        let full = param_grads[param_slot]
+        for i = 0; i < dim; i = i + 1 {
+          let dst = index * dim + i
+          if dst >= 0 && dst < full.data.length() {
+            full.data[dst] = full.data[dst] + gbar.data[i]
+          }
+        }
+        // The parameter's gradient may have been empty before; make
+        // sure it has the right size now.
+        param_grads[param_slot] = full
+      }
     TNode::Slice(child, axis, start, count) => {
       // The gradient of a slice is zero everywhere except in the
       // slice itself, where it is the incoming gradient.

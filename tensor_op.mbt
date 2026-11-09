@@ -221,13 +221,14 @@ pub fn t_transpose(a : Tensor) -> Tensor? {
 
 ///|
 /// Sum along one axis, dropping that axis from the result.
+///
+/// The output's shape has one axis fewer than the input's, and the
+/// data is laid out so that the surviving axes stay in order.
 pub fn t_sum_axis(a : Tensor, axis : Int) -> Tensor? {
   if axis < 0 || axis >= a.shape.length() {
     return None
   }
   let r = a.shape.length()
-  let new_shape = a.shape.copy()
-  new_shape[axis] = 1
   let mut outer = 1
   for d = 0; d < axis; d = d + 1 {
     outer = outer * a.shape[d]
@@ -237,7 +238,9 @@ pub fn t_sum_axis(a : Tensor, axis : Int) -> Tensor? {
     inner = inner * a.shape[d]
   }
   let len = a.shape[axis]
-  let out = Tensor::zeros(new_shape)
+  let out_shape = a.shape.copy()
+  ignore(out_shape.remove(axis))
+  let out = Tensor::zeros(out_shape)
   for o = 0; o < outer; o = o + 1 {
     for i = 0; i < len; i = i + 1 {
       for j = 0; j < inner; j = j + 1 {
@@ -247,15 +250,7 @@ pub fn t_sum_axis(a : Tensor, axis : Int) -> Tensor? {
       }
     }
   }
-  // Drop the axis we reduced over.
-  let final_shape = a.shape.copy()
-  let mut d = axis
-  while d < final_shape.length() - 1 {
-    final_shape[d] = final_shape[d + 1]
-    d = d + 1
-  }
-  ignore(final_shape.remove(axis))
-  Tensor::from_data(final_shape, out.data)
+  Some(out)
 }
 
 ///|
