@@ -52,6 +52,8 @@ pub(all) enum TNode {
   ScaleBy(Int, Int)
   /// Read one row of a parameter vector.
   GatherRow(Int, Int, Int)
+  /// `base ^ exponent`, with the exponent carried inline.
+  PowBy(Double, Int)
   /// A 2-D convolution. The operands are the input and the weight;
   /// the rest are the geometry.
   Conv2d(Int, Int, Int, Int, Int, Int, Int, Int, Int, Int)
@@ -111,6 +113,12 @@ pub fn TGraph::constant(self : TGraph, t : Tensor) -> Int {
   self.pool.push(t)
   self.nodes.push(TNode::Const(slot))
   self.nodes.length() - 1
+}
+
+///|
+/// An input tensor slot, by name of the slot.
+pub fn TGraph::variable(self : TGraph, slot : Int) -> Int {
+  self.input(slot)
 }
 
 ///|
@@ -239,6 +247,12 @@ pub fn TGraph::last_shape(self : TGraph, x : Int) -> Array[Int] {
 ///|
 /// Elementwise helpers, so that a layer reads like arithmetic
 /// rather than like graph construction.
+
+///|
+pub fn TGraph::pow(self : TGraph, x : Int, exponent : Double) -> Int {
+  self.nodes.push(TNode::PowBy(exponent, x))
+  self.nodes.length() - 1
+}
 
 ///|
 pub fn TGraph::add(self : TGraph, a : Int, b : Int) -> Int {
@@ -485,6 +499,7 @@ fn t_eval_node(
         }
       }
     TNode::ScaleBy(child, slot) => t_mul_or(values[child], g.pool[slot])
+    TNode::PowBy(exponent, child) => t_pow(values[child], exponent)
     TNode::Conv2d(
       input,
       weight,
@@ -597,47 +612,48 @@ pub fn t_is_zero(t : Tensor) -> Bool {
 /// comes back for `a` has shape `(2, 3)`. The gradient with
 /// respect to `a` is the sum of that tensor over the first axis.
 ///
-/// Summing is done from the highest axis down so that the indices
-/// of the axes still to be summed do not shift.
+/// The target's shape is the operand's own shape, and the incoming
+/// tensor's shape is the broadcast shape. Aligning the two from the
+/// right gives the axes to sum:
+///
+///   * axes the target does not have at all — the operand was
+///     broadcast along a whole new axis;
+///   * axes where the target has length one and the broadcast shape
+///     has more — the operand's single element was repeated.
+///
+/// The result has exactly the target's shape, which is what the
+/// caller needs to add it into the operand's adjoint.
 pub fn t_sum_to_shape(t : Tensor, target : Array[Int]) -> Tensor {
-  let common = t.shape
-  let st = target
-  let r = common.length()
-  let sr = st.length()
-  // Which axes of `common` have to be summed?
-  let axes : Array[Int] = []
-  let mut d = 0
-  while d < r {
-    // Right-aligned index into the source shape.
-    let sd = d - (r - sr)
-    let src_dim = if sd >= 0 && sd < sr { st[sd] } else { 1 }
-    if src_dim == 1 && common[d] != 1 {
-      axes.push(d)
-    } else if sd < 0 {
-      // The source had no axis here at all, so the whole axis was
-      // created by broadcasting and has to be summed away.
-      axes.push(d)
-    }
-    d = d + 1
-  }
-  // Sum from the highest axis down.
+  let extra = t.shape.length() - target.length()
+  // Axes the target does not have are summed away entirely.
   let mut acc = t
-  let mut i = axes.length() - 1
-  while i >= 0 {
-    let axis = axes[i]
-    match t_sum_axis_keep(acc, axis) {
-      Some(s) => acc = s
+  for d = extra - 1; d >= 0; d = d - 1 {
+    match t_sum_axis(acc, d) {
+      Some(x) => acc = x
       None => ()
     }
-    i = i - 1
+  }
+  // Axes where the target has length one but the broadcast shape has
+  // more are summed but kept, with length one.
+  for d = 0; d < acc.shape.length(); d = d + 1 {
+    if d < target.length() && target[d] == 1 && acc.shape[d] != 1 {
+      match t_sum_axis_keep(acc, d) {
+        Some(x) => acc = x
+        None => ()
+      }
+    }
   }
   acc
 }
 
 ///|
-/// Sum along an axis but *keep* the axis, so the result has the
-/// same rank. Used by `t_sum_to_shape`, which drops the reduced
-/// axes afterwards by construction.
+/// Sum along an axis but *keep* the axis, so the result has the same
+/// rank and the axis has length one.
+///
+/// The output's buffer is sized for the reduced shape, so the
+/// indexing uses the reduced strides. Writing it with the original
+/// strides would read and write the wrong elements as soon as the
+/// axis is longer than one.
 pub fn t_sum_axis_keep(t : Tensor, axis : Int) -> Tensor? {
   if axis < 0 || axis >= t.shape.length() {
     return None
@@ -652,12 +668,14 @@ pub fn t_sum_axis_keep(t : Tensor, axis : Int) -> Tensor? {
     inner = inner * t.shape[d]
   }
   let len = t.shape[axis]
-  let out = Tensor::zeros(t.shape)
+  let out_shape = t.shape.copy()
+  out_shape[axis] = 1
+  let out = Tensor::zeros(out_shape)
   for o = 0; o < outer; o = o + 1 {
     for i = 0; i < len; i = i + 1 {
       for j = 0; j < inner; j = j + 1 {
         let src = o * len * inner + i * inner + j
-        let dst = o * len * inner + j
+        let dst = o * inner + j
         out.data[dst] = out.data[dst] + t.data[src]
       }
     }
@@ -761,6 +779,16 @@ fn t_push_adjoints(
     TNode::ScaleBy(child, slot) => {
       // d/dx = gbar * k, with k the same constant.
       let contrib = t_mul_or(gbar, g.pool[slot])
+      adj[child] = t_add_or(adj[child], contrib)
+    }
+    TNode::PowBy(exponent, child) => {
+      // d/dx x^c = c * x^(c-1)
+      let x = values[child]
+      let mut d = Tensor::zeros(x.shape)
+      if x.data[0] != 0.0 {
+        d = t_scale(t_pow(x, exponent - 1.0), exponent)
+      }
+      let contrib = t_mul_or(gbar, d)
       adj[child] = t_add_or(adj[child], contrib)
     }
     TNode::Conv2d(

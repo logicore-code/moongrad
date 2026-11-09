@@ -470,3 +470,18 @@ pub fn t_binary(op : BinaryOp, a : Tensor, b : Tensor) -> Tensor? {
   }
   Some(out)
 }
+
+///|
+/// `base ^ exponent`, elementwise.
+pub fn t_pow(a : Tensor, exponent : Double) -> Tensor {
+  let out = Tensor::zeros(a.shape)
+  for i = 0; i < a.data.length(); i = i + 1 {
+    let x = a.data[i]
+    out.data[i] = if x == 0.0 && exponent < 0.0 {
+      -1.0 / 0.0
+    } else {
+      @math.pow(x, exponent)
+    }
+  }
+  out
+}
