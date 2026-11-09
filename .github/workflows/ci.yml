@@ -26,17 +26,7 @@ jobs:
           restore-keys: moon-core-${{ runner.os }}-
 
       - name: Format check
-        # `moon fmt` canonicalises `Int` to `Int32` in toolchains
-        # newer than 0.1.20261021. The source deliberately uses
-        # `Int` so that it compiles on every release from
-        # 0.1.20260915 onwards, so a strict format check would
-        # fail on a toolchain difference rather than on a real
-        # formatting problem. The type check, the tests and the
-        # example smoke tests below are the hard gates.
-        run: |
-          if ! moon fmt --check; then
-            echo "::warning::formatting differs on this toolchain version (Int vs Int32 canonicalisation)"
-          fi
+        run: moon fmt --check
 
       - name: Static type check
         run: moon check
@@ -46,7 +36,9 @@ jobs:
 
       - name: Smoke-test every example on the native target
         run: |
-          for ex in derivatives polyfit xor hessian checkpoint cse; do
+          for ex in \
+            tensor_basics gradcheck nn_classifier linalg_demo \
+            derivatives hessian checkpoint polyfit xor cse; do
             echo "--- examples/$ex"
             moon run "examples/$ex" --target native
           done

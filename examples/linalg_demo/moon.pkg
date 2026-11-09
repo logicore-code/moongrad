@@ -1,0 +1,7 @@
+// Linear algebra demo — see main.mbt.
+
+import {
+  "logicore-code/moongrad",
+}
+
+pkgtype(kind: "executable")
