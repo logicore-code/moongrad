@@ -382,42 +382,57 @@ pub fn common_shape(a : Array[Int], b : Array[Int]) -> Array[Int]? {
 /// element in `src` that it reads.
 ///
 /// This is the workhorse of broadcasting: rather than special-casing
-// every operator, we compute the index map once and let every
-// elementwise operator use it.
+/// every operator, we compute the index map once and let every
+/// elementwise operator use it.
+///
+/// The source offset has to be computed with the *source's* strides,
+/// not the destination's. The two layouts differ whenever the source
+/// has more than one axis, and using the destination's strides would
+/// read past the end of the source buffer.
 pub fn broadcast_map(src : Array[Int], dst : Array[Int]) -> Array[Int]? {
   let aligned = match broadcast_shape(src, dst) {
     Some(s) => s
     None => return None
   }
-  // Per-axis stride in the destination, and the stride to use when
-  // reading the source.
   let dst_strides = Tensor::strides(aligned)
-  let src_offset = dst.length() - src.length()
-  let src_strides : Array[Int] = []
-  for d = 0; d < aligned.length(); d = d + 1 {
-    let sd = d - src_offset
-    let s = if sd >= 0 && sd < src.length() { src[sd] } else { 1 }
-    // A source axis of length 1 reads the same element for every
-    // destination index, so its stride is zero.
-    src_strides.push(if s == 1 { 0 } else { dst_strides[d] })
-  }
+  let src_strides = Tensor::strides(src)
+  // The source's axis 0 lines up with the destination's axis
+  // `dst.length() - src.length()`.
+  let shift = dst.length() - src.length()
   let mut total = 1
   for d in aligned {
     total = total * d
   }
   let map : Array[Int] = []
   for flat = 0; flat < total; flat = flat + 1 {
+    // Decode the destination index into per-axis coordinates.
+    let coords : Array[Int] = []
+    for _d = 0; _d < aligned.length(); _d = _d + 1 {
+      coords.push(0)
+    }
     let mut rest = flat
+    let mut d = aligned.length() - 1
+    while d >= 0 {
+      coords[d] = rest % aligned[d]
+      rest = rest / aligned[d]
+      d = d - 1
+    }
+    // Map each destination axis onto the source. An axis the source
+    // does not have is a broadcast axis and reads offset zero; an
+    // axis the source has with length one also reads offset zero.
     let mut offset = 0
     let mut d = aligned.length() - 1
     while d >= 0 {
-      let idx = rest % aligned[d]
-      rest = rest / aligned[d]
-      offset = offset + idx * src_strides[d]
+      let sd = d - shift
+      if sd >= 0 && sd < src.length() {
+        let coord = if src[sd] == 1 { 0 } else { coords[d] }
+        offset = offset + coord * src_strides[sd]
+      }
       d = d - 1
     }
     map.push(offset)
   }
+  ignore(dst_strides)
   Some(map)
 }
 

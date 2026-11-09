@@ -54,8 +54,8 @@ pub fn Linear::new(
   in_features : Int,
   seed : Int,
 ) -> Linear {
-  let slot_w = g.param(out_features * in_features)
-  let slot_b = g.param(out_features)
+  let slot_w = g.new_param_slot()
+  let slot_b = g.new_param_slot()
   let limit = (6.0 / (in_features + out_features).to_double()).sqrt()
   let rng = Lcg::new(seed)
   let w = Tensor::zeros([in_features, out_features])
@@ -101,7 +101,7 @@ pub(all) struct Embedding {
 /// it, so a large initial value just makes the first gradients
 /// large.
 pub fn Embedding::new(g : TGraph, n : Int, dim : Int, seed : Int) -> Embedding {
-  let slot = g.param(n * dim)
+  let slot = g.new_param_slot()
   let table = Tensor::zeros([n, dim])
   let rng = Lcg::new(seed)
   let limit = 0.1

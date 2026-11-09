@@ -68,8 +68,8 @@ pub fn Conv2d::new(
   seed : Int,
 ) -> Conv2d {
   let fan_in = in_channels * kernel_h * kernel_w
-  let slot_w = g.param(out_channels * fan_in)
-  let slot_b = g.param(out_channels)
+  let slot_w = g.new_param_slot()
+  let slot_b = g.new_param_slot()
   let limit = (6.0 / (fan_in + out_channels).to_double()).sqrt()
   let rng = Lcg::new(seed)
   let w = Tensor::zeros([out_channels, in_channels, kernel_h, kernel_w])

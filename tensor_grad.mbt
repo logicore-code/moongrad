@@ -71,12 +71,25 @@ pub(all) struct TGraph {
   mut values : Array[Tensor]
   /// The shape of every node's value, filled by the forward pass.
   mut shapes : Array[Array[Int]]
+  /// Set when an operation could not be evaluated. A silent
+  /// degradation to a zero scalar would turn a shape mistake into a
+  /// wrong gradient, which is much harder to find than an error.
+  mut failed : Bool
+  /// How many parameter slots have been handed out.
+  mut param_count : Int
 } derive(Debug)
 
 ///|
 /// An empty tensor graph.
 pub fn TGraph::new() -> TGraph {
-  { nodes: [], pool: [], values: [], shapes: [], }
+  {
+    nodes: [],
+    pool: [],
+    values: [],
+    shapes: [],
+    failed: false,
+    param_count: 0,
+  }
 }
 
 ///|
@@ -86,10 +99,18 @@ pub fn TGraph::len(self : TGraph) -> Int {
 }
 
 ///|
-/// Add a constant to the pool and return its slot.
+/// Add a constant to the pool and return the *node* that reads it.
+///
+/// The distinction matters: the pool slot identifies the value, but
+/// a node slot identifies a position in the graph. Returning the
+/// pool index here would make every constant in a graph alias
+/// whichever node happened to sit at that position, which produces a
+/// program that runs and computes the wrong thing.
 pub fn TGraph::constant(self : TGraph, t : Tensor) -> Int {
+  let slot = self.pool.length()
   self.pool.push(t)
-  self.pool.length() - 1
+  self.nodes.push(TNode::Const(slot))
+  self.nodes.length() - 1
 }
 
 ///|
@@ -104,6 +125,18 @@ pub fn TGraph::input(self : TGraph, slot : Int) -> Int {
 pub fn TGraph::param(self : TGraph, slot : Int) -> Int {
   self.nodes.push(TNode::ParamRead(slot))
   self.nodes.length() - 1
+}
+
+///|
+/// Allocate a fresh parameter slot and return its index.
+///
+/// Slots are allocated, never sized. A layer that wants a parameter
+/// of a hundred elements still gets one slot; the number of
+/// elements is the size of the tensor that fills it.
+pub fn TGraph::new_param_slot(self : TGraph) -> Int {
+  let slot = self.param_count
+  self.param_count = self.param_count + 1
+  slot
 }
 
 ///|
@@ -171,7 +204,10 @@ pub fn TGraph::slice(
 ///|
 /// Multiply a node by a constant tensor.
 pub fn TGraph::scale_tensor(self : TGraph, x : Int, k : Tensor) -> Int {
-  let slot = self.constant(k)
+  // The constant goes into the pool; the node refers to it by pool
+  // slot, which is a different numbering from the node slots.
+  let slot = self.pool.length()
+  self.pool.push(k)
   self.nodes.push(TNode::ScaleBy(x, slot))
   self.nodes.length() - 1
 }
@@ -198,6 +234,80 @@ pub fn TGraph::last_shape(self : TGraph, x : Int) -> Array[Int] {
   } else {
     []
   }
+}
+
+///|
+/// Elementwise helpers, so that a layer reads like arithmetic
+/// rather than like graph construction.
+
+///|
+pub fn TGraph::add(self : TGraph, a : Int, b : Int) -> Int {
+  self.binary(BinaryOp::Add, a, b)
+}
+
+///|
+pub fn TGraph::sub(self : TGraph, a : Int, b : Int) -> Int {
+  self.binary(BinaryOp::Sub, a, b)
+}
+
+///|
+pub fn TGraph::mul(self : TGraph, a : Int, b : Int) -> Int {
+  self.binary(BinaryOp::Mul, a, b)
+}
+
+///|
+pub fn TGraph::div(self : TGraph, a : Int, b : Int) -> Int {
+  self.binary(BinaryOp::Div, a, b)
+}
+
+///|
+pub fn TGraph::neg(self : TGraph, x : Int) -> Int {
+  self.unary(UnaryOp::Neg, x)
+}
+
+///|
+pub fn TGraph::exp(self : TGraph, x : Int) -> Int {
+  self.unary(UnaryOp::Exp, x)
+}
+
+///|
+pub fn TGraph::ln(self : TGraph, x : Int) -> Int {
+  self.unary(UnaryOp::Ln, x)
+}
+
+///|
+pub fn TGraph::sqrt(self : TGraph, x : Int) -> Int {
+  self.unary(UnaryOp::Sqrt, x)
+}
+
+///|
+pub fn TGraph::sin(self : TGraph, x : Int) -> Int {
+  self.unary(UnaryOp::Sin, x)
+}
+
+///|
+pub fn TGraph::cos(self : TGraph, x : Int) -> Int {
+  self.unary(UnaryOp::Cos, x)
+}
+
+///|
+pub fn TGraph::tanh(self : TGraph, x : Int) -> Int {
+  self.unary(UnaryOp::Tanh, x)
+}
+
+///|
+pub fn TGraph::sigmoid(self : TGraph, x : Int) -> Int {
+  self.unary(UnaryOp::Sigmoid, x)
+}
+
+///|
+pub fn TGraph::softplus(self : TGraph, x : Int) -> Int {
+  self.unary(UnaryOp::Softplus, x)
+}
+
+///|
+pub fn TGraph::relu(self : TGraph, x : Int) -> Int {
+  self.unary(UnaryOp::Relu, x)
 }
 
 ///|
@@ -261,6 +371,7 @@ pub fn TBinding::set_param(self : TBinding, slot : Int, value : Tensor) -> Unit 
 /// Evaluate every node of `g` under `b` and return the value array.
 pub fn t_forward(g : TGraph, b : TBinding) -> Array[Tensor] {
   let n = g.nodes.length()
+  g.failed = false
   let values : Array[Tensor] = []
   for i = 0; i < n; i = i + 1 {
     values.push(Tensor::zeros([]))
@@ -277,6 +388,22 @@ pub fn t_forward(g : TGraph, b : TBinding) -> Array[Tensor] {
     g.shapes[i] = values[i].shape.copy()
   }
   values
+}
+
+///|
+/// Evaluate the graph and report whether every operation succeeded.
+///
+/// A `matmul` whose shapes do not line up, or a `reshape` that
+/// changes the element count, used to fall back to a zero scalar.
+/// That is the worst possible failure: the graph still runs, the
+/// loss still looks finite, and the gradient is silently wrong.
+pub fn t_forward_checked(g : TGraph, b : TBinding) -> Array[Tensor]? {
+  let values = t_forward(g, b)
+  if g.failed {
+    None
+  } else {
+    Some(values)
+  }
 }
 
 ///|
@@ -304,37 +431,58 @@ fn t_eval_node(
     TNode::Binary(op, a, c) =>
       match t_binary(op, values[a], values[c]) {
         Some(t) => t
-        None => Tensor::zeros([])
+        None => {
+          g.failed = true
+          Tensor::zeros([])
+        }
       }
     TNode::MatMul(a, c) =>
       match values[a].matmul(values[c]) {
         Some(t) => t
-        None => Tensor::zeros([])
+        None => {
+          g.failed = true
+          Tensor::zeros([])
+        }
       }
     TNode::Sum(child, axis) =>
       match t_sum_axis(values[child], axis) {
         Some(t) => t
-        None => Tensor::zeros([])
+        None => {
+          g.failed = true
+          Tensor::zeros([])
+        }
       }
     TNode::Reshape(child, shape) =>
       match values[child].reshape(shape) {
         Some(t) => t
-        None => Tensor::zeros([])
+        None => {
+          g.failed = true
+          Tensor::zeros([])
+        }
       }
     TNode::Transpose(child, perm) =>
       match values[child].transpose(perm) {
         Some(t) => t
-        None => Tensor::zeros([])
+        None => {
+          g.failed = true
+          Tensor::zeros([])
+        }
       }
     TNode::Concat(a, c, axis) =>
       match values[a].concat(values[c], axis) {
         Some(t) => t
-        None => Tensor::zeros([])
+        None => {
+          g.failed = true
+          Tensor::zeros([])
+        }
       }
     TNode::Slice(child, axis, start, count) =>
       match values[child].slice(axis, start, count) {
         Some(t) => t
-        None => Tensor::zeros([])
+        None => {
+          g.failed = true
+          Tensor::zeros([])
+        }
       }
     TNode::ScaleBy(child, slot) => t_mul_or(values[child], g.pool[slot])
     TNode::Conv2d(

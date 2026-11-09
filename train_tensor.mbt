@@ -55,6 +55,14 @@ pub fn TensorTrainer::new(
   build : (TGraph, TBinding) -> (Int, Array[Tensor]),
 ) -> TensorTrainer {
   let (loss_node, params) = build(graph, binding)
+  // Seed the binding with the parameters the layers just created.
+  // The graph reads them through `ParamRead` nodes, and without this
+  // the forward pass sees an empty binding and every parameter
+  // evaluates to a zero scalar — a failure that looks like a
+  // network that simply does not learn.
+  for i = 0; i < params.length(); i = i + 1 {
+    binding.set_param(i, params[i])
+  }
   let shapes : Array[Array[Int]] = []
   for p in params {
     shapes.push(p.shape.copy())
