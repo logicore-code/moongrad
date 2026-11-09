@@ -96,6 +96,16 @@ pub fn Tensor::from_data(shape : Array[Int], data : Array[Double]) -> Tensor? {
 }
 
 ///|
+/// The `n x n` identity.
+pub fn Tensor::identity(n : Int) -> Tensor {
+  let t = Tensor::zeros([n, n])
+  for i = 0; i < n; i = i + 1 {
+    t.mset(i, i, 1.0)
+  }
+  t
+}
+
+///|
 /// A rank-1 tensor.
 pub fn Tensor::vector(data : Array[Double]) -> Tensor {
   { shape: [data.length()], data, }
@@ -172,6 +182,22 @@ pub fn Tensor::set(self : Tensor, index : Array[Int], v : Double) -> Unit {
 /// The element at a flat offset.
 pub fn Tensor::at(self : Tensor, i : Int) -> Double {
   self.data[i]
+}
+
+///|
+/// The element at `(row, col)` of a rank-2 tensor.
+///
+/// The general `get` takes a multi-index array, which is the right
+/// shape for a tensor of any rank but reads badly in the linear
+/// algebra code, where every access is two-dimensional.
+pub fn Tensor::mget(self : Tensor, row : Int, col : Int) -> Double {
+  self.data[row * self.shape[1] + col]
+}
+
+///|
+/// Write the element at `(row, col)` of a rank-2 tensor.
+pub fn Tensor::mset(self : Tensor, row : Int, col : Int, v : Double) -> Unit {
+  self.data[row * self.shape[1] + col] = v
 }
 
 ///|
@@ -414,6 +440,12 @@ pub fn Tensor::broadcast_to(self : Tensor, dst : Array[Int]) -> Tensor? {
 /// A copy of the tensor's data.
 pub fn Tensor::to_data(self : Tensor) -> Array[Double] {
   self.data.copy()
+}
+
+///|
+/// A deep copy of the tensor: a new shape and a new buffer.
+pub fn Tensor::copy(self : Tensor) -> Tensor {
+  { shape: self.shape.copy(), data: self.data.copy(), }
 }
 
 ///|
