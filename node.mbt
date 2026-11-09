@@ -24,6 +24,7 @@
 /// cross-entropy in the numerical-stable form is
 /// `softplus(z) - z*y`, so it is nice to have both available when
 /// the caller assembles a loss by hand.
+#derive(Hash, Eq, Debug)
 pub(all) enum UnaryOp {
   Neg
   Exp
@@ -35,7 +36,7 @@ pub(all) enum UnaryOp {
   Sigmoid
   Softplus
   Relu
-} derive(Hash, Eq, Debug)
+}
 
 ///|
 pub extend UnaryOp with Hash::{hash, hash_combine}
@@ -48,12 +49,13 @@ pub extend UnaryOp with Eq::{equal, not_equal}
 
 ///|
 /// Infix operators with constant arity.
+#derive(Hash, Eq, Debug)
 pub(all) enum BinaryOp {
   Add
   Sub
   Mul
   Div
-} derive(Hash, Eq, Debug)
+}
 
 ///|
 pub extend BinaryOp with Hash::{hash, hash_combine}
@@ -66,24 +68,25 @@ pub extend BinaryOp with Eq::{equal, not_equal}
 
 ///|
 /// One slot of the computation graph.
+#derive(Hash, Eq, Debug)
 pub(all) enum Node {
   /// A literal. The simplifier folds these aggressively.
   Const(Double)
   /// An input to be differentiated. Slots are declared up front via
   /// `Graph::new_var` and are the only source of non-zero gradients.
-  Var(Int)
+  Var(Int32)
   /// A read of a model parameter. Parameters are differentiated too;
   /// they just arrive pre-baked rather than as function arguments.
-  ParamGet(Int, Int)
-  Unary(UnaryOp, Int)
-  Binary(BinaryOp, Int, Int)
+  ParamGet(Int32, Int32)
+  Unary(UnaryOp, Int32)
+  Binary(BinaryOp, Int32, Int32)
   /// `base ^ exponent`, with the exponent carried inline as a
   /// literal. Keeping it in the node means the derivative rule
   /// `d/dx x^c = c * x^(c-1)` needs no table lookup, and it keeps
   /// `PowBy` at arity one so the graph stays a tree in that
   /// direction.
-  PowBy(Double, Int)
-} derive(Hash, Eq, Debug)
+  PowBy(Double, Int32)
+}
 
 ///|
 pub extend Node with Hash::{hash, hash_combine}
@@ -148,7 +151,7 @@ pub fn BinaryOp::kills_product(self : BinaryOp) -> Bool {
 
 ///|
 /// Number of children a node of this shape refers to.
-pub fn Node::arity(self : Node) -> Int {
+pub fn Node::arity(self : Node) -> Int32 {
   match self {
     Const(_) => 0
     Var(_) => 0
@@ -164,7 +167,7 @@ pub fn Node::arity(self : Node) -> Int {
 /// these to push adjoints, so the order matters only for
 /// deterministic accumulation; the result is the same either way
 /// because addition of adjoints is commutative.
-pub fn Node::children(self : Node) -> Array[Int] {
+pub fn Node::children(self : Node) -> Array[Int32] {
   match self {
     Const(_) => []
     Var(_) => []

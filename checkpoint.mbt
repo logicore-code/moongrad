@@ -31,22 +31,23 @@
 
 ///|
 /// What one checkpointed backward pass cost.
+#derive(Debug)
 pub(all) struct CheckpointReport {
   /// Values the sweep would hold at once if it stored every node.
-  naive_live : Int
+  naive_live : Int32
   /// Values actually held at the worst point of the sweep.
-  peak_live : Int
+  peak_live : Int32
   /// Node evaluations spent on recomputation, beyond the single
   /// forward pass the caller already paid for.
-  recomputed : Int
+  recomputed : Int32
   /// Node evaluations in that original forward pass.
-  forward_evals : Int
+  forward_evals : Int32
   /// Number of segments the sweep was split into.
-  segments : Int
+  segments : Int32
   /// True when the sweep actually recomputed anything, which is
   /// false only for the one-segment case.
   did_checkpoint : Bool
-} derive(Debug)
+}
 
 ///|
 pub extend CheckpointReport with Debug::{to_repr}
@@ -73,17 +74,18 @@ pub fn CheckpointReport::arithmetic_cost(self : CheckpointReport) -> Double {
 
 ///|
 /// A contiguous run of node slots `[lo, hi)`.
+#derive(Debug)
 pub(all) struct Segment {
-  lo : Int
-  hi : Int
-} derive(Debug)
+  lo : Int32
+  hi : Int32
+}
 
 ///|
 pub extend Segment with Debug::{to_repr}
 
 ///|
 /// Width of a segment.
-pub fn Segment::width(self : Segment) -> Int {
+pub fn Segment::width(self : Segment) -> Int32 {
   self.hi - self.lo
 }
 
@@ -93,7 +95,7 @@ pub fn Segment::width(self : Segment) -> Int {
 ///
 /// Returns at least 1, so a degenerate size yields the plain tape
 /// rather than a division by zero.
-pub fn choose_segment_count(size : Int, target_width : Int) -> Int {
+pub fn choose_segment_count(size : Int32, target_width : Int32) -> Int32 {
   if size <= 0 || target_width <= 0 {
     return 1
   }
@@ -108,7 +110,7 @@ pub fn choose_segment_count(size : Int, target_width : Int) -> Int {
 ///|
 /// Partition `[0, size)` into at most `count` contiguous segments of
 /// roughly equal width.
-pub fn segment_bounds(size : Int, count : Int) -> Array[Segment] {
+pub fn segment_bounds(size : Int32, count : Int32) -> Array[Segment] {
   let out : Array[Segment] = []
   if size <= 0 || count <= 0 {
     return out
@@ -136,7 +138,7 @@ pub fn segment_bounds(size : Int, count : Int) -> Array[Segment] {
 /// as the naive tape. That last case is why one segment has to
 /// report a reduction of exactly zero rather than a slightly
 /// negative one.
-pub fn peak_occupancy(bounds : Array[Segment], size : Int) -> Int {
+pub fn peak_occupancy(bounds : Array[Segment], size : Int32) -> Int32 {
   if bounds.length() == 0 {
     return size
   }
@@ -156,7 +158,7 @@ pub fn peak_occupancy(bounds : Array[Segment], size : Int) -> Int {
 /// rebuilds the remaining `width - 1`. The last segment rebuilds
 /// nothing, because the caller has already run a full forward pass
 /// and those values are still to hand.
-pub fn recomputation_cost(bounds : Array[Segment]) -> Int {
+pub fn recomputation_cost(bounds : Array[Segment]) -> Int32 {
   let mut total = 0
   for i = 0; i < bounds.length(); i = i + 1 {
     if i < bounds.length() - 1 {
@@ -182,8 +184,8 @@ pub fn recomputation_cost(bounds : Array[Segment]) -> Int {
 pub fn checkpointed_grad(
   g : Graph,
   b : Binding,
-  target : Int,
-  segments : Int,
+  target : Int32,
+  segments : Int32,
 ) -> (Array[Double], CheckpointReport) raise ADError {
   let size = g.nodes.length()
   if target < 0 || target >= size {
@@ -221,20 +223,20 @@ pub fn checkpointed_grad(
 fn sweep(
   g : Graph,
   b : Binding,
-  target : Int,
+  target : Int32,
   all_values : Array[Double],
   bounds : Array[Segment],
-  size : Int,
+  size : Int32,
 ) -> Array[Double] raise ADError {
   let h = mirror(g)
   let zero = h.constant(0.0)
-  let adj : Array[Int] = []
+  let adj : Array[Int32] = []
   for i = 0; i < size; i = i + 1 {
     adj.push(zero)
   }
-  let param_adj : Array[Array[Int]] = []
+  let param_adj : Array[Array[Int32]] = []
   for slot = 0; slot < g.param_shapes.length(); slot = slot + 1 {
-    let row : Array[Int] = []
+    let row : Array[Int32] = []
     for j = 0; j < g.param_shapes[slot]; j = j + 1 {
       row.push(zero)
     }

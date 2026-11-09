@@ -31,24 +31,28 @@
 
 ///|
 /// A 2-D convolutional layer.
+#derive(Debug)
 pub(all) struct Conv2d {
   /// Graph slot of the weight tensor.
-  slot_w : Int
+  slot_w : Int32
   /// Graph slot of the bias vector.
-  slot_b : Int
+  slot_b : Int32
   /// Host-side weights, `(out_channels, in_channels, kh, kw)`.
   w : Tensor
   /// Host-side bias, `(out_channels)`.
   b : Tensor
-  in_channels : Int
-  out_channels : Int
-  kernel_h : Int
-  kernel_w : Int
-  stride_h : Int
-  stride_w : Int
-  pad_h : Int
-  pad_w : Int
-} derive(Debug)
+  in_channels : Int32
+  out_channels : Int32
+  kernel_h : Int32
+  kernel_w : Int32
+  stride_h : Int32
+  stride_w : Int32
+  pad_h : Int32
+  pad_w : Int32
+}
+
+///|
+pub extend Conv2d with Debug::{to_repr}
 
 ///|
 /// A convolutional layer with weights drawn from the Glorot
@@ -57,15 +61,15 @@ pub(all) struct Conv2d {
 /// `out_channels`.
 pub fn Conv2d::new(
   g : TGraph,
-  in_channels : Int,
-  out_channels : Int,
-  kernel_h : Int,
-  kernel_w : Int,
-  stride_h : Int,
-  stride_w : Int,
-  pad_h : Int,
-  pad_w : Int,
-  seed : Int,
+  in_channels : Int32,
+  out_channels : Int32,
+  kernel_h : Int32,
+  kernel_w : Int32,
+  stride_h : Int32,
+  stride_w : Int32,
+  pad_h : Int32,
+  pad_w : Int32,
+  seed : Int32,
 ) -> Conv2d {
   let fan_in = in_channels * kernel_h * kernel_w
   let slot_w = g.new_param_slot()
@@ -97,9 +101,9 @@ pub fn Conv2d::new(
 /// The output height and width for a given input size.
 pub fn Conv2d::output_size(
   self : Conv2d,
-  height : Int,
-  width : Int,
-) -> (Int, Int) {
+  height : Int32,
+  width : Int32,
+) -> (Int32, Int32) {
   let out_h = (height + 2 * self.pad_h - self.kernel_h) / self.stride_h + 1
   let out_w = (width + 2 * self.pad_w - self.kernel_w) / self.stride_w + 1
   (out_h, out_w)
@@ -112,7 +116,7 @@ pub fn Conv2d::output_size(
 /// afterwards, elementwise and broadcast across the batch and the
 /// spatial dimensions, which the tensor layer already knows how to
 /// do.
-pub fn Conv2d::apply(self : Conv2d, g : TGraph, x : Int) -> Int {
+pub fn Conv2d::apply(self : Conv2d, g : TGraph, x : Int32) -> Int32 {
   let conv = g.conv2d(
     x,
     g.param(self.slot_w),
@@ -146,7 +150,7 @@ pub fn Conv2d::write_back(self : Conv2d, b : TBinding) -> Unit {
 ///
 /// The channel axis is left alone: a convolution pads the spatial
 /// dimensions, not the channels.
-pub fn t_pad2d(x : Tensor, pad_h : Int, pad_w : Int) -> Tensor {
+pub fn t_pad2d(x : Tensor, pad_h : Int32, pad_w : Int32) -> Tensor {
   if x.shape.length() != 4 {
     return x
   }
@@ -185,13 +189,13 @@ pub fn t_pad2d(x : Tensor, pad_h : Int, pad_w : Int) -> Tensor {
 /// kw)`. This is the matrix the convolution multiplies.
 pub fn t_im2col(
   x : Tensor,
-  out_h : Int,
-  out_w : Int,
-  in_channels : Int,
-  kernel_h : Int,
-  kernel_w : Int,
-  stride_h : Int,
-  stride_w : Int,
+  out_h : Int32,
+  out_w : Int32,
+  in_channels : Int32,
+  kernel_h : Int32,
+  kernel_w : Int32,
+  stride_h : Int32,
+  stride_w : Int32,
 ) -> Tensor {
   let batch = x.shape[0]
   let height = x.shape[2]
@@ -227,16 +231,16 @@ pub fn t_im2col(
 /// patches overlap.
 pub fn t_col2im(
   grad : Tensor,
-  batch : Int,
-  height : Int,
-  width : Int,
-  out_h : Int,
-  out_w : Int,
-  in_channels : Int,
-  kernel_h : Int,
-  kernel_w : Int,
-  stride_h : Int,
-  stride_w : Int,
+  batch : Int32,
+  height : Int32,
+  width : Int32,
+  out_h : Int32,
+  out_w : Int32,
+  in_channels : Int32,
+  kernel_h : Int32,
+  kernel_w : Int32,
+  stride_h : Int32,
+  stride_w : Int32,
 ) -> Tensor {
   let row_len = in_channels * kernel_h * kernel_w
   let out = Tensor::zeros([batch, in_channels, height, width])
@@ -269,10 +273,10 @@ pub fn t_conv2d(
   x : Tensor,
   w : Tensor,
   bias : Tensor?,
-  stride_h : Int,
-  stride_w : Int,
-  pad_h : Int,
-  pad_w : Int,
+  stride_h : Int32,
+  stride_w : Int32,
+  pad_h : Int32,
+  pad_w : Int32,
 ) -> Tensor? {
   if x.shape.length() != 4 || w.shape.length() != 4 {
     return None
@@ -327,23 +331,23 @@ pub fn t_conv2d(
     None => return None
   }
   // Move the channel axis back to position 1.
-  let final = match shaped.transpose([0, 3, 1, 2]) {
+  let moved = match shaped.transpose([0, 3, 1, 2]) {
     Some(t) => t
     None => return None
   }
   match bias {
     Some(bv) =>
-      match t_add(final, bv) {
+      match t_add(moved, bv) {
         Some(t) => Some(t)
-        None => Some(final)
+        None => Some(moved)
       }
-    None => Some(final)
+    None => Some(moved)
   }
 }
 
 ///|
 /// Crop a padded tensor back to its original spatial size.
-pub fn t_crop2d(x : Tensor, pad_h : Int, pad_w : Int) -> Tensor {
+pub fn t_crop2d(x : Tensor, pad_h : Int32, pad_w : Int32) -> Tensor {
   if x.shape.length() != 4 {
     return x
   }

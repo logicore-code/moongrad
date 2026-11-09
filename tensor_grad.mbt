@@ -25,39 +25,43 @@
 
 ///|
 /// A node of a tensor computation.
+#derive(Debug)
 pub(all) enum TNode {
   /// A constant, held in the graph's constant pool.
-  Const(Int)
+  Const(Int32)
   /// An input tensor, identified by slot.
-  Var(Int)
+  Var(Int32)
   /// A read of a whole parameter vector.
-  ParamRead(Int)
+  ParamRead(Int32)
   /// An elementwise unary operator.
-  Unary(UnaryOp, Int)
+  Unary(UnaryOp, Int32)
   /// An elementwise binary operator, with broadcasting.
-  Binary(BinaryOp, Int, Int)
+  Binary(BinaryOp, Int32, Int32)
   /// Matrix product.
-  MatMul(Int, Int)
+  MatMul(Int32, Int32)
   /// Sum along one axis, dropping that axis.
-  Sum(Int, Int)
+  Sum(Int32, Int32)
   /// Reshape to a new shape.
-  Reshape(Int, Array[Int])
+  Reshape(Int32, Array[Int32])
   /// Permute the axes.
-  Transpose(Int, Array[Int])
+  Transpose(Int32, Array[Int32])
   /// Concatenate two tensors along an axis.
-  Concat(Int, Int, Int)
+  Concat(Int32, Int32, Int32)
   /// A slice along one axis.
-  Slice(Int, Int, Int, Int)
+  Slice(Int32, Int32, Int32, Int32)
   /// Multiply by a constant tensor held in the pool.
-  ScaleBy(Int, Int)
+  ScaleBy(Int32, Int32)
   /// Read one row of a parameter vector.
-  GatherRow(Int, Int, Int)
+  GatherRow(Int32, Int32, Int32)
   /// `base ^ exponent`, with the exponent carried inline.
-  PowBy(Double, Int)
+  PowBy(Double, Int32)
   /// A 2-D convolution. The operands are the input and the weight;
   /// the rest are the geometry.
-  Conv2d(Int, Int, Int, Int, Int, Int, Int, Int, Int, Int)
-} derive(Debug)
+  Conv2d(Int32, Int32, Int32, Int32, Int32, Int32, Int32, Int32, Int32, Int32)
+}
+
+///|
+pub extend TNode with Debug::{to_repr}
 
 ///|
 /// A tensor computation under construction.
@@ -67,19 +71,23 @@ pub(all) enum TNode {
 /// little, and the index map it would need makes the node
 /// unhashable. The scalar engine keeps its own graph for the cases
 /// where the sharing actually pays.
+#derive(Debug)
 pub(all) struct TGraph {
   mut nodes : Array[TNode]
   mut pool : Array[Tensor]
   mut values : Array[Tensor]
   /// The shape of every node's value, filled by the forward pass.
-  mut shapes : Array[Array[Int]]
+  mut shapes : Array[Array[Int32]]
   /// Set when an operation could not be evaluated. A silent
   /// degradation to a zero scalar would turn a shape mistake into a
   /// wrong gradient, which is much harder to find than an error.
   mut failed : Bool
   /// How many parameter slots have been handed out.
-  mut param_count : Int
-} derive(Debug)
+  mut param_count : Int32
+}
+
+///|
+pub extend TGraph with Debug::{to_repr}
 
 ///|
 /// An empty tensor graph.
@@ -96,7 +104,7 @@ pub fn TGraph::new() -> TGraph {
 
 ///|
 /// The number of nodes.
-pub fn TGraph::len(self : TGraph) -> Int {
+pub fn TGraph::len(self : TGraph) -> Int32 {
   self.nodes.length()
 }
 
@@ -108,7 +116,7 @@ pub fn TGraph::len(self : TGraph) -> Int {
 /// pool index here would make every constant in a graph alias
 /// whichever node happened to sit at that position, which produces a
 /// program that runs and computes the wrong thing.
-pub fn TGraph::constant(self : TGraph, t : Tensor) -> Int {
+pub fn TGraph::constant(self : TGraph, t : Tensor) -> Int32 {
   let slot = self.pool.length()
   self.pool.push(t)
   self.nodes.push(TNode::Const(slot))
@@ -117,20 +125,20 @@ pub fn TGraph::constant(self : TGraph, t : Tensor) -> Int {
 
 ///|
 /// An input tensor slot, by name of the slot.
-pub fn TGraph::variable(self : TGraph, slot : Int) -> Int {
+pub fn TGraph::variable(self : TGraph, slot : Int32) -> Int32 {
   self.input(slot)
 }
 
 ///|
 /// An input tensor slot.
-pub fn TGraph::input(self : TGraph, slot : Int) -> Int {
+pub fn TGraph::input(self : TGraph, slot : Int32) -> Int32 {
   self.nodes.push(TNode::Var(slot))
   self.nodes.length() - 1
 }
 
 ///|
 /// A parameter vector slot.
-pub fn TGraph::param(self : TGraph, slot : Int) -> Int {
+pub fn TGraph::param(self : TGraph, slot : Int32) -> Int32 {
   self.nodes.push(TNode::ParamRead(slot))
   self.nodes.length() - 1
 }
@@ -141,7 +149,7 @@ pub fn TGraph::param(self : TGraph, slot : Int) -> Int {
 /// Slots are allocated, never sized. A layer that wants a parameter
 /// of a hundred elements still gets one slot; the number of
 /// elements is the size of the tensor that fills it.
-pub fn TGraph::new_param_slot(self : TGraph) -> Int {
+pub fn TGraph::new_param_slot(self : TGraph) -> Int32 {
   let slot = self.param_count
   self.param_count = self.param_count + 1
   slot
@@ -149,49 +157,67 @@ pub fn TGraph::new_param_slot(self : TGraph) -> Int {
 
 ///|
 /// An elementwise unary operator.
-pub fn TGraph::unary(self : TGraph, op : UnaryOp, child : Int) -> Int {
+pub fn TGraph::unary(self : TGraph, op : UnaryOp, child : Int32) -> Int32 {
   self.nodes.push(TNode::Unary(op, child))
   self.nodes.length() - 1
 }
 
 ///|
 /// An elementwise binary operator, with broadcasting.
-pub fn TGraph::binary(self : TGraph, op : BinaryOp, a : Int, b : Int) -> Int {
+pub fn TGraph::binary(
+  self : TGraph,
+  op : BinaryOp,
+  a : Int32,
+  b : Int32,
+) -> Int32 {
   self.nodes.push(TNode::Binary(op, a, b))
   self.nodes.length() - 1
 }
 
 ///|
 /// Matrix product.
-pub fn TGraph::matmul(self : TGraph, a : Int, b : Int) -> Int {
+pub fn TGraph::matmul(self : TGraph, a : Int32, b : Int32) -> Int32 {
   self.nodes.push(TNode::MatMul(a, b))
   self.nodes.length() - 1
 }
 
 ///|
 /// Sum along an axis, dropping that axis.
-pub fn TGraph::sum_axis(self : TGraph, child : Int, axis : Int) -> Int {
+pub fn TGraph::sum_axis(self : TGraph, child : Int32, axis : Int32) -> Int32 {
   self.nodes.push(TNode::Sum(child, axis))
   self.nodes.length() - 1
 }
 
 ///|
 /// Reshape to a new shape.
-pub fn TGraph::reshape(self : TGraph, child : Int, shape : Array[Int]) -> Int {
+pub fn TGraph::reshape(
+  self : TGraph,
+  child : Int32,
+  shape : Array[Int32],
+) -> Int32 {
   self.nodes.push(TNode::Reshape(child, shape.copy()))
   self.nodes.length() - 1
 }
 
 ///|
 /// Permute the axes.
-pub fn TGraph::transpose(self : TGraph, child : Int, perm : Array[Int]) -> Int {
+pub fn TGraph::transpose(
+  self : TGraph,
+  child : Int32,
+  perm : Array[Int32],
+) -> Int32 {
   self.nodes.push(TNode::Transpose(child, perm.copy()))
   self.nodes.length() - 1
 }
 
 ///|
 /// Concatenate along an axis.
-pub fn TGraph::concat(self : TGraph, a : Int, b : Int, axis : Int) -> Int {
+pub fn TGraph::concat(
+  self : TGraph,
+  a : Int32,
+  b : Int32,
+  axis : Int32,
+) -> Int32 {
   self.nodes.push(TNode::Concat(a, b, axis))
   self.nodes.length() - 1
 }
@@ -200,18 +226,18 @@ pub fn TGraph::concat(self : TGraph, a : Int, b : Int, axis : Int) -> Int {
 /// A slice along an axis.
 pub fn TGraph::slice(
   self : TGraph,
-  child : Int,
-  axis : Int,
-  start : Int,
-  count : Int,
-) -> Int {
+  child : Int32,
+  axis : Int32,
+  start : Int32,
+  count : Int32,
+) -> Int32 {
   self.nodes.push(TNode::Slice(child, axis, start, count))
   self.nodes.length() - 1
 }
 
 ///|
 /// Multiply a node by a constant tensor.
-pub fn TGraph::scale_tensor(self : TGraph, x : Int, k : Tensor) -> Int {
+pub fn TGraph::scale_tensor(self : TGraph, x : Int32, k : Tensor) -> Int32 {
   // The constant goes into the pool; the node refers to it by pool
   // slot, which is a different numbering from the node slots.
   let slot = self.pool.length()
@@ -224,10 +250,10 @@ pub fn TGraph::scale_tensor(self : TGraph, x : Int, k : Tensor) -> Int {
 /// Read one row of a parameter vector.
 pub fn TGraph::gather_row(
   self : TGraph,
-  param_slot : Int,
-  index : Int,
-  dim : Int,
-) -> Int {
+  param_slot : Int32,
+  index : Int32,
+  dim : Int32,
+) -> Int32 {
   self.nodes.push(TNode::GatherRow(param_slot, index, dim))
   self.nodes.length() - 1
 }
@@ -236,7 +262,7 @@ pub fn TGraph::gather_row(
 /// The shape of a node's value, as recorded by the last forward
 /// pass. Returns an empty shape for a node that has not been
 /// evaluated.
-pub fn TGraph::last_shape(self : TGraph, x : Int) -> Array[Int] {
+pub fn TGraph::last_shape(self : TGraph, x : Int32) -> Array[Int32] {
   if x >= 0 && x < self.shapes.length() {
     self.shapes[x].copy()
   } else {
@@ -249,78 +275,78 @@ pub fn TGraph::last_shape(self : TGraph, x : Int) -> Array[Int] {
 /// rather than like graph construction.
 
 ///|
-pub fn TGraph::pow(self : TGraph, x : Int, exponent : Double) -> Int {
+pub fn TGraph::pow(self : TGraph, x : Int32, exponent : Double) -> Int32 {
   self.nodes.push(TNode::PowBy(exponent, x))
   self.nodes.length() - 1
 }
 
 ///|
-pub fn TGraph::add(self : TGraph, a : Int, b : Int) -> Int {
+pub fn TGraph::add(self : TGraph, a : Int32, b : Int32) -> Int32 {
   self.binary(BinaryOp::Add, a, b)
 }
 
 ///|
-pub fn TGraph::sub(self : TGraph, a : Int, b : Int) -> Int {
+pub fn TGraph::sub(self : TGraph, a : Int32, b : Int32) -> Int32 {
   self.binary(BinaryOp::Sub, a, b)
 }
 
 ///|
-pub fn TGraph::mul(self : TGraph, a : Int, b : Int) -> Int {
+pub fn TGraph::mul(self : TGraph, a : Int32, b : Int32) -> Int32 {
   self.binary(BinaryOp::Mul, a, b)
 }
 
 ///|
-pub fn TGraph::div(self : TGraph, a : Int, b : Int) -> Int {
+pub fn TGraph::div(self : TGraph, a : Int32, b : Int32) -> Int32 {
   self.binary(BinaryOp::Div, a, b)
 }
 
 ///|
-pub fn TGraph::neg(self : TGraph, x : Int) -> Int {
+pub fn TGraph::neg(self : TGraph, x : Int32) -> Int32 {
   self.unary(UnaryOp::Neg, x)
 }
 
 ///|
-pub fn TGraph::exp(self : TGraph, x : Int) -> Int {
+pub fn TGraph::exp(self : TGraph, x : Int32) -> Int32 {
   self.unary(UnaryOp::Exp, x)
 }
 
 ///|
-pub fn TGraph::ln(self : TGraph, x : Int) -> Int {
+pub fn TGraph::ln(self : TGraph, x : Int32) -> Int32 {
   self.unary(UnaryOp::Ln, x)
 }
 
 ///|
-pub fn TGraph::sqrt(self : TGraph, x : Int) -> Int {
+pub fn TGraph::sqrt(self : TGraph, x : Int32) -> Int32 {
   self.unary(UnaryOp::Sqrt, x)
 }
 
 ///|
-pub fn TGraph::sin(self : TGraph, x : Int) -> Int {
+pub fn TGraph::sin(self : TGraph, x : Int32) -> Int32 {
   self.unary(UnaryOp::Sin, x)
 }
 
 ///|
-pub fn TGraph::cos(self : TGraph, x : Int) -> Int {
+pub fn TGraph::cos(self : TGraph, x : Int32) -> Int32 {
   self.unary(UnaryOp::Cos, x)
 }
 
 ///|
-pub fn TGraph::tanh(self : TGraph, x : Int) -> Int {
+pub fn TGraph::tanh(self : TGraph, x : Int32) -> Int32 {
   self.unary(UnaryOp::Tanh, x)
 }
 
 ///|
-pub fn TGraph::sigmoid(self : TGraph, x : Int) -> Int {
+pub fn TGraph::sigmoid(self : TGraph, x : Int32) -> Int32 {
   self.unary(UnaryOp::Sigmoid, x)
 }
 
 ///|
-pub fn TGraph::softplus(self : TGraph, x : Int) -> Int {
+pub fn TGraph::softplus(self : TGraph, x : Int32) -> Int32 {
   self.unary(UnaryOp::Softplus, x)
 }
 
 ///|
-pub fn TGraph::relu(self : TGraph, x : Int) -> Int {
+pub fn TGraph::relu(self : TGraph, x : Int32) -> Int32 {
   self.unary(UnaryOp::Relu, x)
 }
 
@@ -328,17 +354,17 @@ pub fn TGraph::relu(self : TGraph, x : Int) -> Int {
 /// A 2-D convolution node.
 pub fn TGraph::conv2d(
   self : TGraph,
-  input : Int,
-  weight : Int,
-  in_channels : Int,
-  out_channels : Int,
-  kernel_h : Int,
-  kernel_w : Int,
-  stride_h : Int,
-  stride_w : Int,
-  pad_h : Int,
-  pad_w : Int,
-) -> Int {
+  input : Int32,
+  weight : Int32,
+  in_channels : Int32,
+  out_channels : Int32,
+  kernel_h : Int32,
+  kernel_w : Int32,
+  stride_h : Int32,
+  stride_w : Int32,
+  pad_h : Int32,
+  pad_w : Int32,
+) -> Int32 {
   self.nodes.push(
     TNode::Conv2d(
       input, weight, in_channels, out_channels, kernel_h, kernel_w, stride_h, stride_w,
@@ -350,12 +376,16 @@ pub fn TGraph::conv2d(
 
 ///|
 /// The inputs and parameters a tensor graph is evaluated against.
+#derive(Debug)
 pub(all) struct TBinding {
   /// Value of each input tensor, indexed by slot.
   inputs : Array[Tensor]
   /// Value of each parameter vector, indexed by slot.
   params : Array[Tensor]
-} derive(Debug)
+}
+
+///|
+pub extend TBinding with Debug::{to_repr}
 
 ///|
 /// An empty binding.
@@ -365,7 +395,11 @@ pub fn TBinding::new() -> TBinding {
 
 ///|
 /// Set the value of an input tensor.
-pub fn TBinding::set_input(self : TBinding, slot : Int, value : Tensor) -> Unit {
+pub fn TBinding::set_input(
+  self : TBinding,
+  slot : Int32,
+  value : Tensor,
+) -> Unit {
   while self.inputs.length() <= slot {
     self.inputs.push(Tensor::zeros([]))
   }
@@ -374,7 +408,11 @@ pub fn TBinding::set_input(self : TBinding, slot : Int, value : Tensor) -> Unit 
 
 ///|
 /// Set the value of a parameter vector.
-pub fn TBinding::set_param(self : TBinding, slot : Int, value : Tensor) -> Unit {
+pub fn TBinding::set_param(
+  self : TBinding,
+  slot : Int32,
+  value : Tensor,
+) -> Unit {
   while self.params.length() <= slot {
     self.params.push(Tensor::zeros([]))
   }
@@ -425,7 +463,7 @@ fn t_eval_node(
   g : TGraph,
   b : TBinding,
   values : Array[Tensor],
-  id : Int,
+  id : Int32,
 ) -> Tensor {
   match g.nodes[id] {
     TNode::Const(slot) => g.pool[slot]
@@ -503,10 +541,10 @@ fn t_eval_node(
     TNode::Conv2d(
       input,
       weight,
-      in_channels,
-      out_channels,
-      kernel_h,
-      kernel_w,
+      _in_channels,
+      _out_channels,
+      _kernel_h,
+      _kernel_w,
       stride_h,
       stride_w,
       pad_h,
@@ -543,6 +581,7 @@ fn t_eval_node(
 
 ///|
 /// The result of a backward pass.
+#derive(Debug)
 pub(all) struct TGrad {
   /// Gradient with respect to each input tensor.
   input_grads : Array[Tensor]
@@ -550,7 +589,10 @@ pub(all) struct TGrad {
   param_grads : Array[Tensor]
   /// Value of the differentiated node.
   output : Tensor
-} derive(Debug)
+}
+
+///|
+pub extend TGrad with Debug::{to_repr}
 
 ///|
 /// Differentiate `target` with respect to every input and every
@@ -560,7 +602,7 @@ pub(all) struct TGrad {
 /// instead of numbers, plus the broadcasting adjustment: when a
 /// child was broadcast up to the parent's shape, its gradient comes
 /// back larger and has to be summed down to the child's own shape.
-pub fn t_grad(g : TGraph, b : TBinding, target : Int) -> TGrad {
+pub fn t_grad(g : TGraph, b : TBinding, target : Int32) -> TGrad {
   let values = t_forward(g, b)
   let n = g.nodes.length()
   // Adjoints, one tensor per node.
@@ -623,7 +665,7 @@ pub fn t_is_zero(t : Tensor) -> Bool {
 ///
 /// The result has exactly the target's shape, which is what the
 /// caller needs to add it into the operand's adjoint.
-pub fn t_sum_to_shape(t : Tensor, target : Array[Int]) -> Tensor {
+pub fn t_sum_to_shape(t : Tensor, target : Array[Int32]) -> Tensor {
   let extra = t.shape.length() - target.length()
   // Axes the target does not have are summed away entirely.
   let mut acc = t
@@ -654,7 +696,7 @@ pub fn t_sum_to_shape(t : Tensor, target : Array[Int]) -> Tensor {
 /// indexing uses the reduced strides. Writing it with the original
 /// strides would read and write the wrong elements as soon as the
 /// axis is longer than one.
-pub fn t_sum_axis_keep(t : Tensor, axis : Int) -> Tensor? {
+pub fn t_sum_axis_keep(t : Tensor, axis : Int32) -> Tensor? {
   if axis < 0 || axis >= t.shape.length() {
     return None
   }
@@ -691,7 +733,7 @@ fn t_push_adjoints(
   adj : Array[Tensor],
   input_grads : Array[Tensor],
   param_grads : Array[Tensor],
-  i : Int,
+  i : Int32,
 ) -> Unit {
   let gbar = adj[i]
   match g.nodes[i] {
@@ -705,14 +747,14 @@ fn t_push_adjoints(
         param_grads[slot] = t_add_or(param_grads[slot], gbar)
       }
     TNode::Unary(op, child) => {
-      let local = t_unary_derivative(op, values[child])
-      let contrib = t_mul_or(gbar, local)
+      let deriv = t_unary_derivative(op, values[child])
+      let contrib = t_mul_or(gbar, deriv)
       adj[child] = t_add_or(adj[child], contrib)
     }
     TNode::Binary(op, a, c) => {
       let va = values[a]
       let vc = values[c]
-      // The two local derivatives are evaluated in the broadcast
+      // The two deriv derivatives are evaluated in the broadcast
       // shape and then summed back down to each operand's shape.
       let common = match common_shape(va.shape, vc.shape) {
         Some(s) => s
@@ -1003,7 +1045,7 @@ pub fn t_binary_dleft(
   op : BinaryOp,
   a : Tensor,
   b : Tensor,
-  common : Array[Int],
+  common : Array[Int32],
 ) -> Tensor {
   let out = Tensor::zeros(common)
   let av = match a.broadcast_to(common) {
@@ -1026,7 +1068,7 @@ pub fn t_binary_dright(
   op : BinaryOp,
   a : Tensor,
   b : Tensor,
-  common : Array[Int],
+  common : Array[Int32],
 ) -> Tensor {
   let out = Tensor::zeros(common)
   let av = match a.broadcast_to(common) {
@@ -1051,11 +1093,15 @@ pub fn t_binary_dright(
 ///
 /// The reduced gradient is missing the summed axis, so every
 /// element along that axis maps to the same entry of the gradient.
-pub fn t_expand_axis(gbar : Tensor, axis : Int, target : Array[Int]) -> Tensor {
+pub fn t_expand_axis(
+  gbar : Tensor,
+  axis : Int32,
+  target : Array[Int32],
+) -> Tensor {
   let out = Tensor::zeros(target)
   let r = target.length()
   let total = out.data.length()
-  let coords : Array[Int] = []
+  let coords : Array[Int32] = []
   for d = 0; d < r; d = d + 1 {
     coords.push(0)
   }
@@ -1088,8 +1134,8 @@ pub fn t_expand_axis(gbar : Tensor, axis : Int, target : Array[Int]) -> Tensor {
 
 ///|
 /// The inverse of an axis permutation.
-pub fn t_inverse_perm(perm : Array[Int]) -> Array[Int] {
-  let out : Array[Int] = []
+pub fn t_inverse_perm(perm : Array[Int32]) -> Array[Int32] {
+  let out : Array[Int32] = []
   for i = 0; i < perm.length(); i = i + 1 {
     out.push(0)
   }

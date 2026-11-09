@@ -65,7 +65,7 @@ fn main raise @moongrad.ADError {
   let zero = g2.constant(0.0)
   let one = g2.constant(1.0)
   let twice = g2.mul(z, g2.constant(2.0))
-  let cases : Array[(String, Int, Int)] = []
+  let cases : Array[(String, Int32, Int32)] = []
   cases.push(("x + 0", z, g2.add(z, zero)))
   cases.push(("x * 1", z, g2.mul(z, one)))
   cases.push(("0 * x", z, g2.mul(zero, z)))

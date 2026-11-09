@@ -18,18 +18,19 @@
 
 ///|
 /// An `rows x cols` matrix, row-major.
+#derive(Debug)
 pub(all) struct Matrix {
-  rows : Int
-  cols : Int
+  rows : Int32
+  cols : Int32
   data : Array[Double]
-} derive(Debug)
+}
 
 ///|
 pub extend Matrix with Debug::{to_repr}
 
 ///|
 /// A `rows x cols` matrix of zeros.
-pub fn Matrix::zeros(rows : Int, cols : Int) -> Matrix {
+pub fn Matrix::zeros(rows : Int32, cols : Int32) -> Matrix {
   let data : Array[Double] = []
   for i = 0; i < rows * cols; i = i + 1 {
     data.push(0.0)
@@ -39,7 +40,7 @@ pub fn Matrix::zeros(rows : Int, cols : Int) -> Matrix {
 
 ///|
 /// A `rows x cols` matrix with every entry `v`.
-pub fn Matrix::filled(rows : Int, cols : Int, v : Double) -> Matrix {
+pub fn Matrix::filled(rows : Int32, cols : Int32, v : Double) -> Matrix {
   let m = Matrix::zeros(rows, cols)
   for i = 0; i < m.data.length(); i = i + 1 {
     m.data[i] = v
@@ -49,7 +50,7 @@ pub fn Matrix::filled(rows : Int, cols : Int, v : Double) -> Matrix {
 
 ///|
 /// The `n x n` identity.
-pub fn Matrix::identity(n : Int) -> Matrix {
+pub fn Matrix::identity(n : Int32) -> Matrix {
   let m = Matrix::zeros(n, n)
   for i = 0; i < n; i = i + 1 {
     m.set(i, i, 1.0)
@@ -63,8 +64,8 @@ pub fn Matrix::identity(n : Int) -> Matrix {
 /// truncating: a silent reshape is the kind of thing that turns into
 /// a week of debugging.
 pub fn Matrix::from_array(
-  rows : Int,
-  cols : Int,
+  rows : Int32,
+  cols : Int32,
   data : Array[Double],
 ) -> Matrix? {
   if data.length() != rows * cols {
@@ -85,19 +86,19 @@ pub fn Matrix::column(xs : Array[Double]) -> Matrix {
 
 ///|
 /// Element `(row, col)`.
-pub fn Matrix::get(self : Matrix, row : Int, col : Int) -> Double {
+pub fn Matrix::get(self : Matrix, row : Int32, col : Int32) -> Double {
   self.data[row * self.cols + col]
 }
 
 ///|
 /// Write `v` at `(row, col)`.
-pub fn Matrix::set(self : Matrix, row : Int, col : Int, v : Double) -> Unit {
+pub fn Matrix::set(self : Matrix, row : Int32, col : Int32, v : Double) -> Unit {
   self.data[row * self.cols + col] = v
 }
 
 ///|
 /// Number of scalars in the matrix.
-pub fn Matrix::len(self : Matrix) -> Int {
+pub fn Matrix::len(self : Matrix) -> Int32 {
   self.data.length()
 }
 
@@ -211,8 +212,8 @@ pub fn Matrix::to_array(self : Matrix) -> Array[Double] {
 ///|
 /// Rebuild from a flat array produced by `to_array`.
 pub fn Matrix::from_flat(
-  rows : Int,
-  cols : Int,
+  rows : Int32,
+  cols : Int32,
   data : Array[Double],
 ) -> Matrix {
   { rows, cols, data, }
@@ -271,7 +272,7 @@ pub fn Matrix::all_finite(self : Matrix) -> Bool {
 ///|
 /// One-line rendering, for the training logs. Truncates long rows so
 /// a 64-wide layer does not wrap the terminal.
-pub fn Matrix::preview(self : Matrix, max_cols : Int) -> String {
+pub fn Matrix::preview(self : Matrix, max_cols : Int32) -> String {
   let cols = if self.cols < max_cols { self.cols } else { max_cols }
   let buf = StringBuilder()
   for i = 0; i < self.rows; i = i + 1 {

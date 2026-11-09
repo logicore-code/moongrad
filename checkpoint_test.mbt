@@ -13,7 +13,7 @@
 ///|
 /// Build a moderately deep polynomial in one variable, which is the
 /// shape where segment recomputation actually has something to do.
-fn deep_graph(g : @moongrad.Graph, x : Int, depth : Int) -> Int {
+fn deep_graph(g : @moongrad.Graph, x : Int32, depth : Int32) -> Int32 {
   // A contraction, not an expansion: repeated squaring would leave
   // the finite reals long before the interesting depths, and the
   // point here is the segmentation, not the numerics.

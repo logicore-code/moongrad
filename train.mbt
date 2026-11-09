@@ -26,21 +26,23 @@
 
 ///|
 /// One sample: features and expected output.
+#derive(Debug)
 pub(all) struct Sample {
   x : Array[Double]
   y : Double
-} derive(Debug)
+}
 
 ///|
 pub extend Sample with Debug::{to_repr}
 
 ///|
 /// A dataset with a fixed layout.
+#derive(Debug)
 pub(all) struct Dataset {
   samples : Array[Sample]
-  n_in : Int
-  n_out : Int
-} derive(Debug)
+  n_in : Int32
+  n_out : Int32
+}
 
 ///|
 pub extend Dataset with Debug::{to_repr}
@@ -52,7 +54,7 @@ pub extend Dataset with Debug::{to_repr}
 pub fn Dataset::new(
   x : Array[Array[Double]],
   y : Array[Double],
-  n_out : Int,
+  n_out : Int32,
 ) -> Dataset? {
   if x.length() != y.length() {
     return None
@@ -78,8 +80,8 @@ fn build_samples(x : Array[Array[Double]], y : Array[Double]) -> Array[Sample] {
 ///|
 /// Shuffle indices with a deterministic generator. Returns indices
 /// rather than moving the data, so the caller's arrays stay put.
-pub fn shuffled_indices(n : Int, rng : Lcg) -> Array[Int] {
-  let idx : Array[Int] = []
+pub fn shuffled_indices(n : Int32, rng : Lcg) -> Array[Int32] {
+  let idx : Array[Int32] = []
   for i = 0; i < n; i = i + 1 {
     idx.push(i)
   }
@@ -95,6 +97,7 @@ pub fn shuffled_indices(n : Int, rng : Lcg) -> Array[Int] {
 
 ///|
 /// What one step produced.
+#derive(Debug)
 pub(all) struct StepReport {
   /// Objective value at this step.
   loss : Double
@@ -102,13 +105,14 @@ pub(all) struct StepReport {
   grad_norm : Double
   /// Whether every number involved stayed finite.
   ok : Bool
-} derive(Debug)
+}
 
 ///|
 pub extend StepReport with Debug::{to_repr}
 
 ///|
 /// A training run, holding everything the loop needs between steps.
+#derive(Debug)
 pub(all) struct Trainer {
   /// The graph, built once.
   graph : Graph
@@ -125,32 +129,33 @@ pub(all) struct Trainer {
   flat : Array[Double]
   /// The compiled gradient program.
   grad_graph : Graph
-  var_adj : Array[Int]
+  var_adj : Array[Int32]
   /// The primal slot the loss is rooted at, used to re-evaluate the
   /// forward pass after the parameters move.
   primal : Graph
   /// The node the loss is rooted at.
-  out : Int
+  out : Int32
   /// The compiled gradient, kept whole so `param_gradients` can
   /// reach the accumulated adjoint circuits.
   compiled : GradGraph
   /// Steps taken.
-  mut step_count : Int
+  mut step_count : Int32
   /// Loss values per step, for the caller's plot.
   mut history : Array[Double]
-} derive(Debug)
+}
 
 ///|
 pub extend Trainer with Debug::{to_repr}
 
 ///|
 /// Which loss the trainer should build.
+#derive(Debug, Eq)
 pub(all) enum LossKind {
   /// Mean squared error. For regression.
   Mse
   /// Binary cross-entropy. For a single sigmoid output.
   Bce
-} derive(Debug, Eq)
+}
 
 ///|
 pub extend LossKind with Debug::{to_repr}
@@ -175,12 +180,12 @@ pub extend LossKind with Eq::{equal, not_equal}
 /// and the examples print the loss curve so the difference is
 /// visible.
 pub fn Trainer::new(
-  sizes : Array[Int],
+  sizes : Array[Int32],
   acts : Array[Activation],
   data : Dataset,
   loss_kind : LossKind,
   opt_kind : Optimizer,
-  seed : Int,
+  seed : Int32,
 ) -> Trainer raise ADError {
   let g = Graph::new()
   let n_samples = data.samples.length()
@@ -198,7 +203,7 @@ pub fn Trainer::new(
   // Forward pass over the whole dataset, accumulated into one loss.
   let mut acc = g.constant(0.0)
   for s = 0; s < n_samples; s = s + 1 {
-    let input : Array[Int] = []
+    let input : Array[Int32] = []
     for f = 0; f < data.n_in; f = f + 1 {
       input.push(g.variable(s * data.n_in + f))
     }
@@ -235,14 +240,14 @@ pub fn Trainer::new(
 
 ///|
 /// `(pred - y)^2` for one scalar prediction.
-pub fn mse_one(g : Graph, pred : Int, y : Double) -> Int {
+pub fn mse_one(g : Graph, pred : Int32, y : Double) -> Int32 {
   let d = g.sub(pred, g.constant(y))
   g.mul(d, d)
 }
 
 ///|
 /// `softplus(z) - z*y` for one scalar prediction.
-pub fn bce_one(g : Graph, z : Int, y : Double) -> Int {
+pub fn bce_one(g : Graph, z : Int32, y : Double) -> Int32 {
   g.sub(g.softplus(z), g.mul(z, g.constant(y)))
 }
 
@@ -374,7 +379,7 @@ pub fn Trainer::program(self : Trainer, values : Array[Double]) -> Program {
 
 ///|
 /// Run `steps` iterations and return the final loss.
-pub fn Trainer::fit(self : Trainer, steps : Int) -> Double raise ADError {
+pub fn Trainer::fit(self : Trainer, steps : Int32) -> Double raise ADError {
   let mut last = 0.0
   for _i = 0; _i < steps; _i = _i + 1 {
     let report = self.train_step(-1.0)

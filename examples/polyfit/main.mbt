@@ -20,7 +20,7 @@
 let true_coeffs : Array[Double] = [0.25, -0.8, 1.5]
 
 ///|
-fn features(x : Double, degree : Int) -> Array[Double] {
+fn features(x : Double, degree : Int32) -> Array[Double] {
   let out : Array[Double] = []
   let mut power = 1.0
   for _i = 0; _i <= degree; _i = _i + 1 {

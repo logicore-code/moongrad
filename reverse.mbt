@@ -48,29 +48,31 @@
 
 ///|
 /// Output of one symbolic backward sweep.
+#derive(Debug)
 pub(all) struct GradGraph {
   /// The graph the sweep emitted into. Its first `primal_size` nodes
   /// are structurally identical to the primal's; everything above is
   /// gradient arithmetic.
   graph : Graph
   /// Number of leading nodes that came from the primal.
-  primal_size : Int
+  primal_size : Int32
   /// Slot in `graph` of `d(target) / d(Var(i))`, one per variable.
-  var_adj : Array[Int]
+  var_adj : Array[Int32]
   /// Slot in `graph` of the accumulated `d(target) / d(param)`,
   /// indexed by parameter slot then by element index. A node rather
   /// than a number, for the same reason `var_adj` is a node: the
   /// gradient has to be re-evaluable, and a parameter gradient that
   /// is frozen at the compile point is as wrong as a variable
   /// gradient that is.
-  param_adj_node : Array[Array[Int]]
-} derive(Debug)
+  param_adj_node : Array[Array[Int32]]
+}
 
 ///|
 pub extend GradGraph with Debug::{to_repr}
 
 ///|
 /// A primal graph paired with its compiled gradient.
+#derive(Debug)
 pub(all) struct Program {
   primal : Graph
   grad : GradGraph
@@ -79,7 +81,7 @@ pub(all) struct Program {
   primal_values : Array[Double]
   /// Value of the differentiated node.
   output : Double
-} derive(Debug)
+}
 
 ///|
 pub extend Program with Debug::{to_repr}
@@ -98,7 +100,7 @@ pub extend Program with Debug::{to_repr}
 pub fn compile_gradient(
   g : Graph,
   primal_values : Array[Double],
-  target : Int,
+  target : Int32,
 ) -> GradGraph raise ADError {
   if target < 0 || target >= g.nodes.length() {
     raise DanglingNode(target)
@@ -109,13 +111,13 @@ pub fn compile_gradient(
   // that evaluates to the partial derivative. `zero` is the shared
   // literal so the simplifier collapses the common case.
   let zero = h.constant(0.0)
-  let adj : Array[Int] = []
+  let adj : Array[Int32] = []
   for i = 0; i < n; i = i + 1 {
     adj.push(zero)
   }
-  let param_adj : Array[Array[Int]] = []
+  let param_adj : Array[Array[Int32]] = []
   for slot = 0; slot < g.param_shapes.length(); slot = slot + 1 {
-    let row : Array[Int] = []
+    let row : Array[Int32] = []
     for i = 0; i < g.param_shapes[slot]; i = i + 1 {
       row.push(zero)
     }
@@ -128,7 +130,7 @@ pub fn compile_gradient(
     }
     push_adjoints(g, h, primal_values, adj, param_adj, i)
   }
-  let var_adj : Array[Int] = []
+  let var_adj : Array[Int32] = []
   for slot = 0; slot < g.var_count; slot = slot + 1 {
     // A variable the caller declared but never used has no node and
     // therefore no adjoint: its gradient is exactly zero.
@@ -172,7 +174,7 @@ pub fn mirror(g : Graph) -> Graph raise ADError {
 /// `child`. The primal's children are already at the same slots in
 /// `h`, so the mapping is the identity for the first `primal_size`
 /// nodes.
-fn reintern(h : Graph, node : Node) -> Int raise ADError {
+fn reintern(h : Graph, node : Node) -> Int32 raise ADError {
   match node {
     Node::Const(v) => h.constant(v)
     Node::Var(slot) => h.variable(slot)
@@ -195,9 +197,9 @@ fn push_adjoints(
   g : Graph,
   h : Graph,
   primal_values : Array[Double],
-  adj : Array[Int],
-  param_adj : Array[Array[Int]],
-  i : Int,
+  adj : Array[Int32],
+  param_adj : Array[Array[Int32]],
+  i : Int32,
 ) -> Unit {
   let incoming = adj[i]
   match g.nodes[i] {
@@ -248,9 +250,9 @@ fn push_adjoints(
 pub fn derivative_expr(
   h : Graph,
   op : UnaryOp,
-  x : Int,
+  x : Int32,
   x_value : Double,
-) -> Int {
+) -> Int32 {
   match op {
     UnaryOp::Neg => h.constant(-1.0)
     UnaryOp::Exp => h.exp(x)
@@ -281,7 +283,7 @@ pub fn derivative_expr(
 
 ///|
 /// Partial derivative of `a op b` with respect to `a`.
-pub fn derivative_left(h : Graph, op : BinaryOp, a : Int, b : Int) -> Int {
+pub fn derivative_left(h : Graph, op : BinaryOp, a : Int32, b : Int32) -> Int32 {
   ignore(a)
   match op {
     BinaryOp::Add => h.constant(1.0)
@@ -293,7 +295,12 @@ pub fn derivative_left(h : Graph, op : BinaryOp, a : Int, b : Int) -> Int {
 
 ///|
 /// Partial derivative of `a op b` with respect to `b`.
-pub fn derivative_right(h : Graph, op : BinaryOp, a : Int, b : Int) -> Int {
+pub fn derivative_right(
+  h : Graph,
+  op : BinaryOp,
+  a : Int32,
+  b : Int32,
+) -> Int32 {
   match op {
     BinaryOp::Add => h.constant(1.0)
     BinaryOp::Sub => h.constant(-1.0)
@@ -320,7 +327,7 @@ pub fn eval_adjoint(
   h : Graph,
   b : Binding,
   primal_values : Array[Double],
-  id : Int,
+  id : Int32,
 ) -> Double {
   if id < 0 || id >= h.len() {
     return 0.0
@@ -381,7 +388,7 @@ pub fn eval_adjoint(
 /// single literal, so this is the only shape an adjoint can have
 /// when it is still "just a number". Anything else would be a bug,
 /// and we surface it instead of silently reading a wrong slot.
-pub fn Graph::eval_constant(self : Graph, id : Int) -> Double {
+pub fn Graph::eval_constant(self : Graph, id : Int32) -> Double {
   match self.nodes[id] {
     Node::Const(v) => v
     _ => 0.0
@@ -408,7 +415,7 @@ pub fn Graph::eval_constant(self : Graph, id : Int) -> Double {
 pub fn grad(
   g : Graph,
   b : Binding,
-  target : Int,
+  target : Int32,
 ) -> (Array[Double], Program) raise ADError {
   let primal_values = forward_values(g, b)
   let compiled = compile_gradient(g, primal_values, target)

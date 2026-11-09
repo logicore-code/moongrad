@@ -35,6 +35,7 @@
 
 ///|
 /// How the parameters are updated from their gradients.
+#derive(Debug, Eq)
 pub(all) enum Optimizer {
   /// p -= lr * g
   Sgd(Double)
@@ -44,8 +45,8 @@ pub(all) enum Optimizer {
   Adam(Double)
   /// Adam with an explicit step count, which it needs to correct
   /// the bias in the moment estimates during the first few steps.
-  AdamWithSteps(Double, Int)
-} derive(Debug, Eq)
+  AdamWithSteps(Double, Int32)
+}
 
 ///|
 pub extend Optimizer with Debug::{to_repr}
@@ -57,20 +58,21 @@ pub extend Optimizer with Eq::{equal, not_equal}
 /// Per-parameter optimiser state. Held as parallel arrays keyed by
 /// parameter index rather than inside the parameters themselves, so
 /// a single optimiser can drive several networks.
+#derive(Debug)
 pub(all) struct OptimizerState {
   mut kind : Optimizer
   /// Velocity for momentum, first moment for Adam.
   m : Array[Double]
   /// Squared velocity for Adam.
   v : Array[Double]
-} derive(Debug)
+}
 
 ///|
 pub extend OptimizerState with Debug::{to_repr}
 
 ///|
 /// Fresh state for `count` parameters.
-pub fn OptimizerState::new(kind : Optimizer, count : Int) -> OptimizerState {
+pub fn OptimizerState::new(kind : Optimizer, count : Int32) -> OptimizerState {
   let m : Array[Double] = []
   let v : Array[Double] = []
   for i = 0; i < count; i = i + 1 {
@@ -142,8 +144,8 @@ fn apply_adam(
   params : Array[Double],
   grads : Array[Double],
   lr : Double,
-  n : Int,
-  t : Int,
+  n : Int32,
+  t : Int32,
 ) -> Unit {
   let b1 = 0.9
   let b2 = 0.999
@@ -170,7 +172,7 @@ pub fn OptimizerState::step_adam(
   st : OptimizerState,
   params : Array[Double],
   grads : Array[Double],
-  t : Int,
+  t : Int32,
 ) -> Unit {
   let lr = st.kind.lr()
   let n = if params.length() < grads.length() {

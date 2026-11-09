@@ -15,7 +15,7 @@
 // the property that makes the trade safe to make.
 
 ///|
-fn build_deep(g : @moongrad.Graph, x : Int, depth : Int) -> Int {
+fn build_deep(g : @moongrad.Graph, x : Int32, depth : Int32) -> Int32 {
   // A contraction rather than an expansion: repeated squaring would
   // leave the finite reals long before the interesting depths.
   let mut acc = x

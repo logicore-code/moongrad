@@ -196,10 +196,6 @@ test "broadcast_to_repeats_elements" {
 ///|
 test "broadcast_map_reads_the_right_source_element" {
   // A (1, 3) source broadcast to (2, 3) reads the same row twice.
-  let src = expect_tensor(
-    @moongrad.Tensor::matrix([[1.0, 2.0, 3.0]]),
-    "the matrix should build",
-  )
   let map = match @moongrad.broadcast_map([1, 3], [2, 3]) {
     Some(x) => x
     None => {

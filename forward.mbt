@@ -15,12 +15,13 @@
 
 ///|
 /// Concrete inputs to a graph.
+#derive(Debug)
 pub(all) struct Binding {
   /// Value of each differentiation variable, indexed by slot.
   vars : Array[Double]
   /// Value of each parameter vector, indexed by slot.
   params : Array[Array[Double]]
-} derive(Debug)
+}
 
 ///|
 pub extend Binding with Debug::{to_repr}
@@ -33,7 +34,7 @@ pub fn Binding::new() -> Binding {
 
 ///|
 /// Set the value of variable `slot`.
-pub fn Binding::set_var(self : Binding, slot : Int, value : Double) -> Unit {
+pub fn Binding::set_var(self : Binding, slot : Int32, value : Double) -> Unit {
   while self.vars.length() <= slot {
     self.vars.push(0.0)
   }
@@ -44,7 +45,7 @@ pub fn Binding::set_var(self : Binding, slot : Int, value : Double) -> Unit {
 /// Set the value of parameter vector `slot`.
 pub fn Binding::set_param(
   self : Binding,
-  slot : Int,
+  slot : Int32,
   values : Array[Double],
 ) -> Unit {
   while self.params.length() <= slot {
@@ -55,12 +56,13 @@ pub fn Binding::set_param(
 
 ///|
 /// Result of a forward pass.
+#derive(Debug)
 pub(all) struct ForwardResult {
   /// Value of every slot, indexed by slot.
   values : Array[Double]
   /// Value of the node the caller asked about.
   output : Double
-} derive(Debug)
+}
 
 ///|
 pub extend ForwardResult with Debug::{to_repr}
@@ -78,7 +80,7 @@ pub extend ForwardResult with Debug::{to_repr}
 pub fn forward(
   g : Graph,
   b : Binding,
-  target : Int,
+  target : Int32,
 ) -> ForwardResult raise ADError {
   let values = forward_values(g, b)
   if target < 0 || target >= values.length() {
@@ -110,7 +112,7 @@ fn eval_node(
   g : Graph,
   b : Binding,
   values : Array[Double],
-  id : Int,
+  id : Int32,
 ) -> Double raise ADError {
   match g.nodes[id] {
     Node::Const(v) => v
@@ -169,10 +171,11 @@ fn eval_node(
 ///
 /// `tangent` is the directional derivative along `direction`; the
 /// gradient component for that direction is `directional_derivative`.
+#derive(Debug, Eq)
 pub(all) struct Dual {
   value : Double
   tangent : Double
-} derive(Debug, Eq)
+}
 
 ///|
 pub extend Dual with Debug::{to_repr}
@@ -189,7 +192,7 @@ pub fn Dual::constant(v : Double) -> Dual {
 ///|
 /// Lift variable `slot` from a binding, with unit tangent when
 /// `direction` selects it.
-pub fn Dual::from_var(b : Binding, slot : Int, direction : Int) -> Dual {
+pub fn Dual::from_var(b : Binding, slot : Int32, direction : Int32) -> Dual {
   let v = if slot >= 0 && slot < b.vars.length() { b.vars[slot] } else { 0.0 }
   { value: v, tangent: if slot == direction { 1.0 } else { 0.0 }, }
 }
@@ -198,7 +201,7 @@ pub fn Dual::from_var(b : Binding, slot : Int, direction : Int) -> Dual {
 /// Lift a parameter read with zero tangent. Parameters are handled by
 /// the reverse pass; forward mode is only used to cross-check
 /// gradients with respect to variables.
-pub fn Dual::from_param(b : Binding, slot : Int, index : Int) -> Dual {
+pub fn Dual::from_param(b : Binding, slot : Int32, index : Int32) -> Dual {
   if slot < 0 || slot >= b.params.length() {
     return Dual::constant(0.0)
   }
@@ -261,8 +264,8 @@ pub fn Dual::pow(d : Dual, exponent : Double) -> Dual {
 pub fn forward_mode(
   g : Graph,
   b : Binding,
-  target : Int,
-  direction : Int,
+  target : Int32,
+  direction : Int32,
 ) -> (Double, Double) {
   let values = forward_dual(g, b, direction)
   if target < 0 || target >= values.length() {
@@ -273,7 +276,7 @@ pub fn forward_mode(
 
 ///|
 /// Evaluate every node in forward mode.
-pub fn forward_dual(g : Graph, b : Binding, direction : Int) -> Array[Dual] {
+pub fn forward_dual(g : Graph, b : Binding, direction : Int32) -> Array[Dual] {
   let n = g.nodes.length()
   let values : Array[Dual] = []
   for i = 0; i < n; i = i + 1 {
@@ -290,8 +293,8 @@ fn dual_of_node(
   g : Graph,
   b : Binding,
   values : Array[Dual],
-  id : Int,
-  direction : Int,
+  id : Int32,
+  direction : Int32,
 ) -> Dual {
   match g.nodes[id] {
     Node::Const(v) => Dual::constant(v)

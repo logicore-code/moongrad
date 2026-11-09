@@ -47,7 +47,7 @@ pub fn Matrix::symmetrise(self : Matrix) -> Matrix {
 /// and this sweeps the same graph again to compile
 /// d^2 f / d x_j d x_i out of it. Nothing about the second sweep is
 /// special-cased.
-pub fn hessian(g : Graph, b : Binding, target : Int) -> Matrix raise ADError {
+pub fn hessian(g : Graph, b : Binding, target : Int32) -> Matrix raise ADError {
   let primal_values = forward_values(g, b)
   let first = compile_gradient(g, primal_values, target)
   let n = g.var_count
@@ -65,7 +65,7 @@ pub fn hessian(g : Graph, b : Binding, target : Int) -> Matrix raise ADError {
 
 ///|
 /// Total number of scalars across every parameter slot.
-pub fn total_params(g : Graph) -> Int {
+pub fn total_params(g : Graph) -> Int32 {
   let mut n = 0
   for i = 0; i < g.param_shapes.length(); i = i + 1 {
     n = n + g.param_shapes[i]

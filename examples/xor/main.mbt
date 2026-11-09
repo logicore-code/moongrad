@@ -90,7 +90,7 @@ fn main raise @moongrad.ADError {
   }
   let b = @moongrad.trainer_binding(g, data, flat, net.net)
   for s = 0; s < 4; s = s + 1 {
-    let input : Array[Int] = []
+    let input : Array[Int32] = []
     for f = 0; f < 2; f = f + 1 {
       input.push(g.variable(s * 2 + f))
     }

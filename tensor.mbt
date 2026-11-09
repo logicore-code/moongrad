@@ -21,23 +21,30 @@
 
 ///|
 /// A dense, row-major tensor.
+#derive(Debug, Eq)
 pub(all) struct Tensor {
   /// Length of each axis. An empty shape is a scalar; `[n]` is a
   /// vector; `[m, n]` is a matrix.
-  shape : Array[Int]
+  shape : Array[Int32]
   /// The elements, row-major.
   data : Array[Double]
-} derive(Debug, Eq)
+}
+
+///|
+pub extend Tensor with Debug::{to_repr}
+
+///|
+pub extend Tensor with Eq::{equal, not_equal}
 
 ///|
 /// The number of axes.
-pub fn Tensor::rank(self : Tensor) -> Int {
+pub fn Tensor::rank(self : Tensor) -> Int32 {
   self.shape.length()
 }
 
 ///|
 /// The total number of elements.
-pub fn Tensor::numel(self : Tensor) -> Int {
+pub fn Tensor::numel(self : Tensor) -> Int32 {
   self.data.length()
 }
 
@@ -49,7 +56,7 @@ pub fn Tensor::is_scalar(self : Tensor) -> Bool {
 
 ///|
 /// The product of the shape, or 1 for a scalar.
-pub fn Tensor::size(self : Tensor) -> Int {
+pub fn Tensor::size(self : Tensor) -> Int32 {
   let mut n = 1
   for d in self.shape {
     n = n * d
@@ -59,7 +66,7 @@ pub fn Tensor::size(self : Tensor) -> Int {
 
 ///|
 /// A tensor of the given shape, filled with zeros.
-pub fn Tensor::zeros(shape : Array[Int]) -> Tensor {
+pub fn Tensor::zeros(shape : Array[Int32]) -> Tensor {
   let mut n = 1
   for d in shape {
     n = n * d
@@ -73,7 +80,7 @@ pub fn Tensor::zeros(shape : Array[Int]) -> Tensor {
 
 ///|
 /// A tensor of the given shape, filled with `v`.
-pub fn Tensor::filled(shape : Array[Int], v : Double) -> Tensor {
+pub fn Tensor::filled(shape : Array[Int32], v : Double) -> Tensor {
   let t = Tensor::zeros(shape)
   for i = 0; i < t.data.length(); i = i + 1 {
     t.data[i] = v
@@ -84,7 +91,7 @@ pub fn Tensor::filled(shape : Array[Int], v : Double) -> Tensor {
 ///|
 /// A tensor from a flat buffer. Returns `None` when the length does
 /// not match the shape, rather than padding or truncating.
-pub fn Tensor::from_data(shape : Array[Int], data : Array[Double]) -> Tensor? {
+pub fn Tensor::from_data(shape : Array[Int32], data : Array[Double]) -> Tensor? {
   let mut n = 1
   for d in shape {
     n = n * d
@@ -97,7 +104,7 @@ pub fn Tensor::from_data(shape : Array[Int], data : Array[Double]) -> Tensor? {
 
 ///|
 /// The `n x n` identity.
-pub fn Tensor::identity(n : Int) -> Tensor {
+pub fn Tensor::identity(n : Int32) -> Tensor {
   let t = Tensor::zeros([n, n])
   for i = 0; i < n; i = i + 1 {
     t.mset(i, i, 1.0)
@@ -140,7 +147,7 @@ pub fn Tensor::scalar(v : Double) -> Tensor {
 ///|
 /// Read the element at a multi-index. Returns `None` when the index
 /// is out of range or the rank does not match.
-pub fn Tensor::get(self : Tensor, index : Array[Int]) -> Double? {
+pub fn Tensor::get(self : Tensor, index : Array[Int32]) -> Double? {
   if index.length() != self.shape.length() {
     return None
   }
@@ -160,7 +167,7 @@ pub fn Tensor::get(self : Tensor, index : Array[Int]) -> Double? {
 
 ///|
 /// Write the element at a multi-index.
-pub fn Tensor::set(self : Tensor, index : Array[Int], v : Double) -> Unit {
+pub fn Tensor::set(self : Tensor, index : Array[Int32], v : Double) -> Unit {
   if index.length() != self.shape.length() {
     return
   }
@@ -180,7 +187,7 @@ pub fn Tensor::set(self : Tensor, index : Array[Int], v : Double) -> Unit {
 
 ///|
 /// The element at a flat offset.
-pub fn Tensor::at(self : Tensor, i : Int) -> Double {
+pub fn Tensor::at(self : Tensor, i : Int32) -> Double {
   self.data[i]
 }
 
@@ -190,20 +197,25 @@ pub fn Tensor::at(self : Tensor, i : Int) -> Double {
 /// The general `get` takes a multi-index array, which is the right
 /// shape for a tensor of any rank but reads badly in the linear
 /// algebra code, where every access is two-dimensional.
-pub fn Tensor::mget(self : Tensor, row : Int, col : Int) -> Double {
+pub fn Tensor::mget(self : Tensor, row : Int32, col : Int32) -> Double {
   self.data[row * self.shape[1] + col]
 }
 
 ///|
 /// Write the element at `(row, col)` of a rank-2 tensor.
-pub fn Tensor::mset(self : Tensor, row : Int, col : Int, v : Double) -> Unit {
+pub fn Tensor::mset(
+  self : Tensor,
+  row : Int32,
+  col : Int32,
+  v : Double,
+) -> Unit {
   self.data[row * self.shape[1] + col] = v
 }
 
 ///|
 /// The row `i` of a rank-2 tensor, as a rank-1 tensor. The result
 /// shares the underlying buffer, so it is a view rather than a copy.
-pub fn Tensor::row(self : Tensor, i : Int) -> Tensor {
+pub fn Tensor::row(self : Tensor, i : Int32) -> Tensor {
   let cols = if self.shape.length() >= 2 { self.shape[1] } else { 1 }
   let data : Array[Double] = []
   for j = 0; j < cols; j = j + 1 {
@@ -214,7 +226,7 @@ pub fn Tensor::row(self : Tensor, i : Int) -> Tensor {
 
 ///|
 /// The column `j` of a rank-2 tensor.
-pub fn Tensor::column(self : Tensor, j : Int) -> Tensor {
+pub fn Tensor::column(self : Tensor, j : Int32) -> Tensor {
   let rows = if self.shape.length() >= 2 { self.shape[0] } else { 1 }
   let data : Array[Double] = []
   for i = 0; i < rows; i = i + 1 {
@@ -225,7 +237,7 @@ pub fn Tensor::column(self : Tensor, j : Int) -> Tensor {
 
 ///|
 /// A copy with a new shape. The number of elements has to match.
-pub fn Tensor::reshape(self : Tensor, shape : Array[Int]) -> Tensor? {
+pub fn Tensor::reshape(self : Tensor, shape : Array[Int32]) -> Tensor? {
   let mut n = 1
   for d in shape {
     n = n * d
@@ -239,7 +251,7 @@ pub fn Tensor::reshape(self : Tensor, shape : Array[Int]) -> Tensor? {
 ///|
 /// A copy with the axes permuted. `perm[k]` is the source axis that
 /// becomes axis `k`.
-pub fn Tensor::transpose(self : Tensor, perm : Array[Int]) -> Tensor? {
+pub fn Tensor::transpose(self : Tensor, perm : Array[Int32]) -> Tensor? {
   let r = self.shape.length()
   if perm.length() != r {
     return None
@@ -254,7 +266,7 @@ pub fn Tensor::transpose(self : Tensor, perm : Array[Int]) -> Tensor? {
     }
     seen[p] = true
   }
-  let new_shape : Array[Int] = []
+  let new_shape : Array[Int32] = []
   for p in perm {
     new_shape.push(self.shape[p])
   }
@@ -264,7 +276,7 @@ pub fn Tensor::transpose(self : Tensor, perm : Array[Int]) -> Tensor? {
   let total = self.data.length()
   for flat = 0; flat < total; flat = flat + 1 {
     // Decode the flat source index into per-axis coordinates.
-    let coords : Array[Int] = []
+    let coords : Array[Int32] = []
     let mut rest = flat
     let mut d = r - 1
     while d >= 0 {
@@ -273,7 +285,7 @@ pub fn Tensor::transpose(self : Tensor, perm : Array[Int]) -> Tensor? {
       d = d - 1
     }
     // Reverse into axis order.
-    let axis_coords : Array[Int] = []
+    let axis_coords : Array[Int32] = []
     for k = 0; k < r; k = k + 1 {
       axis_coords.push(coords[r - 1 - k])
     }
@@ -294,8 +306,8 @@ pub fn Tensor::transpose(self : Tensor, perm : Array[Int]) -> Tensor? {
 ///|
 /// Per-axis strides, in elements. Row-major, so the last axis has
 /// stride 1.
-pub fn Tensor::strides(shape : Array[Int]) -> Array[Int] {
-  let out : Array[Int] = []
+pub fn Tensor::strides(shape : Array[Int32]) -> Array[Int32] {
+  let out : Array[Int32] = []
   for _d = 0; _d < shape.length(); _d = _d + 1 {
     out.push(0)
   }
@@ -312,7 +324,7 @@ pub fn Tensor::strides(shape : Array[Int]) -> Array[Int] {
 ///|
 /// The shape `src` has to be broadcast *from* to reach `dst`.
 /// Returns `None` when the two do not broadcast.
-pub fn broadcast_shape(src : Array[Int], dst : Array[Int]) -> Array[Int]? {
+pub fn broadcast_shape(src : Array[Int32], dst : Array[Int32]) -> Array[Int32]? {
   let offset = dst.length() - src.length()
   let out = dst.copy()
   let mut d = 0
@@ -336,7 +348,7 @@ pub fn broadcast_shape(src : Array[Int], dst : Array[Int]) -> Array[Int]? {
 
 ///|
 /// `true` when the two shapes broadcast against each other.
-pub fn can_broadcast(a : Array[Int], b : Array[Int]) -> Bool {
+pub fn can_broadcast(a : Array[Int32], b : Array[Int32]) -> Bool {
   let r = if a.length() > b.length() { a.length() } else { b.length() }
   let mut d = 0
   while d < r {
@@ -354,9 +366,9 @@ pub fn can_broadcast(a : Array[Int], b : Array[Int]) -> Bool {
 
 ///|
 /// The shape both operands broadcast to.
-pub fn common_shape(a : Array[Int], b : Array[Int]) -> Array[Int]? {
+pub fn common_shape(a : Array[Int32], b : Array[Int32]) -> Array[Int32]? {
   let r = if a.length() > b.length() { a.length() } else { b.length() }
-  let out : Array[Int] = []
+  let out : Array[Int32] = []
   let mut d = 0
   while d < r {
     let da = a.length() - r + d
@@ -389,7 +401,7 @@ pub fn common_shape(a : Array[Int], b : Array[Int]) -> Array[Int]? {
 /// not the destination's. The two layouts differ whenever the source
 /// has more than one axis, and using the destination's strides would
 /// read past the end of the source buffer.
-pub fn broadcast_map(src : Array[Int], dst : Array[Int]) -> Array[Int]? {
+pub fn broadcast_map(src : Array[Int32], dst : Array[Int32]) -> Array[Int32]? {
   let aligned = match broadcast_shape(src, dst) {
     Some(s) => s
     None => return None
@@ -403,10 +415,10 @@ pub fn broadcast_map(src : Array[Int], dst : Array[Int]) -> Array[Int]? {
   for d in aligned {
     total = total * d
   }
-  let map : Array[Int] = []
+  let map : Array[Int32] = []
   for flat = 0; flat < total; flat = flat + 1 {
     // Decode the destination index into per-axis coordinates.
-    let coords : Array[Int] = []
+    let coords : Array[Int32] = []
     for _d = 0; _d < aligned.length(); _d = _d + 1 {
       coords.push(0)
     }
@@ -439,7 +451,7 @@ pub fn broadcast_map(src : Array[Int], dst : Array[Int]) -> Array[Int]? {
 ///|
 /// Expand `src` to `dst` by repeating elements along the axes that
 /// have to grow. Returns `None` when the two do not broadcast.
-pub fn Tensor::broadcast_to(self : Tensor, dst : Array[Int]) -> Tensor? {
+pub fn Tensor::broadcast_to(self : Tensor, dst : Array[Int32]) -> Tensor? {
   let map = match broadcast_map(self.shape, dst) {
     Some(m) => m
     None => return None
@@ -692,7 +704,7 @@ pub fn Tensor::matmul_t(self : Tensor, other : Tensor) -> Tensor? {
 ///|
 /// Concatenate two tensors along an axis. The other axes have to
 /// agree.
-pub fn Tensor::concat(self : Tensor, other : Tensor, axis : Int) -> Tensor? {
+pub fn Tensor::concat(self : Tensor, other : Tensor, axis : Int32) -> Tensor? {
   if self.shape.length() != other.shape.length() {
     return None
   }
@@ -741,9 +753,9 @@ pub fn Tensor::concat(self : Tensor, other : Tensor, axis : Int) -> Tensor? {
 /// A slice along one axis: `count` elements starting at `start`.
 pub fn Tensor::slice(
   self : Tensor,
-  axis : Int,
-  start : Int,
-  count : Int,
+  axis : Int32,
+  start : Int32,
+  count : Int32,
 ) -> Tensor? {
   let r = self.shape.length()
   if axis < 0 || axis >= r {

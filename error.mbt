@@ -12,18 +12,19 @@
 
 ///|
 /// Raised by the graph builder and the differentiation passes.
+#derive(Debug)
 pub suberror ADError {
   /// A node referenced a child slot that has not been interned.
-  DanglingNode(Int)
+  DanglingNode(Int32)
   /// A `Var` slot was referenced that was never declared.
-  UnknownVar(Int)
+  UnknownVar(Int32)
   /// A `ParamGet` referenced a parameter slot that was never declared.
-  UnknownParam(Int)
+  UnknownParam(Int32)
   /// An index into a parameter slot was out of range.
-  ParamIndexOutOfRange(Int, Int, Int)
+  ParamIndexOutOfRange(Int32, Int32, Int32)
   /// Division by zero, or `log`/`sqrt` of a non-positive number.
   DomainError(String)
-} derive(Debug)
+}
 
 ///|
 pub extend ADError with Debug::{to_repr}

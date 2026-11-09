@@ -7,7 +7,7 @@
 
 ///|
 fn hess_of(
-  f_of : (@moongrad.Graph, Int, Int) -> Int raise @moongrad.ADError,
+  f_of : (@moongrad.Graph, Int32, Int32) -> Int32 raise @moongrad.ADError,
   xs : Array[Double],
 ) -> @moongrad.Matrix raise @moongrad.ADError {
   let g = @moongrad.Graph::new()
@@ -21,7 +21,7 @@ test "hessian_of_a_quadratic_is_constant" {
   // f(x, y) = x^2 + x*y + y^2.
   // H = [[2, 1], [1, 2]].
   let h = hess_of(
-    fn(g : @moongrad.Graph, x : Int, y : Int) -> Int {
+    fn(g : @moongrad.Graph, x : Int32, y : Int32) -> Int32 {
       g.add(g.add(g.pow(x, 2.0), g.mul(x, y)), g.pow(y, 2.0))
     },
     [3.0, 4.0],
@@ -37,7 +37,7 @@ test "hessian_of_a_cubic_matches_the_closed_form" {
   // f(x, y) = x^3 + y^2 * x.
   // d2f/dx2 = 6x, d2f/dxdy = 2y, d2f/dy2 = 2x.
   let h = hess_of(
-    fn(g : @moongrad.Graph, x : Int, y : Int) -> Int {
+    fn(g : @moongrad.Graph, x : Int32, y : Int32) -> Int32 {
       g.add(g.pow(x, 3.0), g.mul(g.pow(y, 2.0), x))
     },
     [2.0, 5.0],
@@ -56,7 +56,9 @@ test "hessian_of_a_transcendental_matches_the_closed_form" {
   // contributes a plain 1 alongside the exponential, and an engine
   // that only propagates through the exponential gets it wrong.
   let h = hess_of(
-    fn(g : @moongrad.Graph, x : Int, y : Int) -> Int { g.exp(g.mul(x, y)) },
+    fn(g : @moongrad.Graph, x : Int32, y : Int32) -> Int32 {
+      g.exp(g.mul(x, y))
+    },
     [0.5, 1.5],
   )
   let e = @math.exp(0.75)
@@ -87,7 +89,7 @@ test "hessian_agrees_with_a_numerical_second_difference" {
 ///|
 test "hessian_of_a_linear_function_is_zero" {
   let h = hess_of(
-    fn(g : @moongrad.Graph, x : Int, y : Int) -> Int {
+    fn(g : @moongrad.Graph, x : Int32, y : Int32) -> Int32 {
       g.add(g.mul(x, g.constant(3.0)), g.mul(y, g.constant(-1.0)))
     },
     [5.0, 7.0],
@@ -175,7 +177,7 @@ test "hessian_of_a_strictly_convex_function_is_positive_definite" {
   // which is the condition a Newton solver needs to take a full
   // step without damping.
   let h = hess_of(
-    fn(g : @moongrad.Graph, x : Int, y : Int) -> Int {
+    fn(g : @moongrad.Graph, x : Int32, y : Int32) -> Int32 {
       g.add(g.pow(x, 2.0), g.mul(g.constant(4.0), g.pow(y, 2.0)))
     },
     [1.0, 1.0],
@@ -211,7 +213,8 @@ test "cholesky_solves_a_known_system" {
       assert_close(v[0], 1.0 / 11.0, 1.0e-9, "x0")
       assert_close(v[1], 7.0 / 11.0, 1.0e-9, "x1")
     }
-    None => check(false, "cholesky rejected a positive definite matrix")
+    None =>
+      check(false, "@moongrad.cholesky rejected a positive definite matrix")
   }
 }
 
@@ -228,7 +231,7 @@ test "cholesky_rejects_an_indefinite_matrix" {
     None => true
     Some(_) => false
   }
-  check(rejected, "cholesky should reject an indefinite matrix")
+  check(rejected, "@moongrad.cholesky should reject an indefinite matrix")
 }
 
 // ---------------------------------------------------------------------------

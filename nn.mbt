@@ -20,6 +20,7 @@
 
 ///|
 /// What a layer does to its input.
+#derive(Debug, Eq)
 pub(all) enum Activation {
   /// Linear: no nonlinearity at all. Correct for regression heads.
   Identity
@@ -31,7 +32,7 @@ pub(all) enum Activation {
   /// vanish — but its derivative is discontinuous at zero, so the
   /// gradient at exactly 0 is defined as 0 here.
   Relu
-} derive(Debug, Eq)
+}
 
 ///|
 pub extend Activation with Debug::{to_repr}
@@ -41,7 +42,7 @@ pub extend Activation with Eq::{equal, not_equal}
 
 ///|
 /// Apply an activation to one scalar node.
-pub fn activate(g : Graph, a : Activation, x : Int) -> Int {
+pub fn activate(g : Graph, a : Activation, x : Int32) -> Int32 {
   match a {
     Activation::Identity => x
     Activation::Tanh => g.tanh(x)
@@ -52,12 +53,13 @@ pub fn activate(g : Graph, a : Activation, x : Int) -> Int {
 
 ///|
 /// A parameter vector living in its own graph slot.
+#derive(Debug)
 pub(all) struct Param {
   /// The graph slot, so `Graph::param` can read elements.
-  slot : Int
+  slot : Int32
   /// Host-side copy, for the optimiser to update.
   mut weights : Matrix
-} derive(Debug)
+}
 
 ///|
 pub extend Param with Debug::{to_repr}
@@ -65,7 +67,7 @@ pub extend Param with Debug::{to_repr}
 ///|
 /// Declare a parameter of `rows x cols` shape in `g` and give it a
 /// host-side backing store.
-pub fn new_param(g : Graph, rows : Int, cols : Int) -> Param {
+pub fn new_param(g : Graph, rows : Int32, cols : Int32) -> Param {
   let slot = g.new_param(rows * cols)
   { slot, weights: Matrix::zeros(rows, cols), }
 }
@@ -75,9 +77,9 @@ pub fn new_param(g : Graph, rows : Int, cols : Int) -> Param {
 pub fn Param::get(
   self : Param,
   g : Graph,
-  i : Int,
-  j : Int,
-) -> Int raise ADError {
+  i : Int32,
+  j : Int32,
+) -> Int32 raise ADError {
   g.param(self.slot, i * self.weights.cols + j)
 }
 
@@ -101,12 +103,13 @@ pub fn Param::set_values(self : Param, values : Array[Double]) -> Unit {
 
 ///|
 /// A fully-connected layer with an optional bias.
+#derive(Debug)
 pub(all) struct Dense {
   w : Param
   b : Param
   has_bias : Bool
   act : Activation
-} derive(Debug)
+}
 
 ///|
 pub extend Dense with Debug::{to_repr}
@@ -123,10 +126,10 @@ pub extend Dense with Debug::{to_repr}
 /// single layer.
 pub fn Dense::new(
   g : Graph,
-  fan_in : Int,
-  fan_out : Int,
+  fan_in : Int32,
+  fan_out : Int32,
   act : Activation,
-  seed : Int,
+  seed : Int32,
 ) -> Dense {
   let w = new_param(g, fan_out, fan_in)
   let limit = (6.0 / (fan_in + fan_out).to_double()).sqrt()
@@ -145,9 +148,9 @@ pub fn Dense::new(
 pub fn Dense::apply(
   self : Dense,
   g : Graph,
-  x : Array[Int],
-) -> Array[Int] raise ADError {
-  let out : Array[Int] = []
+  x : Array[Int32],
+) -> Array[Int32] raise ADError {
+  let out : Array[Int32] = []
   for i = 0; i < self.w.weights.rows; i = i + 1 {
     let mut acc = if self.has_bias {
       self.b.get(g, i, 0)
@@ -175,10 +178,11 @@ pub fn Dense::params(self : Dense) -> Array[Param] {
 
 ///|
 /// A stack of dense layers with per-layer activations.
+#derive(Debug)
 pub(all) struct MLP {
   layers : Array[Dense]
-  param_slots : Array[Int]
-} derive(Debug)
+  param_slots : Array[Int32]
+}
 
 ///|
 pub extend MLP with Debug::{to_repr}
@@ -189,12 +193,12 @@ pub extend MLP with Debug::{to_repr}
 /// is set per layer rather than inferred.
 pub fn MLP::new(
   g : Graph,
-  sizes : Array[Int],
+  sizes : Array[Int32],
   acts : Array[Activation],
-  seed : Int,
+  seed : Int32,
 ) -> MLP {
   let layers : Array[Dense] = []
-  let param_slots : Array[Int] = []
+  let param_slots : Array[Int32] = []
   for i = 1; i < sizes.length(); i = i + 1 {
     let layer = Dense::new(
       g,
@@ -216,8 +220,8 @@ pub fn MLP::new(
 pub fn MLP::apply(
   self : MLP,
   g : Graph,
-  x : Array[Int],
-) -> Array[Int] raise ADError {
+  x : Array[Int32],
+) -> Array[Int32] raise ADError {
   let mut acc = x
   for layer in self.layers {
     acc = layer.apply(g, acc)
@@ -240,7 +244,7 @@ pub fn MLP::params(self : MLP) -> Array[Param] {
 
 ///|
 /// Total number of scalars the network is carrying.
-pub fn MLP::size(self : MLP) -> Int {
+pub fn MLP::size(self : MLP) -> Int32 {
   let mut n = 0
   for layer in self.layers {
     for p in layer.params() {
@@ -260,7 +264,11 @@ pub fn MLP::size(self : MLP) -> Int {
 /// Divided by the batch count rather than by `2 * batch`, so the
 /// reported number is the actual average squared error and can be
 /// compared against a variance.
-pub fn mse_loss(g : Graph, pred : Array[Int], target : Array[Double]) -> Int {
+pub fn mse_loss(
+  g : Graph,
+  pred : Array[Int32],
+  target : Array[Double],
+) -> Int32 {
   let mut acc = g.constant(0.0)
   for i = 0; i < pred.length(); i = i + 1 {
     let d = g.sub(pred[i], g.constant(target[i]))
@@ -279,7 +287,11 @@ pub fn mse_loss(g : Graph, pred : Array[Int], target : Array[Double]) -> Int {
 /// confident correct prediction. This form has no such cliff: the
 /// softplus primitive is evaluated as `max(z,0) + log(1 + e^-|z|)`,
 /// which stays finite everywhere.
-pub fn bce_loss(g : Graph, pred : Array[Int], target : Array[Double]) -> Int {
+pub fn bce_loss(
+  g : Graph,
+  pred : Array[Int32],
+  target : Array[Double],
+) -> Int32 {
   let mut acc = g.constant(0.0)
   for i = 0; i < pred.length(); i = i + 1 {
     let y = target[i]
@@ -326,14 +338,15 @@ pub fn bce_value_mean(pred : Array[Double], target : Array[Double]) -> Double {
 /// whose examples give different answers on different machines is
 /// much harder to trust. Numerical Recipes' constants; good enough
 /// for weight initialisation, and identical on every target.
+#derive(Debug)
 pub(all) struct Lcg {
   // Kept in two halves because MoonBit's shift operators are defined
   // on 32-bit integers, and silently truncating a 64-bit state would
   // leave the generator with a period short enough to repeat
   // weights inside a single layer.
-  mut hi : Int
-  mut lo : Int
-} derive(Debug)
+  mut hi : Int32
+  mut lo : Int32
+}
 
 ///|
 pub extend Lcg with Debug::{to_repr}
@@ -341,7 +354,7 @@ pub extend Lcg with Debug::{to_repr}
 ///|
 /// An LCG with a fixed seed, in the 64-bit constants from Numerical
 /// Recipes: x' = 6364136223846793005 * x + 1442695040888963407.
-pub fn Lcg::new(seed : Int) -> Lcg {
+pub fn Lcg::new(seed : Int32) -> Lcg {
   { hi: seed, lo: 0, }
 }
 
@@ -349,7 +362,7 @@ pub fn Lcg::new(seed : Int) -> Lcg {
 /// One step of the generator, multiplying the 128-bit product by
 /// hand. The high 32 bits of the result are the ones worth keeping:
 /// they are the most decorrelated part of the state.
-fn Lcg::step(self : Lcg) -> Int {
+fn Lcg::step(self : Lcg) -> Int32 {
   let a_hi = 0x5851F42D
   let a_lo = 0x4C957F2D
   // (hi:a_lo : lo) * (a_hi:a_lo)

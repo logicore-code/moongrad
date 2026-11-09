@@ -10,12 +10,12 @@
 // the class of bug where the code runs but is subtly wrong.
 
 ///|
-fn mat(rows : Array[Array[Double]]) -> Tensor {
-  match Tensor::matrix(rows) {
+fn mat(rows : Array[Array[Double]]) -> @moongrad.Tensor {
+  match @moongrad.Tensor::matrix(rows) {
     Some(t) => t
     None => {
       check(false, "the matrix should build")
-      Tensor::zeros([0, 0])
+      @moongrad.Tensor::zeros([0, 0])
     }
   }
 }
@@ -32,7 +32,7 @@ fn close(a : Double, b : Double, tol : Double) -> Bool {
 ///|
 test "eigenvalues_of_a_diagonal_matrix_are_its_diagonal" {
   let m = mat([[3.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 2.0]])
-  let ev = eigenvalues(m)
+  let ev = @moongrad.eigenvalues(m)
   assert_eq(ev.length(), 3)
   let mut total = 0.0
   for e in ev {
@@ -46,14 +46,14 @@ test "eigenvalues_of_a_diagonal_matrix_are_its_diagonal" {
 ///|
 test "eigenvalues_of_a_symmetric_matrix_sum_to_the_trace" {
   let m = mat([[2.0, 1.0, 0.0], [1.0, 3.0, 1.0], [0.0, 1.0, 4.0]])
-  let ev = eigenvalues(m)
+  let ev = @moongrad.eigenvalues(m)
   let mut total = 0.0
   for e in ev {
     total = total + e
   }
   check(
     close(total, 9.0, 1.0e-9),
-    "the eigenvalues of a symmetric matrix sum to its trace, got \{total}",
+    "the @moongrad.eigenvalues of a symmetric matrix sum to its trace, got \{total}",
   )
 }
 
@@ -61,7 +61,7 @@ test "eigenvalues_of_a_symmetric_matrix_sum_to_the_trace" {
 test "eigenvalues_of_a_rotation_like_matrix" {
   // [[2, 1], [1, 2]] has eigenvalues 1 and 3.
   let m = mat([[2.0, 1.0], [1.0, 2.0]])
-  let ev = eigenvalues(m)
+  let ev = @moongrad.eigenvalues(m)
   let mut lo = ev[0]
   let mut hi = ev[1]
   if lo > hi {
@@ -77,7 +77,7 @@ test "eigenvalues_of_a_rotation_like_matrix" {
 test "eigenvalues_of_a_rank_one_matrix_are_n_and_zero" {
   // [[2, 2], [2, 2]] has eigenvalues 4 and 0.
   let m = mat([[2.0, 2.0], [2.0, 2.0]])
-  let ev = eigenvalues(m)
+  let ev = @moongrad.eigenvalues(m)
   let mut lo = ev[0]
   let mut hi = ev[1]
   if lo > hi {
@@ -96,7 +96,7 @@ test "eigenvalues_of_a_rank_one_matrix_are_n_and_zero" {
 ///|
 test "cholesky_reconstructs_the_original_matrix" {
   let m = mat([[4.0, 2.0, 2.0], [2.0, 5.0, 1.0], [2.0, 1.0, 6.0]])
-  let l = match cholesky(m) {
+  let l = match @moongrad.cholesky(m) {
     Some(x) => x
     None => {
       check(false, "the matrix is positive definite")
@@ -128,7 +128,7 @@ test "cholesky_reconstructs_the_original_matrix" {
 ///|
 test "cholesky_rejects_an_indefinite_matrix" {
   let m = mat([[1.0, 2.0], [2.0, 1.0]])
-  let l = cholesky(m)
+  let l = @moongrad.cholesky(m)
   let rejected = match l {
     None => true
     Some(_) => false
@@ -140,7 +140,7 @@ test "cholesky_rejects_an_indefinite_matrix" {
 test "solve_spd_finds_the_right_answer" {
   // Solve [[4, 2], [2, 5]] x = [12, 17].
   let m = mat([[4.0, 2.0], [2.0, 5.0]])
-  let x = match solve_spd(m, [12.0, 17.0]) {
+  let x = match @moongrad.solve_spd(m, [12.0, 17.0]) {
     Some(v) => v
     None => {
       check(false, "the system should be solvable")
@@ -157,7 +157,7 @@ test "solve_spd_finds_the_right_answer" {
 test "solve_handles_a_general_matrix" {
   // Solve [[2, 1, -1], [-3, -1, 2], [-2, 1, 2]] x = [8, -11, -3].
   let m = mat([[2.0, 1.0, -1.0], [-3.0, -1.0, 2.0], [-2.0, 1.0, 2.0]])
-  let x = match solve(m, [8.0, -11.0, -3.0]) {
+  let x = match @moongrad.solve(m, [8.0, -11.0, -3.0]) {
     Some(v) => v
     None => {
       check(false, "the system should be solvable")
@@ -172,7 +172,7 @@ test "solve_handles_a_general_matrix" {
 ///|
 test "solve_rejects_a_singular_system" {
   let m = mat([[1.0, 2.0], [2.0, 4.0]])
-  let x = solve(m, [1.0, 2.0])
+  let x = @moongrad.solve(m, [1.0, 2.0])
   let rejected = match x {
     None => true
     Some(_) => false
@@ -187,7 +187,7 @@ test "solve_rejects_a_singular_system" {
 ///|
 test "inverse_multiplies_back_to_the_identity" {
   let m = mat([[4.0, 7.0], [2.0, 6.0]])
-  let inv = match inverse(m) {
+  let inv = match @moongrad.inverse(m) {
     Some(x) => x
     None => {
       check(false, "the matrix should be invertible")
@@ -212,12 +212,12 @@ test "inverse_multiplies_back_to_the_identity" {
 ///|
 test "inverse_of_a_singular_matrix_is_refused" {
   let m = mat([[1.0, 2.0], [2.0, 4.0]])
-  let inv = inverse(m)
+  let inv = @moongrad.inverse(m)
   let rejected = match inv {
     None => true
     Some(_) => false
   }
-  check(rejected, "a singular matrix has no inverse")
+  check(rejected, "a singular matrix has no @moongrad.inverse")
 }
 
 ///|
@@ -225,8 +225,8 @@ test "determinant_of_a_known_matrix" {
   // The determinant of [[1, 2], [3, 4]] is -2.
   let m = mat([[1.0, 2.0], [3.0, 4.0]])
   check(
-    close(determinant(m), -2.0, 1.0e-9),
-    "the determinant should be -2, got \{determinant(m)}",
+    close(@moongrad.determinant(m), -2.0, 1.0e-9),
+    "the @moongrad.determinant should be -2, got \{@moongrad.determinant(m)}",
   )
 }
 
@@ -234,8 +234,8 @@ test "determinant_of_a_known_matrix" {
 test "determinant_of_a_triangular_matrix_is_the_product_of_the_diagonal" {
   let m = mat([[2.0, 3.0, 4.0], [0.0, 5.0, 6.0], [0.0, 0.0, 7.0]])
   check(
-    close(determinant(m), 70.0, 1.0e-9),
-    "the determinant should be 70, got \{determinant(m)}",
+    close(@moongrad.determinant(m), 70.0, 1.0e-9),
+    "the @moongrad.determinant should be 70, got \{@moongrad.determinant(m)}",
   )
 }
 
@@ -243,8 +243,8 @@ test "determinant_of_a_triangular_matrix_is_the_product_of_the_diagonal" {
 test "determinant_of_a_singular_matrix_is_zero" {
   let m = mat([[1.0, 2.0], [2.0, 4.0]])
   check(
-    close(determinant(m), 0.0, 1.0e-9),
-    "a singular matrix has determinant zero",
+    close(@moongrad.determinant(m), 0.0, 1.0e-9),
+    "a singular matrix has @moongrad.determinant zero",
   )
 }
 
@@ -255,7 +255,7 @@ test "determinant_of_a_singular_matrix_is_zero" {
 ///|
 test "qr_reconstructs_the_original_matrix" {
   let m = mat([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
-  let (q, r) = match qr(m) {
+  let (q, r) = match @moongrad.qr(m) {
     Some(x) => x
     None => {
       check(false, "the decomposition should exist")
@@ -279,7 +279,7 @@ test "qr_reconstructs_the_original_matrix" {
 ///|
 test "qr_produces_orthonormal_columns" {
   let m = mat([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
-  let (q, _r) = match qr(m) {
+  let (q, _r) = match @moongrad.qr(m) {
     Some(x) => x
     None => return
   }
@@ -306,7 +306,7 @@ test "qr_produces_orthonormal_columns" {
 ///|
 test "singular_values_of_a_diagonal_matrix_are_its_diagonal" {
   let m = mat([[3.0, 0.0], [0.0, 2.0]])
-  let sv = singular_values(m)
+  let sv = @moongrad.singular_values(m)
   let mut lo = sv[0]
   let mut hi = sv[1]
   if lo > hi {
@@ -322,7 +322,7 @@ test "singular_values_of_a_diagonal_matrix_are_its_diagonal" {
 test "singular_values_of_a_rank_one_matrix_include_a_zero" {
   // [[1, 2], [2, 4]] has rank one, so one singular value is zero.
   let m = mat([[1.0, 2.0], [2.0, 4.0]])
-  let sv = singular_values(m)
+  let sv = @moongrad.singular_values(m)
   let mut smallest = sv[0]
   for v in sv {
     if v < smallest {
@@ -341,8 +341,8 @@ test "singular_values_of_a_rank_one_matrix_include_a_zero" {
 
 ///|
 test "matrix_exp_of_a_zero_matrix_is_the_identity" {
-  let m = Tensor::zeros([3, 3])
-  let e = match matrix_exp(m) {
+  let m = @moongrad.Tensor::zeros([3, 3])
+  let e = match @moongrad.matrix_exp(m) {
     Some(x) => x
     None => {
       check(false, "the exponential should exist")
@@ -365,7 +365,7 @@ test "matrix_exp_of_a_nilpotent_matrix_is_the_identity_plus_the_matrix" {
   // A matrix whose square is zero has exp(A) = I + A exactly.
   // [[0, 1, 0], [0, 0, 0], [0, 0, 0]] squares to zero.
   let m = mat([[0.0, 1.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
-  let e = match matrix_exp(m) {
+  let e = match @moongrad.matrix_exp(m) {
     Some(x) => x
     None => {
       check(false, "the exponential should exist")
@@ -387,7 +387,7 @@ test "matrix_exp_includes_the_quadratic_term" {
   // 0, so exp(A) = I + A + A^2/2 and the second superdiagonal picks
   // up 3/2 on top of A's 2.
   let m = mat([[0.0, 1.0, 2.0], [0.0, 0.0, 3.0], [0.0, 0.0, 0.0]])
-  let e = match matrix_exp(m) {
+  let e = match @moongrad.matrix_exp(m) {
     Some(x) => x
     None => {
       check(false, "the exponential should exist")
@@ -410,7 +410,7 @@ test "matrix_exp_satisfies_the_power_series_to_second_order" {
   // truncation error of the series, so the quadratic term has to be
   // right.
   let m = mat([[0.0, 1.0], [0.0, 0.0]])
-  let e = match matrix_exp(m) {
+  let e = match @moongrad.matrix_exp(m) {
     Some(x) => x
     None => return
   }

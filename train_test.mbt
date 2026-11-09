@@ -166,7 +166,7 @@ test "loss_history_is_non_increasing_on_average" {
 }
 
 ///|
-fn mean_slice(xs : Array[Double], lo : Int, hi : Int) -> Double {
+fn mean_slice(xs : Array[Double], lo : Int32, hi : Int32) -> Double {
   let mut acc = 0.0
   for i = lo; i < hi; i = i + 1 {
     acc = acc + xs[i]

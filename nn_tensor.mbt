@@ -24,19 +24,23 @@
 
 ///|
 /// A fully-connected layer.
+#derive(Debug)
 pub(all) struct Linear {
   /// Graph slot of the weight matrix.
-  slot_w : Int
+  slot_w : Int32
   /// Graph slot of the bias vector.
-  slot_b : Int
+  slot_b : Int32
   /// Host-side weights, `(in_features, out_features)`. The layout
   /// is the one `x @ W` needs, not the one a textbook writes down.
   w : Tensor
   /// Host-side bias, `(out_features)`.
   b : Tensor
-  in_features : Int
-  out_features : Int
-} derive(Debug)
+  in_features : Int32
+  out_features : Int32
+}
+
+///|
+pub extend Linear with Debug::{to_repr}
 
 ///|
 /// A dense layer with weights drawn from the Glorot uniform
@@ -50,9 +54,9 @@ pub(all) struct Linear {
 /// single layer.
 pub fn Linear::new(
   g : TGraph,
-  out_features : Int,
-  in_features : Int,
-  seed : Int,
+  out_features : Int32,
+  in_features : Int32,
+  seed : Int32,
 ) -> Linear {
   let slot_w = g.new_param_slot()
   let slot_b = g.new_param_slot()
@@ -68,7 +72,7 @@ pub fn Linear::new(
 
 ///|
 /// `y = x @ W + b`, where `x` is `(batch, in_features)`.
-pub fn Linear::apply(self : Linear, g : TGraph, x : Int) -> Int {
+pub fn Linear::apply(self : Linear, g : TGraph, x : Int32) -> Int32 {
   let h = g.matmul(x, g.param(self.slot_w))
   g.binary(BinaryOp::Add, h, g.param(self.slot_b))
 }
@@ -88,11 +92,15 @@ pub fn Linear::write_back(self : Linear, b : TBinding) -> Unit {
 
 ///|
 /// An embedding table: a lookup from integer indices to vectors.
+#derive(Debug)
 pub(all) struct Embedding {
-  slot : Int
+  slot : Int32
   table : Tensor
-  dim : Int
-} derive(Debug)
+  dim : Int32
+}
+
+///|
+pub extend Embedding with Debug::{to_repr}
 
 ///|
 /// An embedding table with `n` rows of `dim` values, initialised with
@@ -100,7 +108,12 @@ pub(all) struct Embedding {
 /// embedding starts as an arbitrary vector and the optimiser moves
 /// it, so a large initial value just makes the first gradients
 /// large.
-pub fn Embedding::new(g : TGraph, n : Int, dim : Int, seed : Int) -> Embedding {
+pub fn Embedding::new(
+  g : TGraph,
+  n : Int32,
+  dim : Int32,
+  seed : Int32,
+) -> Embedding {
   let slot = g.new_param_slot()
   let table = Tensor::zeros([n, dim])
   let rng = Lcg::new(seed)
@@ -114,7 +127,7 @@ pub fn Embedding::new(g : TGraph, n : Int, dim : Int, seed : Int) -> Embedding {
 ///|
 /// Look up a row of the table. `index` is a flat index into the
 /// table, and the result is the row at that index.
-pub fn Embedding::row(self : Embedding, g : TGraph, index : Int) -> Int {
+pub fn Embedding::row(self : Embedding, g : TGraph, index : Int32) -> Int32 {
   g.gather_row(self.slot, index, self.dim)
 }
 
@@ -142,21 +155,25 @@ pub fn Embedding::write_back(self : Embedding, b : TBinding) -> Unit {
 /// the usual sense — the gradient is scaled by the mask and divided
 /// by the keep probability, which is the standard "straight-through"
 /// estimator.
+#derive(Debug)
 pub(all) struct Dropout {
   rate : Double
-  seed : Int
-  mut calls : Int
-} derive(Debug)
+  seed : Int32
+  mut calls : Int32
+}
+
+///|
+pub extend Dropout with Debug::{to_repr}
 
 ///|
 /// A dropout layer that keeps each unit with probability `1 - rate`.
-pub fn Dropout::new(rate : Double, seed : Int) -> Dropout {
+pub fn Dropout::new(rate : Double, seed : Int32) -> Dropout {
   { rate, seed, calls: 0, }
 }
 
 ///|
 /// Apply the mask to a tensor.
-pub fn Dropout::apply(self : Dropout, g : TGraph, x : Int) -> Int {
+pub fn Dropout::apply(self : Dropout, g : TGraph, x : Int32) -> Int32 {
   let keep = 1.0 - self.rate
   let rng = Lcg::new(self.seed + self.calls * 7919)
   self.calls = self.calls + 1
@@ -178,7 +195,7 @@ pub(all) struct Sequential {
   /// The layers, in order. The representation is a list of closures
   /// over the graph so that a layer can hold whatever state it
   /// needs.
-  steps : Array[(TGraph, Int) -> Int]
+  steps : Array[(TGraph, Int32) -> Int32]
   /// The parameters of every layer, for the optimiser.
   mut tensors : Array[Tensor]
 }
@@ -193,7 +210,7 @@ pub fn Sequential::new() -> Sequential {
 /// Append a layer.
 pub fn Sequential::push(
   self : Sequential,
-  step : (TGraph, Int) -> Int,
+  step : (TGraph, Int32) -> Int32,
   params : Array[Tensor],
 ) -> Unit {
   self.steps.push(step)
@@ -204,7 +221,7 @@ pub fn Sequential::push(
 
 ///|
 /// Run the chain.
-pub fn Sequential::apply(self : Sequential, g : TGraph, x : Int) -> Int {
+pub fn Sequential::apply(self : Sequential, g : TGraph, x : Int32) -> Int32 {
   let mut acc = x
   for step in self.steps {
     acc = step(g, acc)

@@ -334,7 +334,7 @@ test "forward_reads_parameters" {
 
 ///|
 fn grad_of_x(
-  f_of_x : (@moongrad.Graph, Int) -> Int,
+  f_of_x : (@moongrad.Graph, Int32) -> Int32,
   x_value : Double,
 ) -> Double raise @moongrad.ADError {
   let g = @moongrad.Graph::new()
@@ -348,7 +348,7 @@ fn grad_of_x(
 test "gradient_of_the_identity_is_one" {
   assert_close(
     grad_of_x(
-      fn(g, x) -> Int {
+      fn(g, x) -> Int32 {
         let _ = g
         x
       },
@@ -363,7 +363,7 @@ test "gradient_of_the_identity_is_one" {
 ///|
 test "gradient_of_a_constant_is_zero" {
   assert_close(
-    grad_of_x(fn(g, _x) -> Int { g.constant(3.0) }, 7.0),
+    grad_of_x(fn(g, _x) -> Int32 { g.constant(3.0) }, 7.0),
     0.0,
     1.0e-12,
     "d/dx 3",
@@ -373,7 +373,7 @@ test "gradient_of_a_constant_is_zero" {
 ///|
 test "gradient_of_a_square" {
   // f(x) = x^2, f' = 2x
-  let f = fn(g : @moongrad.Graph, x : Int) -> Int { g.pow(x, 2.0) }
+  let f = fn(g : @moongrad.Graph, x : Int32) -> Int32 { g.pow(x, 2.0) }
   assert_close(grad_of_x(f, 3.0), 6.0, 1.0e-12, "d/dx x^2 at 3")
   assert_close(grad_of_x(f, -2.0), -4.0, 1.0e-12, "d/dx x^2 at -2")
 }
@@ -382,33 +382,33 @@ test "gradient_of_a_square" {
 test "gradient_of_a_cube_built_from_products" {
   // Built as ((x*x)*x) rather than x^3, so the rule under test is
   // the product rule, not the power rule.
-  let f = fn(g : @moongrad.Graph, x : Int) -> Int { g.mul(g.mul(x, x), x) }
+  let f = fn(g : @moongrad.Graph, x : Int32) -> Int32 { g.mul(g.mul(x, x), x) }
   assert_close(grad_of_x(f, 3.0), 27.0, 1.0e-12, "d/dx x^3 at 3")
 }
 
 ///|
 test "gradient_of_exponential_is_itself" {
-  let f = fn(g : @moongrad.Graph, x : Int) -> Int { g.exp(x) }
+  let f = fn(g : @moongrad.Graph, x : Int32) -> Int32 { g.exp(x) }
   let at = 1.0
   assert_close(grad_of_x(f, at), @math.exp(at), 1.0e-9, "d/dx e^x at 1")
 }
 
 ///|
 test "gradient_of_log_is_reciprocal" {
-  let f = fn(g : @moongrad.Graph, x : Int) -> Int { g.ln(x) }
+  let f = fn(g : @moongrad.Graph, x : Int32) -> Int32 { g.ln(x) }
   assert_close(grad_of_x(f, 4.0), 0.25, 1.0e-12, "d/dx log x at 4")
 }
 
 ///|
 test "gradient_of_sine_is_cosine" {
-  let f = fn(g : @moongrad.Graph, x : Int) -> Int { g.sin(x) }
+  let f = fn(g : @moongrad.Graph, x : Int32) -> Int32 { g.sin(x) }
   let at = 0.7
   assert_close(grad_of_x(f, at), @math.cos(at), 1.0e-9, "d/dx sin x")
 }
 
 ///|
 test "gradient_of_tanh_is_one_minus_its_square" {
-  let f = fn(g : @moongrad.Graph, x : Int) -> Int { g.tanh(x) }
+  let f = fn(g : @moongrad.Graph, x : Int32) -> Int32 { g.tanh(x) }
   let at = 0.4
   let t = @math.tanh(at)
   assert_close(grad_of_x(f, at), 1.0 - t * t, 1.0e-9, "d/dx tanh x")
@@ -417,21 +417,23 @@ test "gradient_of_tanh_is_one_minus_its_square" {
 ///|
 test "gradient_of_a_quotient" {
   // f(x) = 1/x, f' = -1/x^2
-  let f = fn(g : @moongrad.Graph, x : Int) -> Int { g.div(g.constant(1.0), x) }
+  let f = fn(g : @moongrad.Graph, x : Int32) -> Int32 {
+    g.div(g.constant(1.0), x)
+  }
   assert_close(grad_of_x(f, 3.0), -1.0 / 9.0, 1.0e-12, "d/dx 1/x at 3")
 }
 
 ///|
 test "gradient_of_a_real_power" {
   // f(x) = x^1.5, f' = 1.5 * x^0.5
-  let f = fn(g : @moongrad.Graph, x : Int) -> Int { g.pow(x, 1.5) }
+  let f = fn(g : @moongrad.Graph, x : Int32) -> Int32 { g.pow(x, 1.5) }
   assert_close(grad_of_x(f, 4.0), 3.0, 1.0e-9, "d/dx x^1.5 at 4")
 }
 
 ///|
 test "gradient_of_a_composition" {
   // f(x) = sin(x^2), f' = 2x cos(x^2)
-  let f = fn(g : @moongrad.Graph, x : Int) -> Int { g.sin(g.pow(x, 2.0)) }
+  let f = fn(g : @moongrad.Graph, x : Int32) -> Int32 { g.sin(g.pow(x, 2.0)) }
   let at = 0.5
   assert_close(
     grad_of_x(f, at),
@@ -511,7 +513,7 @@ test "gradient_agrees_with_forward_mode" {
 ///|
 fn e_value_of(
   g : @moongrad.Graph,
-  e : Int,
+  e : Int32,
   xv : Double,
   yv : Double,
 ) -> Double raise @moongrad.ADError {

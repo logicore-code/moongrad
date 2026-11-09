@@ -20,7 +20,7 @@
 /// Build a fresh graph and compile its gradient, swallowing any
 /// error. The benchmark closure cannot raise, so the work is
 /// wrapped rather than letting a failure abort the whole suite.
-fn compile_once(depth : Int) -> Unit {
+fn compile_once(depth : Int32) -> Unit {
   let g = @moongrad.Graph::new()
   ignore(g.new_vars(1))
   let x = try g.variable(0) catch {
@@ -39,7 +39,7 @@ fn compile_once(depth : Int) -> Unit {
 }
 
 ///|
-fn build(g : @moongrad.Graph, x : Int, depth : Int) -> Int {
+fn build(g : @moongrad.Graph, x : Int32, depth : Int32) -> Int32 {
   let mut acc = x
   for i = 0; i < depth; i = i + 1 {
     acc = g.add(g.mul(acc, g.constant(0.5)), g.constant(0.1))

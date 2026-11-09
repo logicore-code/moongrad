@@ -18,6 +18,7 @@
 
 ///|
 /// The optimiser's configuration.
+#derive(Debug, Eq)
 pub(all) enum TensorOptimizer {
   /// p -= lr * g
   Sgd(Double)
@@ -25,7 +26,13 @@ pub(all) enum TensorOptimizer {
   Momentum(Double, Double)
   /// Adam with the given learning rate.
   Adam(Double)
-} derive(Debug, Eq)
+}
+
+///|
+pub extend TensorOptimizer with Debug::{to_repr}
+
+///|
+pub extend TensorOptimizer with Eq::{equal, not_equal}
 
 ///|
 /// Per-parameter optimiser state.
@@ -34,13 +41,17 @@ pub(all) enum TensorOptimizer {
 /// element, with `layout` giving each parameter's first offset.
 /// Flattening them keeps the inner loop a straight walk over
 /// contiguous memory, which is where the time actually goes.
+#derive(Debug)
 pub(all) struct TensorOptState {
   kind : TensorOptimizer
   m : Array[Double]
   v : Array[Double]
   /// The flat offset of each parameter's first element.
-  layout : Array[Int]
-} derive(Debug)
+  layout : Array[Int32]
+}
+
+///|
+pub extend TensorOptState with Debug::{to_repr}
 
 ///|
 /// Fresh state for the given parameter shapes.
@@ -49,15 +60,14 @@ pub(all) struct TensorOptState {
 /// once and the offsets computed up front.
 pub fn TensorOptState::new(
   kind : TensorOptimizer,
-  shapes : Array[Array[Int]],
+  shapes : Array[Array[Int32]],
 ) -> TensorOptState {
   let m : Array[Double] = []
   let v : Array[Double] = []
-  let layout : Array[Int] = []
+  let layout : Array[Int32] = []
   let mut total = 0
   for i = 0; i < shapes.length(); i = i + 1 {
     layout.push(total)
-    let n = 1
     for d in shapes[i] {
       total = total + d
     }
@@ -88,7 +98,7 @@ pub fn TensorOptState::step(
   self : TensorOptState,
   params : Array[Tensor],
   grads : Array[Tensor],
-  step_index : Int,
+  step_index : Int32,
 ) -> Unit {
   let n = if params.length() < grads.length() {
     params.length()

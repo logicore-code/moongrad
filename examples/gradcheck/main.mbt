@@ -47,7 +47,7 @@ fn numeric_grad(f : Objective, x : Array[Double]) -> Array[Double] {
 /// value is the objective. The objective is a *sum* over the whole
 /// input, so the gradient is a vector the same length as `x`.
 fn compiled_grad(
-  build : (@moongrad.TGraph, @moongrad.TBinding) -> Int,
+  build : (@moongrad.TGraph, @moongrad.TBinding) -> Int32,
   x : Array[Double],
 ) -> Array[Double] {
   let g = @moongrad.TGraph::new()
@@ -62,7 +62,7 @@ fn compiled_grad(
 /// Compare the two gradients and report the largest difference.
 fn compare(
   name : String,
-  build : (@moongrad.TGraph, @moongrad.TBinding) -> Int,
+  build : (@moongrad.TGraph, @moongrad.TBinding) -> Int32,
   objective : Objective,
   x : Array[Double],
 ) -> Bool {
@@ -84,7 +84,7 @@ fn compare(
 
 ///|
 /// The i-th component of the input vector, as a graph node.
-fn component(g : @moongrad.TGraph, i : Int) -> Int {
+fn component(g : @moongrad.TGraph, i : Int32) -> Int32 {
   g.slice(g.variable(0), 0, i, 1)
 }
 
@@ -102,6 +102,7 @@ fn main {
     compare(
       "x^2*y + exp(x)",
       fn(g, b) {
+        ignore(b)
         let x = component(g, 0)
         let y = component(g, 1)
         let t = g.add(g.mul(g.pow(x, 2.0), y), g.exp(x))
@@ -115,6 +116,7 @@ fn main {
     compare(
       "1 / (1 + x^2 + y^2)",
       fn(g, b) {
+        ignore(b)
         let x = component(g, 0)
         let y = component(g, 1)
         let one = g.constant(@moongrad.Tensor::scalar(1.0))
@@ -131,6 +133,7 @@ fn main {
     compare(
       "sum(x @ y) with y = [[1,2],[3,4]]",
       fn(g, b) {
+        ignore(b)
         // The matrix is the input vector, reshaped — so the gradient
         // is with respect to those four numbers.
         let x = g.reshape(g.variable(0), [2, 2])
@@ -157,6 +160,7 @@ fn main {
     compare(
       "sum(x * y) with x (2,) and y (3,2)",
       fn(g, b) {
+        ignore(b)
         let x = g.reshape(g.variable(0), [2])
         let y = g.constant(
           match @moongrad.Tensor::matrix([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]) {
@@ -179,6 +183,7 @@ fn main {
     compare(
       "tanh(sin(x) * exp(y))",
       fn(g, b) {
+        ignore(b)
         let x = component(g, 0)
         let y = component(g, 1)
         let t = g.tanh(g.mul(g.sin(x), g.exp(y)))
@@ -192,6 +197,7 @@ fn main {
     compare(
       "log(x^2 + 1) * y",
       fn(g, b) {
+        ignore(b)
         let x = component(g, 0)
         let y = component(g, 1)
         let one = g.constant(@moongrad.Tensor::scalar(1.0))

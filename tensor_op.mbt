@@ -224,7 +224,7 @@ pub fn t_transpose(a : Tensor) -> Tensor? {
 ///
 /// The output's shape has one axis fewer than the input's, and the
 /// data is laid out so that the surviving axes stay in order.
-pub fn t_sum_axis(a : Tensor, axis : Int) -> Tensor? {
+pub fn t_sum_axis(a : Tensor, axis : Int32) -> Tensor? {
   if axis < 0 || axis >= a.shape.length() {
     return None
   }
@@ -255,7 +255,7 @@ pub fn t_sum_axis(a : Tensor, axis : Int) -> Tensor? {
 
 ///|
 /// Mean along one axis.
-pub fn t_mean_axis(a : Tensor, axis : Int) -> Tensor? {
+pub fn t_mean_axis(a : Tensor, axis : Int32) -> Tensor? {
   let summed = match t_sum_axis(a, axis) {
     Some(t) => t
     None => return None
@@ -282,7 +282,7 @@ pub fn t_mean(a : Tensor) -> Double {
 
 ///|
 /// Concatenate two tensors along an axis.
-pub fn t_concat(a : Tensor, b : Tensor, axis : Int) -> Tensor? {
+pub fn t_concat(a : Tensor, b : Tensor, axis : Int32) -> Tensor? {
   a.concat(b, axis)
 }
 
@@ -360,7 +360,7 @@ pub fn t_log_softmax(a : Tensor) -> Tensor? {
 ///
 /// `logits` is `(batch, classes)` and `labels` holds one class index
 /// per row. The mean over the batch is returned.
-pub fn t_cross_entropy(logits : Tensor, labels : Array[Int]) -> Double? {
+pub fn t_cross_entropy(logits : Tensor, labels : Array[Int32]) -> Double? {
   if logits.shape.length() != 2 {
     return None
   }

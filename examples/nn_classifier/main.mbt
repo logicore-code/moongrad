@@ -1,7 +1,7 @@
 // Neural network classifier.
 //
 // Trains a small multilayer perceptron on two well-separated
-// clusters and reports the loss curve and the final predictions.
+// clusters and reports the loss curve and the moved predictions.
 //
 // Everything here goes through the tensor gradient compiler: the
 // graph is built once, the gradient is compiled once, and every
@@ -34,6 +34,8 @@ fn main raise @moongrad.ADError {
     xs.push([b, b])
     ys.push(1.0)
   }
+  // The labels live in the graph rather than in the dataset, so
+  // the dataset is only used to check the shapes line up.
   let data = match @moongrad.Dataset::new(xs, ys, 1) {
     Some(d) => d
     None => {
@@ -66,6 +68,7 @@ fn main raise @moongrad.ADError {
   )
 
   // A hidden layer of eight tanh units.
+  ignore(data)
   let hidden = @moongrad.Linear::new(g, 8, 2, 17)
   let hidden_out = g.unary(@moongrad.UnaryOp::Tanh, hidden.apply(g, input))
 
@@ -94,8 +97,8 @@ fn main raise @moongrad.ADError {
       )
     }
   }
-  let final = trainer.final_loss()
-  println("| final loss = \{@moongrad.format_double(final)}")
+  let moved = trainer.final_loss()
+  println("| moved loss = \{@moongrad.format_double(moved)}")
   println("|")
   // What the network predicts on the two clusters.
   println("| predictions")
@@ -121,10 +124,10 @@ fn main raise @moongrad.ADError {
 fn build_loss(
   g : @moongrad.TGraph,
   b : @moongrad.TBinding,
-  logit : Int,
+  logit : Int32,
   hidden : @moongrad.Linear,
   output : @moongrad.Linear,
-) -> (Int, Array[@moongrad.Tensor]) {
+) -> (Int32, Array[@moongrad.Tensor]) {
   // Binary cross-entropy from the logit: softplus(z) - z*y, averaged
   // over the batch.
   let labels = [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]

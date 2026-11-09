@@ -28,9 +28,9 @@
 pub fn Graph::simplify_binary(
   self : Graph,
   op : BinaryOp,
-  left : Int,
-  right : Int,
-) -> Int {
+  left : Int32,
+  right : Int32,
+) -> Int32 {
   let lv = self.literal_of(left)
   let rv = self.literal_of(right)
   // Rule 1: annihilator. `x * 0` is 0 for any finite x, and `x - x`
@@ -92,7 +92,11 @@ pub fn Graph::simplify_binary(
 
 ///|
 /// Simplify `op(child)` and emit the result.
-pub fn Graph::simplify_unary(self : Graph, op : UnaryOp, child : Int) -> Int {
+pub fn Graph::simplify_unary(
+  self : Graph,
+  op : UnaryOp,
+  child : Int32,
+) -> Int32 {
   let cv = self.literal_of(child)
   // `op(0)` has a closed form for three of the nine operators.
   if cv == Some(0.0) {
@@ -167,7 +171,11 @@ pub fn Graph::simplify_unary(self : Graph, op : UnaryOp, child : Int) -> Int {
 /// A literal base is folded before any structural rule, so `3^2`
 /// becomes the literal 9 rather than a `PowBy` node that the
 /// forward pass would have to evaluate for nothing.
-pub fn Graph::simplify_pow(self : Graph, exponent : Double, base : Int) -> Int {
+pub fn Graph::simplify_pow(
+  self : Graph,
+  exponent : Double,
+  base : Int32,
+) -> Int32 {
   let bv = self.literal_of(base)
   if exponent == 1.0 {
     self.stats.identities = self.stats.identities + 1
@@ -207,7 +215,7 @@ pub fn Graph::simplify_pow(self : Graph, exponent : Double, base : Int) -> Int {
 /// exist at all also yields `None`; the caller turns the resulting
 /// dangling reference into a proper error later, when the node is
 /// actually built.
-pub fn Graph::literal_of(self : Graph, id : Int) -> Double? {
+pub fn Graph::literal_of(self : Graph, id : Int32) -> Double? {
   if id < 0 || id >= self.nodes.length() {
     return None
   }

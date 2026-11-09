@@ -62,7 +62,7 @@ fn main raise @moongrad.ADError {
 
 ///|
 /// Pad a string on the right to a fixed width, for the table.
-fn pad(s : String, width : Int) -> String {
+fn pad(s : String, width : Int32) -> String {
   let buf = StringBuilder()
   buf.write_string(s)
   let mut i = s.length()
@@ -87,7 +87,7 @@ fn pad(s : String, width : Int) -> String {
 ///
 /// Enough for `2*x`, `1/x`, `x^3`, `exp(x)`, `log(x)`, `sin(x)`,
 /// `tanh(x)` and the two rational functions.
-fn eval_expr(g : @moongrad.Graph, x : Int, src : String) -> Int? {
+fn eval_expr(g : @moongrad.Graph, x : Int32, src : String) -> Int32? {
   let p = Parser::{ src, pos: 0, }
   p.parse_expr(g, x)
 }
@@ -95,11 +95,11 @@ fn eval_expr(g : @moongrad.Graph, x : Int, src : String) -> Int? {
 ///|
 struct Parser {
   src : String
-  mut pos : Int
+  mut pos : Int32
 }
 
 ///|
-fn Parser::parse_expr(self : Parser, g : @moongrad.Graph, x : Int) -> Int? {
+fn Parser::parse_expr(self : Parser, g : @moongrad.Graph, x : Int32) -> Int32? {
   match self.parse_term(g, x) {
     None => return None
     Some(first) => {
@@ -128,7 +128,7 @@ fn Parser::parse_expr(self : Parser, g : @moongrad.Graph, x : Int) -> Int? {
 }
 
 ///|
-fn Parser::parse_term(self : Parser, g : @moongrad.Graph, x : Int) -> Int? {
+fn Parser::parse_term(self : Parser, g : @moongrad.Graph, x : Int32) -> Int32? {
   match self.parse_factor(g, x) {
     None => return None
     Some(first) => {
@@ -157,7 +157,11 @@ fn Parser::parse_term(self : Parser, g : @moongrad.Graph, x : Int) -> Int? {
 }
 
 ///|
-fn Parser::parse_factor(self : Parser, g : @moongrad.Graph, x : Int) -> Int? {
+fn Parser::parse_factor(
+  self : Parser,
+  g : @moongrad.Graph,
+  x : Int32,
+) -> Int32? {
   match self.parse_atom(g, x) {
     Some(acc) => {
       let mut node = acc
@@ -174,7 +178,7 @@ fn Parser::parse_factor(self : Parser, g : @moongrad.Graph, x : Int) -> Int? {
 }
 
 ///|
-fn Parser::parse_atom(self : Parser, g : @moongrad.Graph, x : Int) -> Int? {
+fn Parser::parse_atom(self : Parser, g : @moongrad.Graph, x : Int32) -> Int32? {
   self.skip_spaces()
   if self.pos >= self.src.length() {
     return None
@@ -225,7 +229,7 @@ fn Parser::parse_atom(self : Parser, g : @moongrad.Graph, x : Int) -> Int? {
 }
 
 ///|
-fn apply_named(g : @moongrad.Graph, name : String, arg : Int) -> Int? {
+fn apply_named(g : @moongrad.Graph, name : String, arg : Int32) -> Int32? {
   match name {
     "exp" => Some(g.exp(arg))
     "log" => Some(g.ln(arg))

@@ -16,6 +16,7 @@
 
 ///|
 /// One step of the training loop.
+#derive(Debug)
 pub(all) struct TensorStep {
   /// The objective value at this step.
   loss : Double
@@ -23,10 +24,14 @@ pub(all) struct TensorStep {
   grad_norm : Double
   /// Whether every number involved stayed finite.
   ok : Bool
-} derive(Debug)
+}
+
+///|
+pub extend TensorStep with Debug::{to_repr}
 
 ///|
 /// A training run over tensors.
+#derive(Debug)
 pub(all) struct TensorTrainer {
   graph : TGraph
   binding : TBinding
@@ -35,11 +40,14 @@ pub(all) struct TensorTrainer {
   /// The optimiser's state.
   opt : TensorOptState
   /// The node the loss is rooted at.
-  loss_node : Int
+  loss_node : Int32
   /// The loss at every step so far.
   history : Array[Double]
-  mut step_count : Int
-} derive(Debug)
+  mut step_count : Int32
+}
+
+///|
+pub extend TensorTrainer with Debug::{to_repr}
 
 ///|
 /// Build a trainer.
@@ -52,7 +60,7 @@ pub fn TensorTrainer::new(
   graph : TGraph,
   binding : TBinding,
   opt_kind : TensorOptimizer,
-  build : (TGraph, TBinding) -> (Int, Array[Tensor]),
+  build : (TGraph, TBinding) -> (Int32, Array[Tensor]),
 ) -> TensorTrainer {
   let (loss_node, params) = build(graph, binding)
   // Seed the binding with the parameters the layers just created.
@@ -63,7 +71,7 @@ pub fn TensorTrainer::new(
   for i = 0; i < params.length(); i = i + 1 {
     binding.set_param(i, params[i])
   }
-  let shapes : Array[Array[Int]] = []
+  let shapes : Array[Array[Int32]] = []
   for p in params {
     shapes.push(p.shape.copy())
   }
@@ -77,7 +85,7 @@ pub fn TensorTrainer::new(
 /// The forward pass runs on the current parameters, the gradient
 /// program is re-evaluated against the same binding, and the
 /// optimiser updates the host-side parameter tensors.
-pub fn TensorTrainer::step(self : TensorTrainer) -> TensorStep raise ADError {
+pub fn TensorTrainer::step(self : TensorTrainer) -> TensorStep {
   let values = t_forward(self.graph, self.binding)
   let loss_value = values[self.loss_node].sum()
   let grads = t_grad(self.graph, self.binding, self.loss_node)
@@ -97,7 +105,7 @@ pub fn TensorTrainer::step(self : TensorTrainer) -> TensorStep raise ADError {
 /// Run `steps` iterations and return the final loss.
 pub fn TensorTrainer::fit(
   self : TensorTrainer,
-  steps : Int,
+  steps : Int32,
 ) -> Double raise ADError {
   let mut last = 0.0
   for i = 0; i < steps; i = i + 1 {
