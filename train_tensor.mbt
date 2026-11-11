@@ -13,6 +13,14 @@
 // `sync_params` is what keeps them in step, and it is the single
 // place a mistake there would show up as a training run that
 // converges perfectly and reports its initial weights.
+//
+// The gradient program is compiled once, when the trainer is built,
+// and re-evaluated at every step. That is only possible because the
+// gradient is a program rather than a tape: re-evaluating it at the
+// new weights costs one scan of the graph, where re-deriving it
+// costs a full backward sweep. On the scalar side the difference is
+// about twenty to one, so a trainer that recompiled every step would
+// spend nearly all of its time on work it had already done.
 
 ///|
 /// One step of the training loop.
@@ -35,6 +43,9 @@ pub extend TensorStep with Debug::{to_repr}
 pub(all) struct TensorTrainer {
   graph : TGraph
   binding : TBinding
+  /// The gradient program, compiled once. Every step re-evaluates
+  /// it at the current binding.
+  grad : TGradGraph
   /// The host-side parameters, which the optimiser updates.
   params : Array[Tensor]
   /// The optimiser's state.
@@ -76,7 +87,11 @@ pub fn TensorTrainer::new(
     shapes.push(p.shape.copy())
   }
   let opt = TensorOptState::new(opt_kind, shapes)
-  { graph, binding, params, opt, loss_node, history: [], step_count: 0, }
+  // Compile the gradient once. The graph's structure does not change
+  // during training, so recompiling it every step would redo the
+  // same work and measure the same coefficients again.
+  let grad = compile_tensor_gradient(graph, binding, loss_node)
+  { graph, binding, grad, params, opt, loss_node, history: [], step_count: 0, }
 }
 
 ///|
@@ -86,12 +101,18 @@ pub fn TensorTrainer::new(
 /// program is re-evaluated against the same binding, and the
 /// optimiser updates the host-side parameter tensors.
 pub fn TensorTrainer::step(self : TensorTrainer) -> TensorStep {
-  let values = t_forward(self.graph, self.binding)
+  // One evaluation of the gradient graph gives the primal's values
+  // and the gradient's values together: the gradient program holds
+  // the primal below it, and evaluating it evaluates both.
+  let values = t_forward(self.grad.graph, self.binding)
   let loss_value = values[self.loss_node].sum()
-  let grads = t_grad(self.graph, self.binding, self.loss_node)
-  let gn = grad_norm_tensors(grads.param_grads)
+  let grads : Array[Tensor] = []
+  for i = 0; i < self.grad.param_adj.length(); i = i + 1 {
+    grads.push(values[self.grad.param_adj[i]])
+  }
+  let gn = grad_norm_tensors(grads)
   self.step_count = self.step_count + 1
-  self.opt.step(self.params, grads.param_grads, self.step_count)
+  self.opt.step(self.params, grads, self.step_count)
   self.sync_params()
   self.history.push(loss_value)
   {
