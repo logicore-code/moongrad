@@ -224,43 +224,51 @@ pub fn Dual::from_param(b : Binding, slot : Int32, index : Int32) -> Dual {
 
 ///|
 /// Chain rule for a unary operator on a dual.
-pub fn Dual::unary(d : Dual, op : UnaryOp) -> Dual {
-  {
-    value: match apply_unary(op, d.value) {
-      Some(v) => v
-      None => 0.0
-    },
-    tangent: unary_derivative(op, d.value) * d.tangent,
+pub fn Dual::unary(d : Dual, op : UnaryOp) -> Dual raise ADError {
+  match apply_unary(op, d.value) {
+    Some(v) => { value: v, tangent: unary_derivative(op, d.value) * d.tangent, }
+    // A domain error is reported, the way the reverse pass reports
+    // it. Substituting a zero here would let the oracle agree with
+    // a gradient the engine itself refuses to produce.
+    None => raise DomainError("unary applied out of its domain")
   }
 }
 
 ///|
 /// Chain rule for a binary operator on two duals.
-pub fn Dual::binary(op : BinaryOp, a : Dual, b : Dual) -> Dual {
-  {
-    value: match apply_binary(op, a.value, b.value) {
-      Some(v) => v
-      None => 0.0
-    },
-    tangent: binary_dleft(op, a.value, b.value) * a.tangent +
-    binary_dright(op, a.value, b.value) * b.tangent,
+pub fn Dual::binary(op : BinaryOp, a : Dual, b : Dual) -> Dual raise ADError {
+  match apply_binary(op, a.value, b.value) {
+    Some(v) =>
+      {
+        value: v,
+        tangent: binary_dleft(op, a.value, b.value) * a.tangent +
+        binary_dright(op, a.value, b.value) * b.tangent,
+      }
+    None => raise DomainError("binary applied out of its domain")
   }
 }
 
 ///|
 /// Chain rule for `base ^ exponent` with a constant exponent.
-pub fn Dual::pow(d : Dual, exponent : Double) -> Dual {
-  let v = match safe_pow(d.value, exponent) {
-    Some(r) => r
-    None => 0.0
-  }
-  {
-    value: v,
-    tangent: if d.value == 0.0 {
-      0.0
-    } else {
-      exponent * @math.pow(d.value, exponent - 1.0) * d.tangent
-    },
+pub fn Dual::pow(d : Dual, exponent : Double) -> Dual raise ADError {
+  match safe_pow(d.value, exponent) {
+    Some(v) =>
+      {
+        value: v,
+        // At zero the derivative is infinite for an exponent below one
+        // and the exponent itself for one above, so the honest answer
+        // is the same one the reverse pass gives: no finite value.
+        tangent: if d.value == 0.0 && exponent < 1.0 {
+          raise DomainError(
+            "the derivative of zero to a fractional power is not finite",
+          )
+        } else if d.value == 0.0 {
+          0.0
+        } else {
+          exponent * @math.pow(d.value, exponent - 1.0) * d.tangent
+        },
+      }
+    None => raise DomainError("the power is out of its domain")
   }
 }
 
@@ -276,7 +284,7 @@ pub fn forward_mode(
   b : Binding,
   target : Int32,
   direction : Int32,
-) -> (Double, Double) {
+) -> (Double, Double) raise ADError {
   let values = forward_dual(g, b, direction)
   if target < 0 || target >= values.length() {
     return (0.0, 0.0)
@@ -286,7 +294,11 @@ pub fn forward_mode(
 
 ///|
 /// Evaluate every node in forward mode.
-pub fn forward_dual(g : Graph, b : Binding, direction : Int32) -> Array[Dual] {
+pub fn forward_dual(
+  g : Graph,
+  b : Binding,
+  direction : Int32,
+) -> Array[Dual] raise ADError {
   let n = g.nodes.length()
   let values : Array[Dual] = []
   for i = 0; i < n; i = i + 1 {
@@ -305,7 +317,7 @@ fn dual_of_node(
   values : Array[Dual],
   id : Int32,
   direction : Int32,
-) -> Dual {
+) -> Dual raise ADError {
   match g.nodes[id] {
     Node::Const(v) => Dual::constant(v)
     Node::Var(slot) => Dual::from_var(b, slot, direction)
