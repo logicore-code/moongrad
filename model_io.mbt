@@ -72,7 +72,7 @@ pub fn ModelError::describe(self : ModelError) -> String {
 ///|
 /// Build a model from named parameters.
 pub fn Model::new(params : Array[NamedParam]) -> Model {
-  { params }
+  { params, }
 }
 
 ///|
@@ -104,7 +104,7 @@ pub fn Model::get(self : Model, name : String) -> Tensor? {
 pub fn Model::set(self : Model, name : String, value : Tensor) -> Bool {
   for i = 0; i < self.params.length(); i = i + 1 {
     if self.params[i].name == name {
-      self.params[i] = { name, value }
+      self.params[i] = { name, value, }
       return true
     }
   }
@@ -128,7 +128,7 @@ fn write_double(x : Double) -> @json.Json {
   if x == @double.neg_infinity {
     return @json.Json::string("-Infinity")
   }
-  if x == 0.0 && (1.0 / x) < 0.0 {
+  if x == 0.0 && 1.0 / x < 0.0 {
     return @json.Json::number(x, repr="-0.0")
   }
   @json.Json::number(x)
@@ -137,12 +137,22 @@ fn write_double(x : Double) -> @json.Json {
 ///|
 /// Read one double back, undoing `write_double`.
 fn read_double(j : @json.Json) -> Double? {
-  match j.as_string() {
-    Some("NaN") => Some(@double.not_a_number)
-    Some("Infinity") => Some(@double.infinity)
-    Some("-Infinity") => Some(@double.neg_infinity)
-    _ => j.as_number()
+  if j is String(s) {
+    if s == "NaN" {
+      return Some(@double.not_a_number)
+    }
+    if s == "Infinity" {
+      return Some(@double.infinity)
+    }
+    if s == "-Infinity" {
+      return Some(@double.neg_infinity)
+    }
+    return None
   }
+  if j is Number(n, ..) {
+    return Some(n)
+  }
+  None
 }
 
 ///|
@@ -158,14 +168,14 @@ pub fn Model::to_json(self : Model) -> String {
     for x in p.value.data {
       data.push(write_double(x))
     }
-    let fields = Map::of([
+    let fields = Map([
       ("name", @json.Json::string(p.name)),
       ("shape", @json.Json::array(shape)),
       ("data", @json.Json::array(data)),
     ])
     entries.push(@json.Json::object(fields))
   }
-  let root = Map::of([("params", @json.Json::array(entries))])
+  let root = Map([("params", @json.Json::array(entries))])
   @json.Json::object(root).stringify()
 }
 
@@ -175,48 +185,54 @@ pub fn Model::to_json(self : Model) -> String {
 /// The reader keeps the written representation of every number, so
 /// the parameters come back exactly as they were written.
 pub fn Model::from_json(text : String) -> Model raise ModelError {
-  let tree = try @json.parse(text, preserve_number_repr=true) catch {
+  let tree = @json.parse(text, preserve_number_repr=true) catch {
     e => raise ModelError::BadJson(e.to_string())
   }
-  let root = match tree.as_object() {
-    Some(o) => o
-    None => raise ModelError::BadModel("the top level is not an object")
+  let root = if tree is Object(o) {
+    o
+  } else {
+    raise ModelError::BadModel("the top level is not an object")
   }
   let entries = match root.get("params") {
     Some(v) =>
-      match v.as_array() {
-        Some(a) => a
-        None => raise ModelError::BadModel("params is not an array")
+      if v is Array(a) {
+        a
+      } else {
+        raise ModelError::BadModel("params is not an array")
       }
     None => raise ModelError::BadModel("there is no params array")
   }
   let params : Array[NamedParam] = []
   for entry in entries {
-    let fields = match entry.as_object() {
-      Some(o) => o
-      None => raise ModelError::BadModel("a parameter is not an object")
+    let fields = if entry is Object(o) {
+      o
+    } else {
+      raise ModelError::BadModel("a parameter is not an object")
     }
     let name = match fields.get("name") {
       Some(v) =>
-        match v.as_string() {
-          Some(s) => s
-          None => raise ModelError::BadModel("a parameter's name is not a string")
+        if v is String(s) {
+          s
+        } else {
+          raise ModelError::BadModel("a parameter's name is not a string")
         }
       None => raise ModelError::BadModel("a parameter has no name")
     }
     let shape_items = match fields.get("shape") {
       Some(v) =>
-        match v.as_array() {
-          Some(a) => a
-          None => raise ModelError::BadModel("a parameter's shape is not an array")
+        if v is Array(a) {
+          a
+        } else {
+          raise ModelError::BadModel("a parameter's shape is not an array")
         }
       None => raise ModelError::BadModel("a parameter has no shape")
     }
     let shape : Array[Int32] = []
     for d in shape_items {
-      let extent = match d.as_number() {
-        Some(n) => n
-        None => raise ModelError::BadModel("a shape entry is not a number")
+      let extent = if d is Number(n, ..) {
+        n
+      } else {
+        raise ModelError::BadModel("a shape entry is not a number")
       }
       if extent < 0.0 {
         raise ModelError::NegativeDimension(name)
@@ -225,9 +241,10 @@ pub fn Model::from_json(text : String) -> Model raise ModelError {
     }
     let data_items = match fields.get("data") {
       Some(v) =>
-        match v.as_array() {
-          Some(a) => a
-          None => raise ModelError::BadModel("a parameter's data is not an array")
+        if v is Array(a) {
+          a
+        } else {
+          raise ModelError::BadModel("a parameter's data is not an array")
         }
       None => raise ModelError::BadModel("a parameter has no data")
     }
@@ -251,7 +268,7 @@ pub fn Model::from_json(text : String) -> Model raise ModelError {
     for i = 0; i < data.length(); i = i + 1 {
       value.data[i] = data[i]
     }
-    params.push({ name, value })
+    params.push({ name, value, })
   }
-  { params }
+  { params, }
 }
