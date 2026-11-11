@@ -132,6 +132,8 @@ test "conv_forward_rejects_mismatched_channels" {
 ///|
 /// The convolution, as a plain function of the input and the
 /// weight, so a finite difference can be taken of it.
+
+///|
 fn conv_of(
   x : @moongrad.Tensor,
   w : @moongrad.Tensor,
@@ -156,7 +158,12 @@ test "conv_grad_matches_finite_differences" {
   let x = g.input(0)
   let w = g.param(0)
   let conv = g.conv2d(x, w, 1, 1, 2, 2, 1, 1, 0, 0)
-  let loss = g.sum_axis(conv, 0)
+  // The convolution's output is (batch, channel, height, width), and
+  // the objective has to be a scalar for the gradient to mean
+  // anything: summing over one axis alone leaves a tensor, and the
+  // "gradient" of a tensor objective is the gradient of its sum,
+  // which is not what the finite difference below measures.
+  let loss = g.sum_axis(g.sum_axis(g.sum_axis(conv, 3), 2), 1)
   let b = @moongrad.TBinding::new()
   let xv = match
     @moongrad.Tensor::from_data([1, 1, 2, 3], [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) {
@@ -252,7 +259,12 @@ test "conv_grad_with_padding_matches_finite_differences" {
   let x = g.input(0)
   let w = g.param(0)
   let conv = g.conv2d(x, w, 1, 1, 2, 2, 1, 1, 1, 1)
-  let loss = g.sum_axis(conv, 0)
+  // The convolution's output is (batch, channel, height, width), and
+  // the objective has to be a scalar for the gradient to mean
+  // anything: summing over one axis alone leaves a tensor, and the
+  // "gradient" of a tensor objective is the gradient of its sum,
+  // which is not what the finite difference below measures.
+  let loss = g.sum_axis(g.sum_axis(g.sum_axis(conv, 3), 2), 1)
   let b = @moongrad.TBinding::new()
   let xv = match
     @moongrad.Tensor::from_data([1, 1, 2, 2], [1.0, 2.0, 3.0, 4.0]) {
@@ -312,7 +324,12 @@ test "conv_grad_with_two_input_channels_matches_finite_differences" {
   let x = g.input(0)
   let w = g.param(0)
   let conv = g.conv2d(x, w, 2, 2, 2, 2, 1, 1, 0, 0)
-  let loss = g.sum_axis(conv, 0)
+  // The convolution's output is (batch, channel, height, width), and
+  // the objective has to be a scalar for the gradient to mean
+  // anything: summing over one axis alone leaves a tensor, and the
+  // "gradient" of a tensor objective is the gradient of its sum,
+  // which is not what the finite difference below measures.
+  let loss = g.sum_axis(g.sum_axis(g.sum_axis(conv, 3), 2), 1)
   let b = @moongrad.TBinding::new()
   let xv = match
     @moongrad.Tensor::from_data([1, 2, 2, 3], [
@@ -436,12 +453,23 @@ test "linear_layer_gradient_matches_finite_differences" {
       Some(t) => t
       None => return 0.0
     }
+    // The layer computes y = x @ W + b, with W laid out as
+    // (in_features, out_features), so the oracle has to be a matrix
+    // product too. An elementwise product here would be a different
+    // function, and the difference shows up as a gradient that
+    // disagrees with its own finite difference.
     let mut acc = 0.0
     for i = 0; i < 2; i = i + 1 {
-      for j = 0; j < 2; j = j + 1 {
-        acc = acc + xv.data[i * 2 + j] * w.data[i * 2 + j]
+      // i is the row of the batch, o the output unit and j the input
+      // feature: the weight is laid out as (in_features, out_features),
+      // so the element is w[j * 2 + o].
+      for o = 0; o < 2; o = o + 1 {
+        let mut row = 0.0
+        for j = 0; j < 2; j = j + 1 {
+          row = row + xv.data[i * 2 + j] * w.data[j * 2 + o]
+        }
+        acc = acc + row + bb.data[o]
       }
-      acc = acc + bb.data[i]
     }
     acc
   }
@@ -487,7 +515,7 @@ test "dropout_zeroes_some_units_and_scales_the_rest" {
   let g = @moongrad.TGraph::new()
   let d = @moongrad.Dropout::new(0.5, 9)
   let x = g.input(0)
-  let y = d.apply(g, x)
+  let y = d.apply(g, x, [4])
   let b = @moongrad.TBinding::new()
   b.set_input(0, @moongrad.Tensor::vector([1.0, 1.0, 1.0, 1.0]))
   d.bind(b)
@@ -516,7 +544,7 @@ test "the_dropout_mask_can_be_redrawn_without_rebuilding_the_graph" {
   let g = @moongrad.TGraph::new()
   let d = @moongrad.Dropout::new(0.5, 9)
   let x = g.input(0)
-  let y = d.apply(g, x)
+  let y = d.apply(g, x, [8])
   let b = @moongrad.TBinding::new()
   b.set_input(
     0,
@@ -558,4 +586,114 @@ test "sequential_runs_its_layers_in_order" {
   b.set_param(linear.slot_b, linear.b)
   let grad = @moongrad.t_grad(g, b, y)
   assert_eq(grad.output.shape, [2, 2])
+}
+
+///|
+test "dropout_zeroes_some_units_and_scales_the_rest" {
+  let g = @moongrad.TGraph::new()
+  let d = @moongrad.Dropout::new(0.5, 9)
+  let x = g.input(0)
+  let y = d.apply(g, x, [4])
+  let b = @moongrad.TBinding::new()
+  b.set_input(0, @moongrad.Tensor::vector([1.0, 1.0, 1.0, 1.0]))
+  d.bind(b)
+  let values = @moongrad.t_forward(g, b)
+  // Every unit is either dropped (0) or kept and scaled by 1/keep.
+  let mut kept = 0
+  for v in values[y].data {
+    if v != 0.0 {
+      kept = kept + 1
+    }
+  }
+  check(kept > 0, "some units should be kept")
+  for v in values[y].data {
+    check(
+      v == 0.0 || v == 2.0,
+      "a kept unit is scaled by one over the keep probability",
+    )
+  }
+}
+
+///|
+test "the_dropout_mask_can_be_redrawn_without_rebuilding_the_graph" {
+  // The mask is an input, so the same graph serves every step with
+  // a different mask. That is the difference between dropout and a
+  // fixed random projection.
+  let g = @moongrad.TGraph::new()
+  let d = @moongrad.Dropout::new(0.5, 9)
+  let x = g.input(0)
+  let y = d.apply(g, x, [8])
+  let b = @moongrad.TBinding::new()
+  b.set_input(
+    0,
+    @moongrad.Tensor::vector([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]),
+  )
+  d.bind(b)
+  let first = @moongrad.t_forward(g, b)
+  d.refresh(b)
+  let second = @moongrad.t_forward(g, b)
+  let mut different = false
+  for i = 0; i < first[y].data.length(); i = i + 1 {
+    if first[y].data[i] != second[y].data[i] {
+      different = true
+    }
+  }
+  check(different, "a redrawn mask should differ from the first one")
+}
+
+///|
+test "sequential_runs_its_layers_in_order" {
+  let g = @moongrad.TGraph::new()
+  let linear = @moongrad.Linear::new(g, 2, 2, 1)
+  let seq = @moongrad.Sequential::new()
+  seq.push(
+    fn(g, x) { g.unary(@moongrad.UnaryOp::Tanh, linear.apply(g, x)) },
+    linear.tensors(),
+  )
+  let x = g.input(0)
+  let y = seq.apply(g, x)
+  let b = @moongrad.TBinding::new()
+  b.set_input(
+    0,
+    match @moongrad.Tensor::matrix([[1.0, 2.0], [3.0, 4.0]]) {
+      Some(t) => t
+      None => return
+    },
+  )
+  b.set_param(linear.slot_w, linear.w)
+  b.set_param(linear.slot_b, linear.b)
+  let grad = @moongrad.t_grad(g, b, y)
+  assert_eq(grad.output.shape, [2, 2])
+}
+
+///|
+test "the_convolution_bias_belongs_to_the_channel_axis" {
+  // A rank-one bias is aligned to the *last* axis, and the last axis
+  // of the activation is the width. The bias belongs to the channel
+  // axis, so it has to be given its shape; without that it landed on
+  // the width and alternated along every row.
+  let x = @moongrad.Tensor::zeros([1, 1, 2, 2])
+  x.data[0] = 1.0
+  x.data[1] = 2.0
+  x.data[2] = 3.0
+  x.data[3] = 4.0
+  let w = @moongrad.Tensor::zeros([2, 1, 1, 1])
+  w.data[0] = 1.0
+  w.data[1] = 10.0
+  let bias = @moongrad.Tensor::vector([100.0, 200.0])
+  let out = match @moongrad.t_conv2d(x, w, Some(bias), 1, 1, 0, 0) {
+    Some(t) => t
+    None => {
+      check(false, "the convolution should succeed")
+      return
+    }
+  }
+  // The first output channel sees 1, 2, 3, 4 plus 100; the second
+  // sees them multiplied by ten plus 200.
+  assert_close(out.data[0], 101.0, 1.0e-12, "channel 0, position 0")
+  assert_close(out.data[1], 102.0, 1.0e-12, "channel 0, position 1")
+  assert_close(out.data[2], 103.0, 1.0e-12, "channel 0, position 2")
+  assert_close(out.data[3], 104.0, 1.0e-12, "channel 0, position 3")
+  assert_close(out.data[4], 210.0, 1.0e-12, "channel 1, position 0")
+  assert_close(out.data[5], 220.0, 1.0e-12, "channel 1, position 1")
 }

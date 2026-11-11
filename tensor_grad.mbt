@@ -172,9 +172,6 @@ pub fn TGraph::constant(self : TGraph, t : Tensor) -> Int32 {
 ///|
 /// An input tensor slot, by name of the slot.
 pub fn TGraph::variable(self : TGraph, slot : Int32) -> Int32 {
-  if slot >= self.next_var_slot {
-    self.next_var_slot = slot + 1
-  }
   self.input(slot)
 }
 
@@ -195,6 +192,12 @@ pub fn TGraph::new_variable_slot(self : TGraph) -> Int32 {
 ///|
 /// An input tensor slot.
 pub fn TGraph::input(self : TGraph, slot : Int32) -> Int32 {
+  // Declaring an input moves the counter on, so that a slot handed
+  // out by `new_variable_slot` cannot collide with one the caller
+  // declared.
+  if slot >= self.next_var_slot {
+    self.next_var_slot = slot + 1
+  }
   self.nodes.push(TNode::Var(slot))
   self.nodes.length() - 1
 }

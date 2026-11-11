@@ -14,10 +14,11 @@
 //
 //   Linear       y = x @ W + b              — a matmul and an add
 //   Conv2d       a 2-D convolution           — im2col and a matmul
-//   Pool2d       max or average pooling      — a gather and a scatter
-//   BatchNorm    per-channel normalisation  — statistics and a rescale
 //   Embedding    a lookup table             — a gather
 //   Dropout      a random mask              — a multiply
+//
+// The normalisation layers are in `nn_norm.mbt`, which writes them
+// once for both the layer and the batch variant.
 //
 // The activations are the same set as the scalar engine's, but
 // applied to whole tensors.
@@ -187,11 +188,20 @@ pub fn Dropout::new(rate : Double, seed : Int32) -> Dropout {
 ///|
 /// Apply the mask to a tensor.
 ///
-/// The mask becomes an input of the graph, and the layer draws one
-/// so that the graph is complete. `refresh` draws the next one.
-pub fn Dropout::apply(self : Dropout, g : TGraph, x : Int32) -> Int32 {
+/// The mask becomes an input of the graph, so that it can be redrawn
+/// between steps without rebuilding the graph.
+///
+/// The mask's shape is given rather than read from the graph: the
+/// graph does not know the shape of a tensor until the first forward
+/// pass, and the mask has to exist before that.
+pub fn Dropout::apply(
+  self : Dropout,
+  g : TGraph,
+  x : Int32,
+  shape : Array[Int32],
+) -> Int32 {
   self.slot = g.new_variable_slot()
-  self.shape = g.last_shape(x)
+  self.shape = shape.copy()
   self.draw()
   g.mul(x, g.variable(self.slot))
 }
