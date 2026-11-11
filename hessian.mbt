@@ -48,8 +48,7 @@ pub fn Matrix::symmetrise(self : Matrix) -> Matrix {
 /// d^2 f / d x_j d x_i out of it. Nothing about the second sweep is
 /// special-cased.
 pub fn hessian(g : Graph, b : Binding, target : Int32) -> Matrix raise ADError {
-  let primal_values = forward_values(g, b)
-  let first = compile_gradient(g, primal_values, target)
+  let first = compile_gradient(g, target)
   let n = g.var_count
   let h = Matrix::zeros(n, n)
   for i = 0; i < n; i = i + 1 {

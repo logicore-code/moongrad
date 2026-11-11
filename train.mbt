@@ -216,9 +216,7 @@ pub fn Trainer::new(
     acc = g.add(acc, term)
   }
   let out = g.div(acc, g.constant(n_samples.to_double()))
-  let b = trainer_binding(g, data, flat, net)
-  let values = forward_values(g, b)
-  let compiled = compile_gradient(g, values, out)
+  let compiled = compile_gradient(g, out)
   let opt_state = OptimizerState::new(opt_kind, flat.length())
   {
     graph: g,

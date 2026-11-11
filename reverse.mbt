@@ -97,11 +97,7 @@ pub extend Program with Debug::{to_repr}
 /// The returned graph is a fresh object, so mutating the primal
 /// afterwards cannot corrupt a gradient that has already been
 /// compiled.
-pub fn compile_gradient(
-  g : Graph,
-  primal_values : Array[Double],
-  target : Int32,
-) -> GradGraph raise ADError {
+pub fn compile_gradient(g : Graph, target : Int32) -> GradGraph raise ADError {
   if target < 0 || target >= g.nodes.length() {
     raise DanglingNode(target)
   }
@@ -311,72 +307,19 @@ pub fn derivative_right(
 ///|
 /// Evaluate one node of the gradient program at `b`.
 ///
-/// The trick that keeps this cheap: the gradient graph's first
-/// `primal_size` slots are a mirror of the primal, so their values
-/// are already sitting in `primal_values` and are read straight out.
-/// Only the emitted gradient arithmetic above that line is actually
-/// evaluated, and an adjoint reaching a parameter leaf is typically
-/// a short chain of multiplies against literals.
-pub fn eval_adjoint(
-  h : Graph,
-  b : Binding,
-  primal_values : Array[Double],
-  id : Int32,
-) -> Double {
-  if id < 0 || id >= h.len() {
+/// The gradient graph holds the primal below and the gradient
+/// arithmetic above, so evaluating it evaluates both — and the
+/// primal is re-evaluated at `b` rather than read from a frozen
+/// array. That distinction is the whole point: a gradient program
+/// evaluated at a different binding than the one it was compiled
+/// against has to see that binding's values, or it is the gradient
+/// of the wrong function.
+pub fn eval_adjoint(h : Graph, b : Binding, id : Int32) -> Double raise ADError {
+  let values = forward_values(h, b)
+  if id < 0 || id >= values.length() {
     return 0.0
   }
-  if id < primal_values.length() {
-    return primal_values[id]
-  }
-  match h.nodes[id] {
-    Node::Const(v) => v
-    Node::Var(slot) =>
-      if slot >= 0 && slot < b.vars.length() {
-        b.vars[slot]
-      } else {
-        0.0
-      }
-    Node::ParamGet(slot, index) =>
-      if slot < 0 || slot >= b.params.length() {
-        0.0
-      } else {
-        let vec = b.params[slot]
-        if index < 0 || index >= vec.length() {
-          0.0
-        } else {
-          vec[index]
-        }
-      }
-    Node::Unary(op, child) => {
-      let x = eval_adjoint(h, b, primal_values, child)
-      match apply_unary(op, x) {
-        Some(v) => v
-        None => 0.0
-      }
-    }
-    Node::Binary(op, a, c) => {
-      let x = eval_adjoint(h, b, primal_values, a)
-      let y = eval_adjoint(h, b, primal_values, c)
-      match apply_binary(op, x, y) {
-        Some(v) => v
-        None => 0.0
-      }
-    }
-    Node::ReluDeriv(child) => {
-      // The branch is taken here, where the value is known, rather
-      // than where the gradient was compiled.
-      let x = eval_adjoint(h, b, primal_values, child)
-      if x > 0.0 { 1.0 } else { 0.0 }
-    }
-    Node::PowBy(exponent, base) => {
-      let x = eval_adjoint(h, b, primal_values, base)
-      match safe_pow(x, exponent) {
-        Some(v) => v
-        None => 0.0
-      }
-    }
-  }
+  values[id]
 }
 
 ///|
@@ -418,7 +361,7 @@ pub fn grad(
   target : Int32,
 ) -> (Array[Double], Program) raise ADError {
   let primal_values = forward_values(g, b)
-  let compiled = compile_gradient(g, primal_values, target)
+  let compiled = compile_gradient(g, target)
   let prog = Program::{
     primal: g,
     grad: compiled,
@@ -438,9 +381,13 @@ pub fn evaluate_gradients(
   p : Program,
   b : Binding,
 ) -> Array[Double] raise ADError {
+  // One evaluation of the graph gives every gradient: the graph
+  // holds the primal and the gradient arithmetic together.
+  let values = forward_values(p.grad.graph, b)
   let out : Array[Double] = []
   for i = 0; i < p.grad.var_adj.length(); i = i + 1 {
-    out.push(forward(p.grad.graph, b, p.grad.var_adj[i]).output)
+    let id = p.grad.var_adj[i]
+    out.push(if id >= 0 && id < values.length() { values[id] } else { 0.0 })
   }
   out
 }
@@ -451,13 +398,22 @@ pub fn evaluate_gradients(
 /// Each entry is a partial evaluation of the accumulated adjoint
 /// circuit, so the values are correct at any binding rather than at
 /// the one the sweep ran against.
-pub fn param_gradients(p : Program, b : Binding) -> Array[Array[Double]] {
+pub fn param_gradients(
+  p : Program,
+  b : Binding,
+) -> Array[Array[Double]] raise ADError {
+  // The gradient graph is evaluated once at `b`, so the parameter
+  // gradients see the same values the primal does. Reading the
+  // primal's slots out of a frozen array instead would leave them
+  // one step behind the weights they belong to.
+  let values = forward_values(p.grad.graph, b)
   let out : Array[Array[Double]] = []
   for i = 0; i < p.grad.param_adj_node.length(); i = i + 1 {
     let row : Array[Double] = []
     let src = p.grad.param_adj_node[i]
     for j = 0; j < src.length(); j = j + 1 {
-      row.push(eval_adjoint(p.grad.graph, b, p.primal_values, src[j]))
+      let id = src[j]
+      row.push(if id >= 0 && id < values.length() { values[id] } else { 0.0 })
     }
     out.push(row)
   }
@@ -467,7 +423,10 @@ pub fn param_gradients(p : Program, b : Binding) -> Array[Array[Double]] {
 ///|
 /// Parameter gradients as one flat array, in slot-then-index order,
 /// which is the layout an optimiser wants.
-pub fn flat_param_gradients(p : Program, b : Binding) -> Array[Double] {
+pub fn flat_param_gradients(
+  p : Program,
+  b : Binding,
+) -> Array[Double] raise ADError {
   let nested = param_gradients(p, b)
   let out : Array[Double] = []
   for i = 0; i < nested.length(); i = i + 1 {
