@@ -7,11 +7,92 @@ project follows Semantic Versioning: bump the
 - `MINOR` part on new functionality in a backward-compatible way
 - `PATCH` part on backward-compatible bug fixes
 
+## [0.4.0] — 2026-11-08
+
+### Added
+- The tensor backward sweep emits a **gradient program** rather than
+  accumulating numeric adjoints. Every adjoint is now a node in the
+  graph, and every local derivative is an expression over the primal's
+  own nodes, so the tensor gradient is re-evaluable at any binding.
+- New tensor nodes: `Adjust` (broadcast up, sum down), `ExpandAxis`,
+  `BroadcastTo`, `PadTo`, `CropTo`, `ReluDeriv`, `Im2Col`, `Col2Im`,
+  `ScatterRow`, `Select` and `Scatter`. The last two make a single
+  element of a gradient addressable, which is what the Hessian needs.
+- `ReluDeriv` in both engines. ReLU's derivative is a step function, and
+  folding it into a literal at compile time produced a gradient that was
+  right at the compile point and wrong everywhere else — and wrong in a
+  way that looked right. The comparison now lives in a node, so it is
+  decided where the gradient is evaluated.
+- `t_hessian`, `t_param_hessian` and `t_mixed_hessian` in
+  `tensor_hessian.mbt`: the Hessian of a tensor objective over the
+  flattened input space, the parameter-against-parameter block, and the
+  parameter-against-input block a Gauss-Newton step needs. All three
+  come from differentiating the gradient program, so no second-order
+  case exists in the compiler.
+- `examples/reuse`, which compiles one gradient and evaluates it at four
+  inputs, two of them on the far side of a ReLU's kink.
+- `examples/tensor_hessian`, which checks the tensor Hessian against the
+  closed form and against a finite difference of the gradient, and then
+  takes a Newton step with it.
+- `Matrix::nrows` and `Matrix::ncols`.
+
+### Fixed
+- The scalar engine's **parameter gradients** were read out of a frozen
+  copy of the primal's values, so a gradient program evaluated at a
+  binding other than the one it was compiled against produced the
+  gradient of the wrong function. The variable gradients were correct;
+  the parameter gradients were one step behind. Training masked it,
+  because the loop refreshed the primal before every step, but the API
+  was a trap. The gradient program is now evaluated as a whole, so the
+  primal is re-evaluated with it.
+- `t_sum_to_shape` returns the operand's own shape rather than the
+  broadcast shape, which had been leaving the gradient of a broadcast
+  operand at the wrong size.
+
+### Changed
+- `compile_gradient` no longer takes the primal's values: every local
+  derivative is an expression now, so the sweep reads no operand value
+  at all.
+- `param_gradients` and `flat_param_gradients` can raise `ADError`,
+  because they evaluate the gradient program.
+- `checkpoint.mbt` now segments the *evaluation* of the gradient
+  program rather than the sweep. The sweep no longer holds a tape, so
+  the memory that remains is the evaluation's, and that is the quantity
+  the module reports.
+- The test suite grew from 202 cases to 212, and now includes tests that
+  pin the gradient's re-evaluation and the tensor Hessian.
+
+## [0.3.0] — 2026-10-20
+
+### Added
+- A tensor library: shape, row-major buffer, numpy broadcasting,
+  indexing, reshape, transpose, concatenation, slicing and gather.
+- Tensor-level reverse-mode differentiation covering elementwise unary
+  and binary operators with broadcasting, matrix product, reduction
+  along an axis, reshape, transpose, concatenation, slicing, power,
+  convolution, gather and scaling by a constant.
+- A neural-network layer set: dense layers, 2-D convolution, embeddings,
+  dropout and sequential containers, with the activations identity,
+  tanh, sigmoid, ReLU and softplus.
+- Dense linear algebra: Jacobi eigenvalues, Cholesky, symmetric and
+  general linear solves, QR by Householder reflections, singular values,
+  inverse, determinant and matrix exponential.
+- Optimisers with per-element state: SGD, momentum and Adam with the
+  bias correction.
+- A training loop that compiles the graph and the gradient once and
+  re-evaluates them at every step.
+- Ten runnable examples, including a gradient check against central
+  differences and a network that trains.
+
+### Fixed
+- Four bugs that made the neural network silently not train: the
+  parameter gradient was not reaching the optimiser, the bias term was
+  not being updated, the learning rate was applied twice, and the loss
+  was being read from the wrong slot.
+
 ## [0.2.0] — 2026-10-13
 
 ### Added
-- `letrec` for mutually-recursive local bindings, plus named `let`
-  for the canonical `(let loop ((i 0) (acc 0)) ...)` iteration form.
 - Segment-recomputation gradient checkpointing in `checkpoint.mbt`:
   peak occupancy drops from O(n) to O(k + w) for k segments of
   width w, at the cost of re-evaluating every interior node once.
@@ -35,9 +116,9 @@ project follows Semantic Versioning: bump the
 - 62 more unit tests: 89 to 151.
 
 ### Fixed
-- Plain-form `(define name expr)` is now recursive. Previously only
-  the short-form `(define (name params...) body)` was, so a body
-  referring to its own name raised `UnboundSymbol`.
+- The simplifier is literal-aware: `x - x` folds to zero instead of
+  being kept as a subtraction, and a constant expression is folded once
+  rather than re-derived on every use.
 - Parameter gradients are accumulated as circuits rather than
   numbers, so they are re-evaluable instead of frozen at the point
   the graph was compiled.
@@ -62,7 +143,7 @@ project follows Semantic Versioning: bump the
 
 ## [0.1.0] — 2026-10-13
 
-The first release. The interpreter core:
+The first release. The gradient compiler:
 
 - `node.mbt` — the IR, with the index-ordering invariant that lets
   both passes be plain scans.
@@ -73,9 +154,9 @@ The first release. The interpreter core:
 - `forward.mbt` — constant propagation, plus an independent
   forward-mode dual-number engine used as a test oracle.
 - `reverse.mbt` — the gradient compiler.
-- `error.mbt` — `ReadError` / `EvalError` / `ArityError` shaped
-  suberrors, so a failure comes back to the caller with its
-  operands attached instead of taking the process down.
+- `error.mbt` — `ADError` as a suberror, so a failure comes back to
+  the caller with its operands attached instead of taking the process
+  down.
 - 89 unit tests covering the IR, the simplifier, both passes and
   the gradient compiler.
 
