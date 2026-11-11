@@ -92,7 +92,14 @@ pub fn newton_step(
   damping : Double,
 ) -> Array[Double]? {
   let n = x.length()
-  let a = h
+  // A copy, because the damping is added to the matrix and the
+  // caller may well want to use the same Hessian for another step.
+  let a = Matrix::zeros(n, n)
+  for i = 0; i < n; i = i + 1 {
+    for j = 0; j < n; j = j + 1 {
+      a.set(i, j, h.get(i, j))
+    }
+  }
   if damping != 0.0 {
     for i = 0; i < n; i = i + 1 {
       let d = a.get(i, i) + damping
