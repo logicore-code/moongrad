@@ -2,7 +2,8 @@
 
 Numbers below are the median wall-clock time per operation on
 **MoonBit 0.1.20261104, native target, Linux x86_64, release build**.
-Each is the median of 10 samples taken by `@bench.single_bench`.
+Each is the median of 10 samples taken by `@bench.single_bench`, and
+the harness measures in microseconds.
 
 Reproduce with:
 
@@ -17,32 +18,49 @@ times, which is the shape of a moderately deep network's forward pass.
 
 | Operation | Median | What it covers |
 |---|---|---|
-| build + compile the gradient | **686 µs** | constructing the graph and running the backward sweep once |
-| forward pass | **16.5 µs** | constant propagation over 400 nodes |
-| backward pass (re-evaluate the compiled gradient) | **35.4 µs** | the compiled gradient program, evaluated at a binding |
-| backward pass with 8 checkpoint segments | **494 µs** | the same result, plus segment recomputation |
-| one optimiser step, 6 samples, 8x4 network | **642 µs** | forward + backward + Adam, end to end |
+| build + compile the gradient | **559 µs** | constructing the graph and running the backward sweep once |
+| forward pass | **14.7 µs** | constant propagation over 400 nodes |
+| backward pass (re-evaluate the compiled gradient) | **27.0 µs** | the compiled gradient program, evaluated at a binding |
+| backward pass with 8 checkpoint segments | **396 µs** | the same result, plus segment recomputation |
+| one optimiser step, 6 samples, 8x4 network | **476 µs** | forward + backward + Adam, end to end |
 
-Reading the table:
+## The tensor side
 
-- **The forward pass is cheap.** 16.5 µs for 400 nodes is about 40 ns per
+A 16-row batch through a 32×32 dense layer, measured separately
+because the two sides have very different shapes.
+
+| Operation | Median | What it covers |
+|---|---|---|
+| compile the tensor gradient | **122 µs** | the forward pass plus the backward sweep, once |
+| re-evaluate the compiled gradient | **1 209 µs** | evaluating the gradient program at a binding |
+
+Reading the two tables together is the point of this file.
+
+- **The forward pass is cheap.** 14.7 µs for 400 nodes is about 37 ns per
   node, which is what a hash-consed flat array with a linear scan should
   cost.
-- **The backward pass costs about twice the forward pass.** 35.4 µs
-  against 16.5 µs. The backward pass is a second scan of a graph roughly
-  twice the size of the primal — the gradient program has a node per
-  local derivative rule — so the ratio is what the structure predicts.
-- **Compiling is about 19x the cost of running the gradient once.**
-  686 µs against 35.4 µs. That is the price of the "the gradient is a
-  program" design, and it is a price worth paying only once: the
-  training loop compiles the gradient at construction and re-evaluates it
-  every step. A caller that differentiates afresh on every call would
-  want the cheaper design; a training run never does.
-- **Checkpointing costs about 14x the plain backward pass.** 494 µs
-  against 35.4 µs, because each of the 8 segments rebuilds its interior.
-  That is the arithmetic side of the trade; the memory side is what
-  `examples/checkpoint` prints, and the gradient is bit-identical either
-  way.
+- **On the scalar side, compiling is twenty times evaluating.** 559 µs
+  against 27 µs. That is the price of the "the gradient is a program"
+  design, and it is a price worth paying only once: the training loop
+  compiles the gradient at construction and re-evaluates it every step.
+- **On the tensor side the ratio is the other way round.** Compiling
+  costs 122 µs and evaluating costs 1 209 µs, so a single evaluation is
+  about ten times a compilation. The reason is the shape of the work:
+  a tensor node is a whole array, so the backward sweep's job is to
+  *emit* expressions — cheap — while the evaluation's job is to
+  *compute* them, and computing a matmul is not cheap.
+- **So "compile once" pays differently on the two sides.** On the scalar
+  side it removes almost all of the per-step work. On the tensor side
+  it removes one compilation out of every step's work, which is about a
+  tenth of the step — and over a run of four hundred steps, that is
+  four hundred compilations. The saving is real, but it is not the
+  twenty-to-one the scalar number suggests, and quoting that number
+  for the tensor side would be wrong.
+- **Checkpointing costs about fifteen times the plain backward pass.**
+  396 µs against 27 µs, because each of the 8 segments rebuilds its
+  interior. That is the arithmetic side of the trade; the memory side
+  is what `examples/checkpoint` prints, and the gradient is
+  bit-identical either way.
 
 ## Is it fast enough?
 
@@ -69,16 +87,13 @@ In rough order of expected payoff:
    graph, so a single left-to-right pass could produce the forward
    values and the gradient values together, instead of evaluating the
    primal once to compile and again to run.
-3. **Cache the primal's values between evaluations.** The training loop
-   re-evaluates the primal at every step even though only the
-   parameters changed. A cache keyed on node slot would cut the
-   forward cost, at the price of the memory that the checkpointing
-   module is about.
-
-None of these are needed for the target use cases, and each would add
-a layer between the user's expression and the machine. The
-straightforward design is what keeps `moongrad` at 12k lines and
-readable end to end.
+3. **Reuse the buffers.** Every node of the gradient program allocates
+   a tensor, and a graph of any size allocates a lot of them. A pool
+   keyed by node slot would remove most of that pressure. It is not
+   done here because the gradient program has to be re-evaluable at
+   more than one binding, and a buffer that has been written by one
+   evaluation cannot be reused by the next without knowing what is
+   still live.
 
 ## Caveats
 
@@ -91,3 +106,6 @@ readable end to end.
   rows are the meaningful part.
 - `grad_compile` builds a fresh graph each iteration on purpose: it is
   measuring the compile, not a cached reuse.
+- The optimiser-step row is the noisiest: it allocates the most, and on
+  a shared machine it moved by a factor of two between runs of this
+  suite. The ratio to the forward and backward rows is the stable part.
