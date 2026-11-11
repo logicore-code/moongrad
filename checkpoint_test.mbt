@@ -194,28 +194,33 @@ test "arithmetic_cost_rises_with_the_segment_count" {
 }
 
 ///|
-test "memory_and_time_trade_off_monotonically" {
-  // Fewer segments: more memory, less arithmetic. More segments:
-  // less memory, more arithmetic. If this is not monotone the model
-  // is wrong, not just imprecise.
+test "segmenting_trades_memory_for_arithmetic" {
+  // Fewer segments: more memory held, less arithmetic spent. More
+  // segments: less memory held, more arithmetic spent.
+  //
+  // The memory is not monotone in the segment count: the working set
+  // is the segment boundaries plus the widest window, and the
+  // boundaries grow with the number of segments while the window
+  // shrinks. On a small graph the boundaries can win, so the
+  // assertion is that segmenting never holds *more* than the
+  // unsegmented pass, and that the arithmetic never gets cheaper.
   let g = @moongrad.Graph::new()
   ignore(g.new_vars(1))
   let x = g.variable(0)
   let f = deep_graph(g, x, 40)
   let b = binding_of([0.5])
-  let mut prev_peak = 0
+  let (_one, single) = @moongrad.checkpointed_grad(g, b, f, 1)
   let mut prev_cost = 0.0
   for segments in [1, 2, 4, 8, 16] {
     let (_g, r) = @moongrad.checkpointed_grad(g, b, f, segments)
     check(
-      r.peak_live >= prev_peak,
-      "peak occupancy should not shrink as segments are added",
+      r.peak_live <= single.peak_live,
+      "segmenting should not hold more than the unsegmented pass",
     )
     check(
       r.arithmetic_cost() >= prev_cost,
       "arithmetic cost should not shrink as segments are added",
     )
-    prev_peak = r.peak_live
     prev_cost = r.arithmetic_cost()
   }
 }
