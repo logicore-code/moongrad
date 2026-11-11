@@ -34,6 +34,8 @@ processed and its adjoint is final.
 | `sigmoid(x)` | `s*(1-s)`, `s = sigmoid(x)` | |
 | `softplus(x)` | `sigmoid(x)` | `softplus(x) = log(1 + e^x)` |
 | `relu(x)` | `ReluDeriv(x)` | see below |
+| `silu(x)` | `s + x s (1-s)`, `s = sigmoid(x)` | the sigmoid linear unit, also called swish |
+| `gelu(x)` | see below | the tanh approximation |
 
 Every one of these is emitted as an *expression* over the primal's nodes,
 not as a number. `d/dx sin(x)` becomes a `cos` node applied to the primal's
@@ -60,6 +62,18 @@ The second derivative of ReLU is therefore zero almost everywhere, because
 the derivative of a step function is zero away from the kink. At the kink
 itself the second derivative does not exist, and no convention makes it
 well defined.
+
+GELU's derivative is longer but has nothing discontinuous in it. With
+`u = c (x + 0.044715 x^3)` and `c = sqrt(2/pi)`, the value is
+`0.5 x (1 + tanh u)` and the derivative is
+
+```
+0.5 (1 + tanh u) + 0.5 x (1 - tanh^2 u) u'
+```
+
+with `u' = c (1 + 3 * 0.044715 x^2)`. The compiler emits that as an
+expression over the primal's own nodes, so it is recomputed rather
+than remembered, like every other rule here.
 
 ## Binary operators
 
@@ -173,6 +187,43 @@ second-order special case anywhere in the compiler.
 `param_hessian` and `mixed_hessian` are the same construction with the
 parameter space in place of the input space. The mixed block,
 `d²f/dw_i dx_j`, is the one a Gauss-Newton step needs.
+
+### Hessian-vector products
+
+The dense Hessian is O(n^2) in memory and costs one extra sweep per
+parameter element. A Hessian-vector product is O(n) and costs one
+sweep:
+
+```
+H v = grad( g . v )
+```
+
+where `g` is the gradient. The Hessian is the transpose of the
+Jacobian of `g`, so
+
+```
+(H v)_i = d/dx_i ( sum_j d f/dx_j v_j )
+```
+
+which is the gradient of the scalar `g . v`. So a Hessian-vector
+product is the ordinary backward sweep pointed at a different node —
+the directional derivative built out of the gradient program's own
+nodes, and then differentiated.
+
+The direction is an *input* to the compiled program rather than a
+constant inside it, so one compilation serves every direction. That is
+what makes a conjugate-gradient iteration affordable: the operator is
+applied to a new direction at every step, and each application is one
+evaluation rather than one compilation.
+
+`newton_cg_step` uses this to solve
+
+```
+(H + damping I) dx = -g
+```
+
+without forming `H`. The damping is what makes the system positive
+definite; the exact Hessian of a non-convex objective often is not.
 
 ## Numerical differentiation, as a check
 

@@ -7,6 +7,54 @@ project follows Semantic Versioning: bump the
 - `MINOR` part on new functionality in a backward-compatible way
 - `PATCH` part on backward-compatible bug fixes
 
+## [0.5.0] — 2026-11-11
+
+### Added
+- **Mini-batch training** in `train_batch.mbt`. The batch is an input,
+  so the graph is compiled once for the whole run and the same
+  compiled gradient serves every batch. The dataset is shuffled
+  deterministically and the epoch length accounts for a short final
+  batch.
+- **Hessian-vector products** in `optim_second.mbt`, over the
+  parameter space and over the input space. The direction is an input
+  to the compiled program rather than a constant inside it, so one
+  compilation serves every direction.
+- **Newton-CG** in `optim_second.mbt`: a Newton step computed by
+  conjugate gradients on the damped Hessian system, with the Hessian
+  never formed. A dense Newton step over the explicit Hessian is
+  provided alongside it, and the two agree.
+- **Krylov solvers** in `linalg_krylov.mbt`: conjugate gradient for
+  symmetric positive definite systems, GMRES for general ones, the
+  full Jacobi eigendecomposition with its eigenvectors, the symmetric
+  part of a matrix, and a spectral-norm bound.
+- **More optimisers** in `optim_extra.mbt`: RMSProp, Adagrad, Nesterov
+  momentum and AdamW with decoupled weight decay.
+- **Gradient clipping** by norm and by value, and **learning-rate
+  schedules**: constant, step, exponential and cosine.
+- **Normalisation layers** in `nn_norm.mbt`: layer normalisation and
+  batch normalisation, written once and specialised by axis.
+- **More activations**: the sigmoid linear unit and the Gaussian error
+  linear unit, in both engines.
+- **Mean reductions** over an axis, with and without keeping the axis.
+- `examples/minibatch` and `examples/second_order`.
+
+### Fixed
+- The **tensor trainer recompiled the gradient at every step**, which
+  contradicted the design it was demonstrating and cost about twenty
+  times the work. The gradient program is now compiled once, when the
+  trainer is built, and re-evaluated at each step.
+- `t_sum_axis_keep` wrote its output with the input's strides rather
+  than the reduced ones, so a reduction that kept an axis longer than
+  one read out of bounds. The mini-batch work found it.
+- A gradient compiled against an empty binding baked the wrong shapes
+  into the program. The trainers now fill the binding before
+  compiling, and a compiled gradient records the shapes it was
+  compiled for and checks them at evaluation, so a mismatch is
+  reported instead of returning the gradient of a different function.
+
+### Changed
+- The test suite grew from 212 cases to 290.
+
 ## [0.4.0] — 2026-11-08
 
 ### Added

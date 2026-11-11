@@ -69,10 +69,17 @@ That is the whole design, and it is what the rest of the library hangs off:
 | `tensor_shape.mbt` | Shape adjustments — cropping, padding, scattering a row back into a parameter |
 | `tensor_hessian.mbt` | The Hessian of a tensor objective, and the mixed parameter-input block |
 | `nn_tensor.mbt` | Dense layers, embeddings, dropout, sequential containers |
+| `nn_norm.mbt` | Layer normalisation and batch normalisation, as one computation |
 | `conv.mbt` | 2-D convolution, with im2col forward and a col2im backward |
 | `linalg.mbt` | Eigenvalues, Cholesky, linear solve, QR, singular values, inverse, determinant, matrix exponential |
+| `linalg_krylov.mbt` | Conjugate gradient, GMRES, the full Jacobi eigendecomposition, spectral norm |
 | `optim_tensor.mbt` | SGD, momentum, Adam, with per-element state |
-| `train_tensor.mbt` | The training loop |
+| `optim_extra.mbt` | RMSProp, Adagrad, Nesterov, AdamW; gradient clipping; learning-rate schedules |
+| `optim_second.mbt` | Hessian-vector products, Newton-CG, the dense Newton step |
+| `train_tensor.mbt` | The full-batch training loop |
+| `train_batch.mbt` | The mini-batch training loop: shuffling, batching, epochs |
+| `model_io.mbt` | Saving and loading model parameters |
+| `dataset.mbt` | Deterministic shuffling, batching, k-fold splits, synthetic data |
 | `node.mbt`, `graph.mbt`, `simplify.mbt`, `forward.mbt`, `reverse.mbt`, `hessian.mbt`, `checkpoint.mbt`, `optim.mbt`, `train.mbt` | The scalar engine, which the tensor layer builds on and which still carries the Newton and checkpointing machinery |
 
 The scalar engine is not legacy: it is the rank-0 case of the same ideas, and
@@ -98,8 +105,34 @@ Gauss-Newton step needs.
 
 ### The layer set
 
-`Linear`, `Conv2d`, `Embedding`, `Dropout`, `Sequential`, and the activations
-`identity`, `tanh`, `sigmoid`, `relu`, `softplus`.
+`Linear`, `Conv2d`, `Embedding`, `Dropout`, `Sequential`, layer normalisation
+and batch normalisation, and the activations `identity`, `tanh`, `sigmoid`,
+`relu`, `softplus`, `silu`, `gelu`.
+
+### Second-order optimisation
+
+The engine can differentiate a gradient, so it can build a Hessian — and it can
+also avoid building one. A Hessian-vector product is
+
+```
+H v = grad( g . v )
+```
+
+the gradient of the gradient dotted with the direction, which means the matrix
+never appears. The direction is an *input* to the compiled program rather than a
+constant inside it, so one compilation serves every direction and a
+conjugate-gradient iteration can be run on the Hessian system with nothing
+dense in sight.
+
+That is Newton-CG. `examples/second_order` shows it against the dense route:
+both compute the same Newton step, and the two agree exactly.
+
+### Training
+
+The graph is compiled once and the gradient is compiled once; every step
+re-evaluates the compiled gradient at the new weights. `train_batch.mbt` takes
+that further and puts the mini-batch in an input slot, so the same compiled
+gradient serves every batch of the run.
 
 ## Correctness
 
@@ -111,7 +144,7 @@ catches a wrong rule rather than merely a typo.
 polynomials, quotients, matrix products, broadcasting products, chains of
 nonlinearities, and logarithms. All six agree to the last bit.
 
-The test suite (212 cases) additionally checks each local derivative rule
+The test suite (290 cases) additionally checks each local derivative rule
 against its closed form, and each layer against a hand-computed
 backpropagation.
 
@@ -141,12 +174,14 @@ moon run examples/xor           --target native   # a linear model against a two
 moon run examples/cse           --target native   # what the graph compiler saves
 moon run examples/reuse         --target native   # one gradient, evaluated at many inputs
 moon run examples/tensor_hessian --target native  # second derivatives on the tensor side
+moon run examples/second_order  --target native   # Newton-CG, without forming the Hessian
+moon run examples/minibatch     --target native   # mini-batch training
 ```
 
 ## Building
 
 ```bash
-moon test          # 212 unit tests
+moon test          # 290 unit tests
 moon check         # 0 warnings, 0 errors
 moon fmt           # format
 moon build         # build for the preferred target (wasm)
@@ -187,6 +222,35 @@ input.
 The same node makes the second derivative of a ReLU zero almost everywhere,
 which is the honest answer: the kink is the one place where the second
 derivative does not exist.
+
+## Design decisions
+
+A few choices shape everything else here. They are decisions, with reasons,
+rather than gaps to be filled in later.
+
+**The graph is compiled for a set of shapes.** The backward rules need to know
+each operand's shape — the shape is what says how a broadcast has to be summed
+back down — so a program is valid for the shapes it was compiled against. This
+is the same bargain every statically-shaped tensor library makes. Changing a
+shape means recompiling, which is one call. To keep that from turning into a
+silent wrong answer, a compiled gradient records the input shapes it was
+compiled for and checks them at evaluation: a mismatch is reported rather than
+returning the gradient of a different function.
+
+**Intermediate tensors are not written in place.** In-place would save memory
+and would break re-evaluation: the first evaluation would dirty the buffers
+and the second would read corrupted values. Re-evaluability is the point of
+the design, so the buffers stay and the memory question is answered by
+`checkpoint.mbt` instead.
+
+**Two engines, one derivative table.** The scalar engine is the rank-0 case of
+the tensor one. They share the tables in `simplify.mbt`, so a rule fixed in
+one is fixed in the other.
+
+**Two routes to a second-order step.** The dense Hessian is exact and simple
+when the parameter count is small. The matrix-free route — a
+Hessian-vector product plus conjugate gradient — is what scales, and the two
+agree to the last bit.
 
 ## Documentation
 

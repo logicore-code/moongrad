@@ -1,6 +1,6 @@
 # Examples
 
-Twelve executable packages, each demonstrating one slice of the engine.
+Fourteen executable packages, each demonstrating one slice of the engine.
 
 ```bash
 moon run examples/tensor_basics  --target native
@@ -15,6 +15,8 @@ moon run examples/checkpoint      --target native
 moon run examples/polyfit         --target native
 moon run examples/xor             --target native
 moon run examples/cse             --target native
+moon run examples/second_order    --target native
+moon run examples/minibatch       --target native
 ```
 
 | Example | What it shows | Headline output |
@@ -31,6 +33,8 @@ moon run examples/cse             --target native
 | `polyfit/`     | recovering a quadratic's coefficients from noisy data | `1.5 -> 1.5001`, `-0.8 -> -0.7988` |
 | `xor/`         | a linear model against a two-layer one | linear `0.25`, two-layer `0` |
 | `cse/`         | what the graph compiler saves | slots, folds, identities |
+| `second_order/` | the Hessian, a Hessian-vector product, Newton-CG | the dense and the matrix-free route agree |
+| `minibatch/`   | mini-batch training on a synthetic dataset | the weight converges to the true one |
 
 ## Why `gradcheck` matters
 
@@ -65,6 +69,21 @@ exactly on the minimiser of a quadratic.
 
 A second-order engine that had to be written separately would have to
 re-derive every rule a second time, and the two would disagree somewhere.
+
+## Why `second_order` matters
+
+It computes the same Newton step two ways: once from the dense
+Hessian, with a Cholesky factorisation, and once without forming the
+Hessian at all, using a Hessian-vector product inside a
+conjugate-gradient iteration. The two agree exactly, which is what
+says the matrix-free route is computing the right thing.
+
+## Why `minibatch` matters
+
+The batch is an input, so the graph is compiled once for the whole
+run and the same compiled gradient serves every batch. The example
+shows the loss falling over thirty epochs and the weight converging
+to the one that generated the data.
 
 ## Why `checkpoint` matters
 

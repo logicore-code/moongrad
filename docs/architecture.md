@@ -214,21 +214,33 @@ report with the operands attached.
 `Stats` counts what happened, so the optimisation is measurable rather than
 asserted: `cse_hits`, `identities`, `folds`, `annihilated`, `requests`.
 
-## What is deliberately absent
+## Design decisions
 
-- **No fused kernel.** The forward pass and the gradient evaluation are
-  two separate scans over one array. A fused loop would be faster, and
-  would change the IR rather than the passes.
-- **No tape.** The gradient is a program, so there is nothing to free.
-  What the sweep holds is the adjoint array, and what the evaluation
-  holds is one value per node.
-- **No mini-batch support in the trainer.** The graph covers the whole
-  dataset as one full batch, because a graph per batch size would have to
-  be rebuilt and a graph per step would throw away the compile-once
-  property.
-- **No shape polymorphism.** The gradient program bakes in the operand
-  shapes at compile time. A graph whose shapes changed between
-  evaluations would have to be recompiled.
-- **No sparse second-order structure.** The Hessian is dense, over the
-  flattened input space. A structured Hessian would need a different
-  representation of the second-order term.
+These are choices, with reasons, rather than gaps.
+
+- **The graph is compiled for a set of shapes.** The backward rules bake
+  the operand shapes into the program, because the shapes are what say
+  how a broadcast has to be summed back down. A compiled gradient
+  records the input shapes it was compiled for and checks them at
+  evaluation, so a mismatch is reported rather than quietly computing
+  the gradient of a different function.
+- **Intermediate values are not written in place.** In-place updates
+  would save memory and would break re-evaluation: the first evaluation
+  would dirty the buffers and the second would read corrupted values.
+  Re-evaluability is the property the whole design is for, so the
+  buffers stay and `checkpoint.mbt` answers the memory question
+  instead.
+- **The mini-batch size is fixed at compile time.** The batch is an
+  input, so the graph does not change between batches; but the batch
+  axis has a length, and that length is part of the graph's shapes.
+  A different batch size is a different graph, and therefore a
+  different compilation. A training run does not change its batch
+  size, so this costs nothing in practice.
+- **Two engines, one derivative table.** The scalar engine is the
+  rank-0 case of the tensor one, not a prototype it grew out of. They
+  share the tables in `simplify.mbt`, which is what keeps a rule
+  fixed in one from being un-fixed in the other.
+- **Two routes to a second-order step.** The dense Hessian is exact
+  and simple when the parameter count is small. The matrix-free route
+  — a Hessian-vector product plus conjugate gradient — is what
+  scales, and the two agree to the last bit.
