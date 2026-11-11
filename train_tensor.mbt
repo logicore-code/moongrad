@@ -39,17 +39,29 @@ pub extend TensorStep with Debug::{to_repr}
 
 ///|
 /// A training run over tensors.
-#derive(Debug)
 pub(all) struct TensorTrainer {
   graph : TGraph
   binding : TBinding
-  /// The gradient program, compiled once. Every step re-evaluates
-  /// it at the current binding.
-  grad : TGradGraph
+  /// The gradient program, compiled once.
+  ///
+  /// It is compiled on the first step rather than when the trainer
+  /// is built, because the backward rules bake the operand shapes
+  /// into the program and the shapes come from the binding — which
+  /// the caller may not have filled in yet. Compiling later removes
+  /// the ordering requirement: the trainer works whether the inputs
+  /// are set before or after it is built.
+  mut grad : TGradGraph?
   /// The host-side parameters, which the optimiser updates.
   params : Array[Tensor]
   /// The optimiser's state.
   opt : TensorOptState
+  /// Callbacks that redraw a layer's stochastic inputs.
+  ///
+  /// The dropout layer's mask is an input rather than a constant, so
+  /// it has to be redrawn between steps for the layer to be a dropout
+  /// rather than a fixed random projection. The callback is given
+  /// the binding to write into.
+  mut refreshers : Array[(TBinding) -> Unit]
   /// The node the loss is rooted at.
   loss_node : Int32
   /// The loss at every step so far.
@@ -58,15 +70,19 @@ pub(all) struct TensorTrainer {
 }
 
 ///|
-pub extend TensorTrainer with Debug::{to_repr}
-
-///|
 /// Build a trainer.
 ///
 /// `build` is given the graph and the binding and has to return the
 /// loss node and the parameter tensors it wants optimised. It is a
 /// closure because the graph has to be built in a particular order:
 /// the inputs first, then the layers, then the loss.
+///
+/// The parameters have to come back in **slot order** — the order
+/// `new_param_slot` handed the slots out, which is the order the
+/// layers were created. A parameter bound to the wrong slot makes
+/// the forward pass fail, and the failure looks like a network that
+/// is not learning rather than like a mistake; the step reports it
+/// as a failure rather than as a zero gradient.
 pub fn TensorTrainer::new(
   graph : TGraph,
   binding : TBinding,
@@ -87,11 +103,31 @@ pub fn TensorTrainer::new(
     shapes.push(p.shape.copy())
   }
   let opt = TensorOptState::new(opt_kind, shapes)
-  // Compile the gradient once. The graph's structure does not change
-  // during training, so recompiling it every step would redo the
-  // same work and measure the same coefficients again.
-  let grad = compile_tensor_gradient(graph, binding, loss_node)
-  { graph, binding, grad, params, opt, loss_node, history: [], step_count: 0, }
+  {
+    graph,
+    binding,
+    grad: None,
+    params,
+    opt,
+    refreshers: [],
+    loss_node,
+    history: [],
+    step_count: 0,
+  }
+}
+
+///|
+/// Register a callback that redraws a layer's stochastic inputs
+/// before every step.
+///
+/// A dropout layer is one: its mask lives in an input slot, so
+/// `dropout.refresh` has to be called between steps for the layer to
+/// drop anything at all.
+pub fn TensorTrainer::add_refresher(
+  self : TensorTrainer,
+  f : (TBinding) -> Unit,
+) -> Unit {
+  self.refreshers.push(f)
 }
 
 ///|
@@ -101,14 +137,44 @@ pub fn TensorTrainer::new(
 /// program is re-evaluated against the same binding, and the
 /// optimiser updates the host-side parameter tensors.
 pub fn TensorTrainer::step(self : TensorTrainer) -> TensorStep {
+  for f in self.refreshers {
+    f(self.binding)
+  }
+  if self.grad is None {
+    // The graph's structure does not change during training, so
+    // compiling it once is enough; recompiling it every step would
+    // redo the same work and measure the same coefficients again.
+    self.grad = Some(
+      compile_tensor_gradient(self.graph, self.binding, self.loss_node),
+    )
+  }
+  let grad = match self.grad {
+    Some(g) => g
+    None => return { loss: 0.0, grad_norm: 0.0, ok: false, }
+  }
+  // The program was compiled for the shapes it was compiled against.
+  // If the binding has moved on — a different batch size, a layer
+  // rebuilt — the program is not valid here, and evaluating it would
+  // quietly produce the gradient of a different function. That is
+  // checked before anything is computed.
+  if !grad.shapes_match(self.binding) {
+    return { loss: 0.0, grad_norm: 0.0, ok: false, }
+  }
   // One evaluation of the gradient graph gives the primal's values
   // and the gradient's values together: the gradient program holds
   // the primal below it, and evaluating it evaluates both.
-  let values = t_forward(self.grad.graph, self.binding)
+  let values = t_forward(grad.graph, self.binding)
+  if grad.graph.failed {
+    // The evaluation itself failed: a shape that does not fit, or a
+    // parameter that does not match the slot it was bound to. A
+    // failure here used to look like a network that simply was not
+    // learning.
+    return { loss: 0.0, grad_norm: 0.0, ok: false, }
+  }
   let loss_value = values[self.loss_node].sum()
   let grads : Array[Tensor] = []
-  for i = 0; i < self.grad.param_adj.length(); i = i + 1 {
-    grads.push(values[self.grad.param_adj[i]])
+  for i = 0; i < grad.param_adj.length(); i = i + 1 {
+    grads.push(values[grad.param_adj[i]])
   }
   let gn = grad_norm_tensors(grads)
   self.step_count = self.step_count + 1

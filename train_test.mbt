@@ -355,3 +355,81 @@ test "the_tensor_trainer_handles_a_parameter_of_rank_two" {
   let report = trainer.step()
   check(report.ok, "the step should have succeeded")
 }
+
+///|
+test "the_tensor_trainer_compiles_the_gradient_on_the_first_step" {
+  // The backward rules bake the operand shapes into the program, so
+  // the gradient cannot be compiled before the binding holds the
+  // inputs. The trainer therefore compiles it on the first step, and
+  // the order the caller sets the inputs up in stops mattering.
+  let g = @moongrad.TGraph::new()
+  let b = @moongrad.TBinding::new()
+  let trainer = @moongrad.TensorTrainer::new(
+    g,
+    b,
+    @moongrad.TensorOptimizer::Sgd(0.1),
+    fn(
+      graph : @moongrad.TGraph,
+      _binding : @moongrad.TBinding,
+    ) -> (Int32, Array[@moongrad.Tensor]) {
+      let x = graph.variable(0)
+      let y = graph.variable(1)
+      let layer = @moongrad.Linear::new(graph, 2, 2, 5)
+      let pred = layer.apply(graph, x)
+      let diff = graph.sub(pred, y)
+      let squared = graph.mul(diff, diff)
+      let loss = graph.div(
+        graph.sum_axis(graph.sum_axis(squared, 1), 0),
+        graph.constant(@moongrad.Tensor::filled([], 4.0)),
+      )
+      ignore(y)
+      (loss, layer.tensors())
+    },
+  )
+  // The inputs are set after the trainer is built.
+  b.set_input(0, @moongrad.Tensor::filled([4, 2], 1.0))
+  b.set_input(1, @moongrad.Tensor::filled([4, 2], 0.5))
+  let report = trainer.step()
+  check(report.ok, "the step should have succeeded")
+  check(report.loss > 0.0, "the loss should be a number")
+}
+
+///|
+test "the_tensor_trainer_reports_a_change_of_shape" {
+  // A program compiled for one set of shapes is not valid for
+  // another, and evaluating it anyway would quietly produce the
+  // gradient of a different function — a zero gradient, in fact,
+  // which looks like a network that is not learning.
+  let g = @moongrad.TGraph::new()
+  let b = @moongrad.TBinding::new()
+  let trainer = @moongrad.TensorTrainer::new(
+    g,
+    b,
+    @moongrad.TensorOptimizer::Sgd(0.1),
+    fn(
+      graph : @moongrad.TGraph,
+      _binding : @moongrad.TBinding,
+    ) -> (Int32, Array[@moongrad.Tensor]) {
+      let x = graph.variable(0)
+      let y = graph.variable(1)
+      let layer = @moongrad.Linear::new(graph, 2, 2, 5)
+      let pred = layer.apply(graph, x)
+      let diff = graph.sub(pred, y)
+      let squared = graph.mul(diff, diff)
+      let loss = graph.div(
+        graph.sum_axis(graph.sum_axis(squared, 1), 0),
+        graph.constant(@moongrad.Tensor::filled([], 4.0)),
+      )
+      ignore(y)
+      (loss, layer.tensors())
+    },
+  )
+  b.set_input(0, @moongrad.Tensor::filled([4, 2], 1.0))
+  b.set_input(1, @moongrad.Tensor::filled([4, 2], 0.5))
+  check(trainer.step().ok, "the first step should have succeeded")
+  // Now the inputs change shape.
+  b.set_input(0, @moongrad.Tensor::filled([3, 2], 1.0))
+  b.set_input(1, @moongrad.Tensor::filled([3, 2], 0.5))
+  let report = trainer.step()
+  check(!report.ok, "a change of shape should be reported")
+}
