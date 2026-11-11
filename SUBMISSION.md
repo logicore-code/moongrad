@@ -72,7 +72,7 @@ ReluDeriv(x)  =  1  if x > 0
 逐位吻合。归一化层、mini-batch 训练、Hessian-向量积各自另有针对闭式解或有限
 差分的对照测试。
 
-299 个单元测试，`moon check` 零 warning 零 error，wasm / wasm-gc / js / native
+339 个单元测试，`moon check` 零 warning 零 error，wasm / wasm-gc / js / native
 四个目标同一份源码编译通过。
 
 ## 3. 项目方向与通用性
@@ -144,8 +144,8 @@ Hessian-向量积加上共轭梯度给出 Newton-CG，矩阵全程不出现。
 - **二阶求导**：标量 Hessian；张量 Hessian、参数 Hessian、参数-输入混合块；
   Hessian-向量积；Newton-CG 与稠密 Newton 步。
 - **神经网络层**：全连接、二维卷积、Embedding、Dropout、Sequential、
-  LayerNorm 与 BatchNorm，激活函数 identity / tanh / sigmoid / relu /
-  softplus / silu / gelu。
+  LayerNorm 与 BatchNorm（含滑动平均与推理态），激活函数 identity /
+  tanh / sigmoid / relu / softplus / silu / gelu。
 - **优化器**：SGD、动量、Adam、RMSProp、Adagrad、Nesterov、AdamW（逐元素
   状态，带偏差修正）；常数 / 阶梯 / 指数 / 余弦四种学习率调度；按范数与
   按值的梯度裁剪。
@@ -154,7 +154,8 @@ Hessian-向量积加上共轭梯度给出 Newton-CG，矩阵全程不出现。
   对称方程组求解、一般线性方程组求解（部分选主元高斯消元）、QR（Householder）、
   奇异值（单边 Jacobi）、逆矩阵、行列式、矩阵指数；Krylov 子空间法的共轭
   梯度与 GMRES。
-- **模型存取**：参数以 JSON 存取，可往返。
+- **模型存取**：参数以 JSON 序列化，可精确往返（双精度逐位还原，
+  包括 -0.0 与非有限值）。
 - **内存**：梯度检查点。
 - **正确性验证**：梯度与中心差分逐项对照的检查工具。
 
@@ -181,9 +182,9 @@ Hessian-向量积加上共轭梯度给出 Newton-CG，矩阵全程不出现。
 - 依赖：仅 MoonBit 标准库（`math`、`hashmap`、`ref`、`bench`、`json`），
   无任何第三方 crate，无 FFI；
 - CI：GitHub Actions 覆盖 `moon fmt --check`、`moon check`（零 warning）、
-  `moon test`（299 个用例）、全部十四个示例的冒烟运行，以及
+  `moon test`（339 个用例）、全部十四个示例的冒烟运行，以及
   `moon check --target all` 的四目标类型检查；
-- 提交历史：近六十次原子提交，每次提交对应一个可独立验证的变更
+- 提交历史：七十余次原子提交，每次提交对应一个可独立验证的变更
   （IR → 构建器 → 化简 → 前向 → 反向 → 张量 → 张量梯度 → 网络层 →
   卷积 → 线性代数 → 优化器 → 训练循环 → 二阶求导 → mini-batch →
   归一化 → 梯度检查点 → 测试 → 文档 → CI）。
