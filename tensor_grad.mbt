@@ -41,6 +41,10 @@ pub(all) enum TNode {
   MatMul(Int32, Int32)
   /// Sum along one axis, dropping that axis.
   Sum(Int32, Int32)
+  /// Mean along one axis, dropping that axis.
+  Mean(Int32, Int32)
+  /// Mean along one axis, keeping the axis with length one.
+  MeanKeep(Int32, Int32)
   /// Reshape to a new shape.
   Reshape(Int32, Array[Int32])
   /// Permute the axes.
@@ -218,6 +222,24 @@ pub fn TGraph::matmul(self : TGraph, a : Int32, b : Int32) -> Int32 {
 
 ///|
 /// Sum along an axis, dropping that axis.
+///|
+/// Mean along one axis, dropping the axis.
+pub fn TGraph::mean_axis(self : TGraph, child : Int32, axis : Int32) -> Int32 {
+  self.nodes.push(TNode::Mean(child, axis))
+  self.nodes.length() - 1
+}
+
+///|
+/// Mean along one axis, keeping the axis with length one.
+///
+/// Keeping the axis is what a normalisation layer wants: the mean
+/// stays broadcastable against the tensor it came from, without the
+/// caller having to know the tensor's shape to build the graph.
+pub fn TGraph::mean_keep_axis(self : TGraph, child : Int32, axis : Int32) -> Int32 {
+  self.nodes.push(TNode::MeanKeep(child, axis))
+  self.nodes.length() - 1
+}
+
 ///|
 /// Sum along one axis, dropping the axis.
 pub fn TGraph::sum_axis(self : TGraph, child : Int32, axis : Int32) -> Int32 {
@@ -666,6 +688,40 @@ fn t_eval_node(
           Tensor::zeros([])
         }
       }
+    TNode::Mean(child, axis) => {
+      let x = values[child]
+      match t_sum_axis(x, axis) {
+        Some(total) => {
+          let n = x.shape[axis]
+          if n <= 0 {
+            g.failed = true
+            return Tensor::zeros([])
+          }
+          t_scale(total, 1.0 / n.to_double())
+        }
+        None => {
+          g.failed = true
+          Tensor::zeros([])
+        }
+      }
+    }
+    TNode::MeanKeep(child, axis) => {
+      let x = values[child]
+      match t_sum_axis_keep(x, axis) {
+        Some(total) => {
+          let n = x.shape[axis]
+          if n <= 0 {
+            g.failed = true
+            return Tensor::zeros([])
+          }
+          t_scale(total, 1.0 / n.to_double())
+        }
+        None => {
+          g.failed = true
+          Tensor::zeros([])
+        }
+      }
+    }
     TNode::Sum(child, axis) =>
       match t_sum_axis(values[child], axis) {
         Some(t) => t
@@ -1227,6 +1283,29 @@ fn t_push_adjoints(
       // d(sum_axis(x))/dx is the gradient broadcast back up to x's
       // shape, with the summed axis re-inserted as a size-1 axis.
       let contrib = h.expand_axis(gbar, axis, values[child].shape)
+      adj[child] = h.add(adj[child], contrib)
+    }
+    TNode::Mean(child, axis) => {
+      // A mean is a sum divided by the axis's length, so the
+      // gradient is the broadcast-back gradient scaled by the same
+      // factor.
+      let n = values[child].shape[axis]
+      if n <= 0 {
+        return
+      }
+      let expanded = h.expand_axis(gbar, axis, values[child].shape)
+      let contrib = h.mul(expanded, h.constant(Tensor::filled([], 1.0 / n.to_double())))
+      adj[child] = h.add(adj[child], contrib)
+    }
+    TNode::MeanKeep(child, axis) => {
+      // The axis was kept, so the gradient is broadcast back along
+      // it and scaled by the axis's length.
+      let n = values[child].shape[axis]
+      if n <= 0 {
+        return
+      }
+      let expanded = h.broadcast_to(gbar, values[child].shape)
+      let contrib = h.mul(expanded, h.constant(Tensor::filled([], 1.0 / n.to_double())))
       adj[child] = h.add(adj[child], contrib)
     }
     TNode::Reshape(child, _) => {
