@@ -111,8 +111,8 @@ Gauss-Newton step needs.
 ### The layer set
 
 `Linear`, `Conv2d`, `Embedding`, `Dropout`, `Sequential`, layer normalisation
-and batch normalisation, and the activations `identity`, `tanh`, `sigmoid`,
-`relu`, `softplus`, `silu`, `gelu`.
+and batch normalisation, and the activations `tanh`, `sigmoid`, `relu`,
+`softplus`, `silu`, `gelu`.
 
 ### Second-order optimisation
 

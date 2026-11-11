@@ -172,22 +172,34 @@ The memory did not disappear; it moved to the evaluation. Evaluating the
 gradient program holds a value per node, and that is the quantity
 `checkpoint.mbt` is about.
 
-It exploits the same index ordering that made the sweep simple. Children sit
-at lower indices, so a left-to-right pass can reach any window of the
-computation on demand — it needs each value shortly before consuming it and
-never again.
+`checkpoint.mbt` applies the classic remedy — cut the node array into `k`
+segments, keep only the boundary values, rebuild each segment's interior on
+entry — and then measures what it actually costs. The answer is that the
+remedy does not pay here, and the reason is worth recording.
 
-Cut the node array into `k` segments, keep only the boundary values, and
-rebuild each segment's interior on entry. Peak occupancy drops from `O(n)`
-to `O(k + w)` for segments of width `w`, at the cost of re-evaluating every
-interior node once. That is the trade Chen et al. described for gradient
-checkpointing in 2016, applied to a compiler rather than to an interpreter.
+A tape's interior depends on its segment's boundary and on nothing else, so
+dropping it and rebuilding it later costs one re-evaluation. A gradient
+program's nodes do not have that property: every local derivative is an
+expression over the primal's own nodes, so a gradient node refers back into
+the primal, at an arbitrary index. Dropping a primal value means
+recomputing it, and recomputing it means walking down to whatever is still
+live — which grows with the depth of the primal, and, where the primal
+shares a subtree, with the sharing too.
+
+So the `O(k + w)` bound belongs to the technique and not to this program.
+What the module establishes is the part that has to be true before the
+arithmetic is worth discussing: the segmented evaluation returns the same
+numbers as the plain one, in every configuration.
+
+The conclusion is that the gradient-program design answers the tape's
+memory question a different way. There is no tape to hold between the
+forward pass and the backward pass, so there is nothing to checkpoint. The
+evaluation holds one value per node — the same order as the tape held —
+but only while it runs.
 
 `choose_segment_count` takes a target *width* rather than a segment count,
 so "keep the window under 256 nodes" behaves the same way on a graph of any
-size. Many narrow segments buy memory with arithmetic and approach a 2x
-cost; few wide ones do the opposite. The gradient is bit-identical in every
-configuration, which is what makes the trade safe to make.
+size.
 
 ## The simplifier
 
