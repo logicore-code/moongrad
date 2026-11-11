@@ -15,6 +15,7 @@ pub(all) enum Node {
   Unary(UnaryOp, Int)
   Binary(BinaryOp, Int, Int)
   PowBy(Double, Int)
+  ReluDeriv(Int)
 }
 ```
 
@@ -41,29 +42,30 @@ contiguous in memory for the sweeps to be cache-friendly. Neither has
 mattered so far; a compiler backend that wanted a register machine would
 have to change the representation rather than the passes.
 
-## 2. Closures are s-expressions, not MoonBit closures
+## 2. Two engines, one set of rules
 
-A closure is encoded as
+There are two gradient compilers in this repository: a scalar one and a
+tensor one. They are separate implementations, and it is worth being
+explicit about why, because the obvious answer — "the scalar one is a
+prototype, the tensor one grew out of it" — is not what happened.
 
-```
-(params body . env_marker)
-```
+The scalar engine is the **rank-0 case**. Its node holds a `Double`; the
+tensor engine's holds a whole array. Both are the same idea applied at
+different ranks, and both emit their gradients the same way, so a rule
+fixed in one is fixed in the other.
 
-where `env_marker` is a symbol like `__env__:42` that resolves to the
-captured `Env` through a global table.
+What they genuinely share is the derivative table. `simplify.mbt` holds
+`unary_derivative`, `binary_dleft` and `binary_dright`, and the tensor
+layer wraps them rather than restating them. That is the mechanism that
+keeps the two engines from drifting apart: there is only one place where
+"what is the derivative of `tanh`" is written down.
 
-The obvious alternative — a MoonBit closure capturing an `Env` — does not
-work, and the reason is worth stating because it is easy to get wrong. A
-MoonBit closure that captures an environment would capture it *by value* at
-the moment the closure is constructed. But the environment has to change: a
-`define` inside the body binds a new name, and the closure needs to see it.
-
-The marker indirection solves this. The marker names a slot in a global
-table, the table entry points at the current environment, and the closure
-holds only the marker's name. When the environment changes, the table entry
-is repointed, and every closure that captured that marker sees the change.
-
-The table is also what makes recursive `define` work. See below.
+The tensor engine has one thing the scalar one does not need, and it is
+the reason its gradient program is not a simple multiple of the primal's
+size: **broadcasting**. When an operand was repeated to reach the
+operand's shape, its gradient comes back at the broadcast shape and has to
+be summed down to the operand's own shape. The `Adjust` node is that
+operation, and it is the tensor engine's own addition to the vocabulary.
 
 ## 3. The backward sweep emits expressions, not numbers
 
@@ -96,38 +98,84 @@ instead of 75.
 with the first sweep's output as the target. `hessian.mbt` is eleven lines
 long because of it.
 
-### Recursive define, and the marker rebinding
+### The tensor engine does the same thing
 
-`(define (fact n) (if (<= n 1) 1 (* n (fact (- n 1)))))` needs the body to
-refer to `fact`.
+The tensor side was originally written the textbook way: the backward sweep
+accumulated numeric adjoints into an array of tensors. It worked, and it
+was quietly inconsistent with the scalar side — the scalar gradient was a
+program and the tensor gradient was not, so the two engines disagreed
+about what "compile once" meant.
 
-The build is:
+The tensor sweep now emits expressions too. Every adjoint is a node in the
+graph, and the local derivatives are the same expressions the scalar engine
+emits, widened to tensors. Two node types carry the weight:
 
-1. Allocate a fresh marker `m`.
-2. Build the closure `(params body . m)`.
-3. Bind `fact` to that closure, producing `env'`.
-4. **Re-point** `m` at `env'`.
+- `Adjust` moves a value between shapes: up by broadcasting when the target
+  has more axes, down by summing when it has fewer. Broadcasting in reverse
+  mode is exactly this operation, and it is its own inverse in the sense
+  that matters — the gradient of a broadcast is a sum, and the gradient of a
+  sum is a broadcast.
+- `ReluDeriv` is the same step function the scalar side uses, on whole
+  tensors.
 
-After step 4 the closure's marker resolves to an environment that contains
-the closure itself under the name `fact`, so the recursive call resolves and
-the cycle terminates.
+The gradient program for a tensor graph is therefore the same kind of
+object as the scalar one: a graph that can be evaluated at any binding.
+`examples/reuse` compiles a tensor gradient once and evaluates it at four
+inputs, two of them on the far side of a ReLU's kink.
 
-`letrec` uses the same idea with a sweep: every marker allocated during the
-evaluation of the bindings is re-pointed at the patched environment
-afterwards. A per-marker approach was tried first and does not work — each
-`make_closure` inside a value's body allocates its own marker, so rebinding
-the placeholder leaves the value's captured environment out of sync.
+### A bug this design caught
+
+The scalar engine's parameter gradients were read out of a *frozen* copy of
+the primal's values, so a gradient program evaluated at a different binding
+than the one it was compiled against produced the gradient of the wrong
+function. The variable gradients were correct; the parameter gradients were
+one step behind. Training masked it, because the training loop refreshed
+the primal before every step, but the API was a trap.
+
+Emitting expressions is what made the bug visible: once every local
+derivative is recomputed at evaluation time, the primal has to be
+recomputed at evaluation time too, and the frozen array had nowhere to hide.
+
+### The gradient program lives in the same graph
+
+The gradient's nodes go into the same array as the primal's, above it.
+That is not tidiness; it is what makes evaluation a single pass. The
+primal's nodes occupy the low slots and the gradient's the high ones, so
+one left-to-right scan evaluates the primal and then the gradient, with
+the gradient's nodes reading the primal's values out of the same array.
+
+It also means the gradient program can be differentiated again. The
+second sweep sees an ordinary graph — the primal's nodes followed by the
+gradient's — and the rules that apply to it are the same rules. Nothing
+in the compiler knows it is looking at a gradient.
+
+The sweep works on a **copy** of the primal rather than the primal
+itself. The copy is made by re-interning every node, which for a
+hash-consed graph is nearly free: each node finds its own slot, so the
+copy has exactly the same shape. Mirroring rather than sharing is
+deliberate — sharing one node array would make it impossible to keep the
+primal after differentiating it, and the primal is worth keeping, because
+it is what the caller differentiates next.
 
 ## Memory
 
-The reverse sweep needs the forward value of every node, because each local
-derivative rule reads its operand's value. A textbook tape stores them all:
-one backward pass through an `n`-node program costs `O(n)` memory.
+A tape-based reverse sweep needs the forward value of every node, because
+each local derivative rule reads its operand's value. A textbook tape
+stores them all: one backward pass through an `n`-node program costs `O(n)`
+memory.
 
-`checkpoint.mbt` exploits the same index ordering that made the sweep
-simple. Children sit at lower indices, so a right-to-left pass can reach any
-window of the forward computation on demand — it needs each value shortly
-before consuming it and never again.
+`moongrad` does not keep a tape. Because the sweep emits expressions
+rather than reading operand values, it holds nothing but the adjoint array.
+The tape is gone, and with it the reason the sweep had to hold anything.
+
+The memory did not disappear; it moved to the evaluation. Evaluating the
+gradient program holds a value per node, and that is the quantity
+`checkpoint.mbt` is about.
+
+It exploits the same index ordering that made the sweep simple. Children sit
+at lower indices, so a left-to-right pass can reach any window of the
+computation on demand — it needs each value shortly before consuming it and
+never again.
 
 Cut the node array into `k` segments, keep only the boundary values, and
 rebuild each segment's interior on entry. Peak occupancy drops from `O(n)`
@@ -168,12 +216,19 @@ asserted: `cse_hits`, `identities`, `folds`, `annihilated`, `requests`.
 
 ## What is deliberately absent
 
-- **No bytecode VM.** The AST walk is direct. A register machine would be
-  faster and would change the IR rather than the passes.
+- **No fused kernel.** The forward pass and the gradient evaluation are
+  two separate scans over one array. A fused loop would be faster, and
+  would change the IR rather than the passes.
 - **No tape.** The gradient is a program, so there is nothing to free.
+  What the sweep holds is the adjoint array, and what the evaluation
+  holds is one value per node.
 - **No mini-batch support in the trainer.** The graph covers the whole
-  dataset as one full batch, because a graph per batch size would have to be
-  rebuilt and a graph per step would throw away the compile-once property.
-- **No `delay`/`force`.** Lazy evaluation would need the IR to grow a
-  suspension type, and the lazy-stream example demonstrates how to get the
-  same effect from closures alone.
+  dataset as one full batch, because a graph per batch size would have to
+  be rebuilt and a graph per step would throw away the compile-once
+  property.
+- **No shape polymorphism.** The gradient program bakes in the operand
+  shapes at compile time. A graph whose shapes changed between
+  evaluations would have to be recompiled.
+- **No sparse second-order structure.** The Hessian is dense, over the
+  flattened input space. A structured Hessian would need a different
+  representation of the second-order term.

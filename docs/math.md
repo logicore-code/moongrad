@@ -33,26 +33,33 @@ processed and its adjoint is final.
 | `tanh(x)` | `1 - tanh(x)^2` | |
 | `sigmoid(x)` | `s*(1-s)`, `s = sigmoid(x)` | |
 | `softplus(x)` | `sigmoid(x)` | `softplus(x) = log(1 + e^x)` |
-| `relu(x)` | `1` if `x > 0` else `0` | see below |
+| `relu(x)` | `ReluDeriv(x)` | see below |
 
 Every one of these is emitted as an *expression* over the primal's nodes,
 not as a number. `d/dx sin(x)` becomes a `cos` node applied to the primal's
 `x` node, so the gradient recomputes correctly at a different binding.
 
-The one exception is ReLU. Its derivative is discontinuous — zero below the
-kink, one above — and the IR has no comparison with which to say "if the
-runtime value is positive". The compiler therefore reads the primal value
-and emits a literal 0 or 1.
+ReLU is the one rule that is not a smooth function of the operand, and it
+gets its own node for the same reason: `ReluDeriv` is evaluated where the
+gradient is evaluated, not where the gradient was compiled.
 
-That is a real limitation rather than a shortcut, and it is the price of
-keeping the IR free of control flow: **a ReLU's gradient is correct at the
-point it was compiled and has to be recompiled for another point.** A
-system that wanted a re-evaluable ReLU gradient would need a comparison in
-the IR, which means a conditional node and a forward pass with branches.
+```
+ReluDeriv(x) = 1 if x > 0 else 0
+```
+
+The comparison is inside the node. That is the difference between a branch
+decided once, at compile time, and a branch decided every time the gradient
+runs — and it is the difference between a gradient that is right at one
+point and a gradient that is right everywhere.
 
 The convention at exactly zero is 0, which is the usual one. It keeps a unit
 that lands exactly on the boundary from producing a gradient of 0.5 and
 stalling.
+
+The second derivative of ReLU is therefore zero almost everywhere, because
+the derivative of a step function is zero away from the kink. At the kink
+itself the second derivative does not exist, and no convention makes it
+well defined.
 
 ## Binary operators
 
@@ -141,6 +148,31 @@ d²f/dxdy = (1 + xy) e^(xy)
 The plain `1` rides along from the product rule. An engine that only
 propagates through the exponential gets the exponential part right and
 still fails.
+
+### The tensor side
+
+The tensor engine produces the same object over a larger index space.
+An input slot holds a tensor rather than a scalar, so the Hessian is over
+the *flattened* input space: the elements of slot 0 first, then those of
+slot 1, and so on.
+
+The construction is the scalar one, run one element at a time:
+
+```
+for each input slot s, for each element e of s:
+    element = Select(gradient_program.input_adj[s], e)   # d f / d x_{s,e}
+    second = compile_gradient(gradient_program, element)
+    for each input slot s2, for each element e2 of s2:
+        H[flat(s2) + e2][flat(s) + e] = second.input_grads[s2][e2]
+```
+
+`Select` is a node, so `d f / d x_{s,e}` is a node, and the second sweep
+is an ordinary backward pass over an ordinary tensor graph. There is no
+second-order special case anywhere in the compiler.
+
+`param_hessian` and `mixed_hessian` are the same construction with the
+parameter space in place of the input space. The mixed block,
+`d²f/dw_i dx_j`, is the one a Gauss-Newton step needs.
 
 ## Numerical differentiation, as a check
 

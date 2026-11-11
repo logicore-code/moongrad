@@ -1,26 +1,38 @@
 # Examples
 
-Six executable packages, each demonstrating one slice of the engine.
+Twelve executable packages, each demonstrating one slice of the engine.
 
 ```bash
-moon run examples/derivatives --target native
-moon run examples/polyfit     --target native
-moon run examples/xor         --target native
-moon run examples/hessian     --target native
-moon run examples/checkpoint  --target native
-moon run examples/cse         --target native
+moon run examples/tensor_basics  --target native
+moon run examples/gradcheck       --target native
+moon run examples/reuse           --target native
+moon run examples/tensor_hessian  --target native
+moon run examples/nn_classifier   --target native
+moon run examples/linalg_demo     --target native
+moon run examples/derivatives     --target native
+moon run examples/hessian         --target native
+moon run examples/checkpoint      --target native
+moon run examples/polyfit         --target native
+moon run examples/xor             --target native
+moon run examples/cse             --target native
 ```
 
 | Example | What it shows | Headline output |
 |---|---|---|
+| `tensor_basics/` | shapes, broadcasting, matrix products, reductions | a `(2,1) + (3,)` broadcast to `(2,3)` |
+| `gradcheck/` | six functions, analytic gradient vs central difference | the two columns agree exactly |
+| `reuse/` | one compiled gradient, evaluated at four different inputs | the gradient follows the input across a ReLU's kink |
+| `tensor_hessian/` | the Hessian of a tensor objective | matches the closed form and a finite difference; one Newton step lands on the minimiser |
+| `nn_classifier/` | a two-layer network trained by gradient descent | loss 0.74 → 0.0003, eight predictions right |
+| `linalg_demo/` | eigenvalues, Cholesky, QR, singular values | a symmetric matrix's spectrum |
 | `derivatives/` | seven functions, analytic gradient vs central difference | the two columns agree to four decimals |
+| `hessian/` | the Hessian, its eigenvalues, a Newton step | one Newton step reaches the minimum |
+| `checkpoint/` | the memory/arithmetic trade-off | less memory for more arithmetic |
 | `polyfit/`     | recovering a quadratic's coefficients from noisy data | `1.5 -> 1.5001`, `-0.8 -> -0.7988` |
 | `xor/`         | a linear model against a two-layer one | linear `0.25`, two-layer `0` |
-| `hessian/`     | the Hessian, its eigenvalues, a Newton step | one Newton step reaches the minimum |
-| `checkpoint/`  | the memory/arithmetic trade-off | 50% less memory for 1.5x the arithmetic |
 | `cse/`         | what the graph compiler saves | slots, folds, identities |
 
-## Why `derivatives` matters
+## Why `gradcheck` matters
 
 Every analytic gradient is printed next to a central difference of the same
 function. A gradient engine that is subtly wrong can still produce
@@ -31,6 +43,28 @@ The same argument applies inside the test suite, where every non-trivial
 gradient is checked against *two* independent derivations: the closed form
 and the forward-mode dual-number engine in `forward.mbt`, which shares no
 code with the reverse pass.
+
+## Why `reuse` matters
+
+It compiles a gradient once and then evaluates it at four different inputs.
+Two of them are on the other side of a ReLU's kink, and the gradient
+changes with the input rather than staying where it was compiled.
+
+This is the check that a frozen gradient cannot pass. A backward pass that
+folds ReLU's step function into a literal produces a number that is right
+at the compile point and wrong everywhere else — and wrong in a way that
+still looks like a plausible gradient, so nothing catches it by accident.
+
+## Why `tensor_hessian` matters
+
+The Hessian of a tensor objective is built by differentiating the gradient
+program, which is possible only because the gradient is a program. The
+example checks the result against the closed form *and* against a finite
+difference of the gradient, then uses it to take a Newton step that lands
+exactly on the minimiser of a quadratic.
+
+A second-order engine that had to be written separately would have to
+re-derive every rule a second time, and the two would disagree somewhere.
 
 ## Why `checkpoint` matters
 
