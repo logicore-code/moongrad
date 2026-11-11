@@ -48,6 +48,62 @@ fn residual_of(
   acc.sqrt()
 }
 
+///|
+/// The Euclidean norm of a vector.
+fn norm_of(x : Array[Double]) -> Double {
+  let mut acc = 0.0
+  for v in x {
+    acc = acc + v * v
+  }
+  acc.sqrt()
+}
+
+///|
+/// The symmetric tridiagonal matrix with four on the diagonal and minus
+/// one on the two neighbouring diagonals.
+///
+/// It is symmetric, diagonally dominant and positive definite, and it
+/// has `n` distinct eigenvalues, so the Krylov space of a generic
+/// right-hand side is the whole space.
+fn tridiagonal(n : Int32) -> @moongrad.Matrix {
+  let m = @moongrad.Matrix::zeros(n, n)
+  for i = 0; i < n; i = i + 1 {
+    m.set(i, i, 4.0)
+    if i > 0 {
+      m.set(i, i - 1, -1.0)
+    }
+    if i + 1 < n {
+      m.set(i, i + 1, -1.0)
+    }
+  }
+  m
+}
+
+///|
+/// The right-hand side `a * [1, 2, ..., n]` of a tridiagonal system,
+/// so that the solution is known.
+fn tridiagonal_rhs(a : @moongrad.Matrix, n : Int32) -> Array[Double] {
+  let b : Array[Double] = []
+  for i = 0; i < n; i = i + 1 {
+    let mut acc = 0.0
+    for j = 0; j < n; j = j + 1 {
+      acc = acc + a.get(i, j) * (j + 1).to_double()
+    }
+    b.push(acc)
+  }
+  b
+}
+
+///|
+/// A vector of zeros.
+fn zeros(n : Int32) -> Array[Double] {
+  let out : Array[Double] = []
+  for _i = 0; _i < n; _i = _i + 1 {
+    out.push(0.0)
+  }
+  out
+}
+
 // ---------------------------------------------------------------------------
 // Matrix-vector product
 // ---------------------------------------------------------------------------
@@ -181,6 +237,111 @@ test "conj_grad_refuses_a_non_square_matrix" {
   check(refused, "a non-square matrix has no conjugate gradient solve")
 }
 
+///|
+test "conj_grad_reports_a_failure_when_the_budget_runs_out" {
+  // One step is not enough for this system. The exact solution is
+  // [1/11, 7/11] and the residual after one step is 0.559, so the
+  // iterate is not a solution: the solver used to hand it back as if
+  // it were one.
+  let a = mkmat([[4.0, 1.0], [1.0, 3.0]])
+  let x = @moongrad.conj_grad(a, [1.0, 2.0], [0.0, 0.0], 1, 1.0e-12)
+  let refused = match x {
+    None => true
+    Some(_) => false
+  }
+  check(refused, "an iterate that is not a solution is not an answer")
+}
+
+///|
+test "conj_grad_reports_a_failure_when_the_budget_is_empty" {
+  let a = mkmat([[4.0, 1.0], [1.0, 3.0]])
+  let x = @moongrad.conj_grad(a, [1.0, 2.0], [0.0, 0.0], 0, 1.0e-12)
+  let refused = match x {
+    None => true
+    Some(_) => false
+  }
+  check(refused, "a budget of zero steps solves nothing")
+}
+
+///|
+test "conj_grad_refuses_a_matrix_that_is_not_symmetric" {
+  // [[1, 2], [0, 1]] is not symmetric, and the recurrence is run on
+  // the matrix itself: the solver used to walk away with a number
+  // that was not a solution of anything.
+  let a = mkmat([[1.0, 2.0], [0.0, 1.0]])
+  let x = @moongrad.conj_grad(a, [3.0, 1.0], [0.0, 0.0], 50, 1.0e-12)
+  let refused = match x {
+    None => true
+    Some(_) => false
+  }
+  check(
+    refused, "a matrix that is not symmetric has no conjugate gradient solve",
+  )
+}
+
+///|
+test "conj_grad_accepts_a_matrix_that_is_symmetric_to_within_the_tolerance" {
+  // The asymmetry here is of the order of the rounding noise, which
+  // is what a matrix put together by two separate computations looks
+  // like, and such a matrix is symmetric for the purposes of the
+  // iteration.
+  let a = mkmat([[4.0, 1.0], [1.0 + 1.0e-15, 3.0]])
+  let x = match @moongrad.conj_grad(a, [1.0, 2.0], [0.0, 0.0], 10, 1.0e-12) {
+    Some(v) => v
+    None => {
+      check(false, "the system should be solvable")
+      return
+    }
+  }
+  check(
+    residual_of(a, x, [1.0, 2.0]) < 1.0e-8,
+    "the residual should be small, got \{residual_of(a, x, [1.0, 2.0])}",
+  )
+}
+
+///|
+test "conj_grad_refuses_a_matrix_that_is_negative_by_a_hair" {
+  // [[1, 1], [1, 1 - 1e-13]] has an eigenvalue of about -5e-14: it
+  // curves the wrong way along one direction, however slightly. The
+  // check used to compare the eigenvalues of the matrix against a
+  // tolerance, and a direction that small was let through; the
+  // Cholesky factorisation refuses the matrix.
+  let a = mkmat([[1.0, 1.0], [1.0, 1.0 - 1.0e-13]])
+  let x = @moongrad.conj_grad(a, [1.0, 1.0], [0.0, 0.0], 10, 1.0e-12)
+  let refused = match x {
+    None => true
+    Some(_) => false
+  }
+  check(
+    refused, "a matrix that is negative somewhere has no conjugate gradient solve",
+  )
+}
+
+///|
+test "conj_grad_solves_a_large_system_without_an_eigendecomposition" {
+  // A hundred and twenty rows is a small system for a direct solver
+  // and a large one for the check on the definiteness of the matrix.
+  // That check used to be an eigendecomposition of the whole matrix,
+  // which is cubic in the dimension for every sweep, and at this size
+  // it took longer than the rest of the suite put together. The check
+  // is a Cholesky factorisation now, which is cubic in the dimension
+  // once and not at all per solve.
+  let n = 120
+  let a = tridiagonal(n)
+  let b = tridiagonal_rhs(a, n)
+  let x = match @moongrad.conj_grad(a, b, zeros(n), 4 * n, 1.0e-10) {
+    Some(v) => v
+    None => {
+      check(false, "the system should be solvable")
+      return
+    }
+  }
+  check(
+    residual_of(a, x, b) < 1.0e-8,
+    "the residual should be small, got \{residual_of(a, x, b)}",
+  )
+}
+
 // ---------------------------------------------------------------------------
 // GMRES
 // ---------------------------------------------------------------------------
@@ -251,6 +412,149 @@ test "gmres_refuses_a_non_square_matrix" {
     Some(_) => false
   }
   check(refused, "a non-square matrix has no GMRES solve")
+}
+
+///|
+test "gmres_solves_an_eight_by_eight_tridiagonal_system" {
+  // The Krylov space of this matrix is the whole space, so the
+  // iteration has to notice that the space closes at the eighth
+  // vector and finish there. It used to walk past the closing of the
+  // space, build a ninth vector in an eight-dimensional space, and
+  // hand back the initial guess as if it had solved the system.
+  let n = 8
+  let a = tridiagonal(n)
+  let b = tridiagonal_rhs(a, n)
+  let x = match @moongrad.gmres(a, b, zeros(n), 40, 1.0e-12) {
+    Some(v) => v
+    None => {
+      check(false, "the system should be solvable")
+      return
+    }
+  }
+  for i = 0; i < n; i = i + 1 {
+    check(
+      near(x[i], (i + 1).to_double(), 1.0e-8),
+      "x\{i} should be \{i + 1}, got \{x[i]}",
+    )
+  }
+  check(
+    residual_of(a, x, b) < 1.0e-8,
+    "the residual should be small, got \{residual_of(a, x, b)}",
+  )
+}
+
+///|
+test "gmres_solves_the_tridiagonal_systems_of_every_size" {
+  // The failure showed up for the sizes between seven and sixteen and
+  // not for the smaller ones, so the whole range is checked.
+  for n = 5; n <= 20; n = n + 1 {
+    let a = tridiagonal(n)
+    let b = tridiagonal_rhs(a, n)
+    let x = match @moongrad.gmres(a, b, zeros(n), 40, 1.0e-12) {
+      Some(v) => v
+      None => {
+        check(false, "the \{n} by \{n} system should be solvable")
+        return
+      }
+    }
+    check(
+      residual_of(a, x, b) < 1.0e-8,
+      "the \{n} by \{n} residual should be small, got \{residual_of(a, x, b)}",
+    )
+  }
+}
+
+///|
+test "gmres_reports_a_failure_when_the_budget_runs_out" {
+  // One Arnoldi step is not enough for this system: the residual of
+  // the iterate it produces is 0.54. The solver used to hand that
+  // iterate back as if it were the solution.
+  let a = mkmat([[4.0, 1.0], [1.0, 3.0]])
+  let b = [1.0, 2.0]
+  for budget = 0; budget <= 1; budget = budget + 1 {
+    let x = @moongrad.gmres(a, b, [0.0, 0.0], budget, 1.0e-12)
+    let refused = match x {
+      None => true
+      Some(_) => false
+    }
+    check(refused, "a budget of \{budget} cannot solve the system")
+  }
+}
+
+///|
+test "gmres_reports_a_stall_when_the_least_squares_problem_is_singular" {
+  // [[1, 1], [1, 1]] is singular, and the least-squares problem in
+  // its Krylov space is rank deficient, so the iteration cannot make
+  // progress. The solver used to hand back the initial guess as if it
+  // had solved the system.
+  let a = mkmat([[1.0, 1.0], [1.0, 1.0]])
+  let b = [1.0, 0.0]
+  let x = @moongrad.gmres(a, b, [0.0, 0.0], 10, 1.0e-12)
+  let refused = match x {
+    None => true
+    Some(_) => false
+  }
+  check(refused, "a stalled solve has no solution to report")
+  let report = match @moongrad.gmres_report(a, b, [0.0, 0.0], 10, 1.0e-12) {
+    Some(r) => r
+    None => {
+      check(false, "the report should exist")
+      return
+    }
+  }
+  match report.stop {
+    Stalled => check(true, "the stall should be reported")
+    Converged => check(false, "the iteration did not converge")
+    IterationLimit =>
+      check(false, "the iteration stalled rather than ran out of budget")
+  }
+  // The report keeps the best iterate of the run. Here that is the
+  // initial guess, because the iteration never found anything better.
+  check(
+    report.residual > 0.9,
+    "the residual should still be large, got \{report.residual}",
+  )
+  check(
+    near(report.x[0], 0.0, 1.0e-12),
+    "the report should hold the initial guess",
+  )
+}
+
+///|
+test "gmres_keeps_the_best_iterate_of_the_run" {
+  // A system that needs more than one restart, and a budget that is
+  // too small to finish it. The report has to hold the best iterate
+  // of the run, the one with the smallest residual, and not some
+  // earlier one that a later restart made worse.
+  let n = 40
+  let a = tridiagonal(n)
+  let b = tridiagonal_rhs(a, n)
+  let report = match @moongrad.gmres_report(a, b, zeros(n), 25, 1.0e-14) {
+    Some(r) => r
+    None => {
+      check(false, "the report should exist")
+      return
+    }
+  }
+  match report.stop {
+    IterationLimit => check(true, "the budget ran out")
+    Converged => check(false, "the budget was too small to converge")
+    Stalled => check(false, "the iteration stalled")
+  }
+  check(
+    report.iterations > 20,
+    "the run should have used more than one restart, got \{report.iterations}",
+  )
+  // The reported residual belongs to the reported iterate, and it is
+  // the smallest one of the run.
+  check(
+    near(residual_of(a, report.x, b), report.residual, 1.0e-9),
+    "the reported residual should belong to the reported iterate",
+  )
+  check(
+    report.residual < norm_of(b),
+    "the iteration should have made some progress",
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -438,6 +742,82 @@ test "jacobi_refuses_a_non_square_matrix" {
   check(refused, "a non-square matrix has no eigen decomposition")
 }
 
+///|
+test "jacobi_refuses_a_decomposition_that_did_not_converge" {
+  // One sweep is not enough for this matrix: the off-diagonal part is
+  // still 0.46, and the numbers that come back are not eigenvalues of
+  // anything. The routine used to hand them over without a word.
+  let a = mkmat([[2.0, 1.0, 0.0], [1.0, 3.0, 1.0], [0.0, 1.0, 4.0]])
+  let decomposition = @moongrad.symmetric_eigen_jacobi_all(a, 1)
+  let refused = match decomposition {
+    None => true
+    Some(_) => false
+  }
+  check(refused, "a decomposition that did not converge is not a decomposition")
+  // The same with no budget at all: the diagonal of a matrix is not
+  // its spectrum either.
+  let raw = @moongrad.symmetric_eigen_jacobi_all(a, 0)
+  let refused = match raw {
+    None => true
+    Some(_) => false
+  }
+  check(refused, "the diagonal of a matrix is not its spectrum")
+}
+
+///|
+test "jacobi_report_says_how_far_the_iteration_got" {
+  let a = mkmat([[2.0, 1.0, 0.0], [1.0, 3.0, 1.0], [0.0, 1.0, 4.0]])
+  let short = match @moongrad.symmetric_eigen_jacobi_report(a, 1) {
+    Some(r) => r
+    None => {
+      check(false, "the report should exist")
+      return
+    }
+  }
+  check(!short.converged, "one sweep does not finish the job")
+  check(
+    short.residual > 0.4,
+    "the error of one sweep should be large, got \{short.residual}",
+  )
+  let long = match @moongrad.symmetric_eigen_jacobi_report(a, 50) {
+    Some(r) => r
+    None => {
+      check(false, "the report should exist")
+      return
+    }
+  }
+  check(long.converged, "fifty sweeps finish the job")
+  check(
+    long.residual < 1.0e-12,
+    "the error should be small, got \{long.residual}",
+  )
+  // The eigenvalues of the converged decomposition are the ones of the
+  // matrix: 3 - sqrt(3), 3 and 3 + sqrt(3).
+  check(
+    near(long.eigenvalues[0], 3.0 - 3.0.sqrt(), 1.0e-10),
+    "the smallest eigenvalue should be 3 - sqrt(3), got \{long.eigenvalues[0]}",
+  )
+  check(
+    near(long.eigenvalues[1], 3.0, 1.0e-10),
+    "the middle eigenvalue should be 3, got \{long.eigenvalues[1]}",
+  )
+  check(
+    near(long.eigenvalues[2], 3.0 + 3.0.sqrt(), 1.0e-10),
+    "the largest eigenvalue should be 3 + sqrt(3), got \{long.eigenvalues[2]}",
+  )
+}
+
+///|
+test "jacobi_refuses_a_matrix_that_is_not_symmetric" {
+  let a = mkmat([[2.0, 1.0, 0.0], [0.0, 3.0, 1.0], [0.0, 1.0, 4.0]])
+  let decomposition = @moongrad.symmetric_eigen_jacobi_all(a, 50)
+  let refused = match decomposition {
+    None => true
+    Some(_) => false
+  }
+  check(refused, "a matrix that is not symmetric has no eigen decomposition")
+}
+
 // ---------------------------------------------------------------------------
 // The symmetric part
 // ---------------------------------------------------------------------------
@@ -477,24 +857,63 @@ test "symmetric_part_of_a_symmetric_matrix_is_the_matrix" {
 // ---------------------------------------------------------------------------
 
 ///|
-test "spectral_norm_bound_of_the_identity_is_one" {
+test "spectral_norm_lower_bound_of_the_identity_is_one" {
   let a = @moongrad.Matrix::identity(3)
-  let bound = @moongrad.spectral_norm_bound(a)
+  let bound = @moongrad.spectral_norm_lower_bound(a)
   check(bound >= 1.0, "the bound should be at least 1, got \{bound}")
   check(near(bound, 1.0, 1.0e-6), "the bound should be 1, got \{bound}")
 }
 
 ///|
-test "spectral_norm_bound_of_a_scaled_identity_is_the_scale" {
+test "spectral_norm_lower_bound_of_a_scaled_identity_is_the_scale" {
   let a = mkmat([[3.0, 0.0], [0.0, 3.0]])
-  let bound = @moongrad.spectral_norm_bound(a)
+  let bound = @moongrad.spectral_norm_lower_bound(a)
   check(near(bound, 3.0, 1.0e-6), "the bound should be 3, got \{bound}")
 }
 
 ///|
-test "spectral_norm_bound_of_a_rank_one_matrix_is_its_largest_singular_value" {
+test "spectral_norm_lower_bound_of_a_rank_one_matrix_is_its_largest_singular_value" {
   // [[1, 2], [2, 4]] has the singular values 5 and 0.
   let a = mkmat([[1.0, 2.0], [2.0, 4.0]])
-  let bound = @moongrad.spectral_norm_bound(a)
+  let bound = @moongrad.spectral_norm_lower_bound(a)
   check(near(bound, 5.0, 1.0e-6), "the bound should be 5, got \{bound}")
+}
+
+///|
+test "spectral_norm_lower_bound_is_never_above_the_spectral_norm" {
+  // The power method finds the largest eigenvalue of a^T a from below,
+  // so the square root of it underestimates the spectral norm. The
+  // upper bound is the one that is never below it.
+  let a = mkmat([[1.0, 2.0], [2.0, 4.0]])
+  let lower = @moongrad.spectral_norm_lower_bound(a)
+  let upper = @moongrad.spectral_norm_upper_bound(a)
+  check(lower <= 5.0, "the lower bound should not exceed 5, got \{lower}")
+  check(upper >= 5.0, "the upper bound should not be below 5, got \{upper}")
+}
+
+///|
+test "spectral_norm_upper_bound_of_a_rank_one_matrix_is_above_its_largest_singular_value" {
+  // [[1, 2], [2, 4]] has the singular values 5 and 0, and the bound
+  // is the square root of the product of the largest row sum and the
+  // largest column sum, which is 6 here.
+  let a = mkmat([[1.0, 2.0], [2.0, 4.0]])
+  let bound = @moongrad.spectral_norm_upper_bound(a)
+  check(bound >= 5.0, "the bound should not be below 5, got \{bound}")
+  check(near(bound, 6.0, 1.0e-9), "the bound should be 6, got \{bound}")
+}
+
+///|
+test "spectral_norm_upper_bound_of_the_identity_is_one" {
+  let a = @moongrad.Matrix::identity(3)
+  let bound = @moongrad.spectral_norm_upper_bound(a)
+  check(near(bound, 1.0, 1.0e-9), "the bound should be 1, got \{bound}")
+}
+
+///|
+test "spectral_norm_upper_bound_of_an_empty_matrix_is_zero" {
+  let a = @moongrad.Matrix::zeros(0, 0)
+  check(
+    @moongrad.spectral_norm_upper_bound(a) == 0.0,
+    "an empty matrix has no norm",
+  )
 }
