@@ -927,6 +927,13 @@ pub(all) struct TGradGraph {
   /// Node in `graph` holding `d(target) / d(param_i)`, one per
   /// parameter slot.
   param_adj : Array[Int32]
+  /// The shape each input had when the gradient was compiled.
+  ///
+  /// The backward rules bake the operand shapes into the program,
+  /// so the program is valid for one set of shapes and not another.
+  /// Recording them lets the evaluation check, rather than quietly
+  /// returning the gradient of a differently-shaped function.
+  input_shapes : Array[Array[Int32]]
   /// Value of the differentiated node under the binding the gradient
   /// was compiled against.
   output : Tensor
@@ -1018,12 +1025,17 @@ pub fn compile_tensor_gradient(
   for i = 0; i < b.params.length(); i = i + 1 {
     param_adj.push(h.constant(Tensor::zeros(b.params[i].shape)))
   }
+  let input_shapes : Array[Array[Int32]] = []
+  for i = 0; i < b.inputs.length(); i = i + 1 {
+    input_shapes.push(b.inputs[i].shape.copy())
+  }
   if target < 0 || target >= n {
     return {
       graph: h,
       primal_size: n,
       input_adj,
       param_adj,
+      input_shapes,
       output: Tensor::zeros([]),
     }
   }
@@ -1041,8 +1053,38 @@ pub fn compile_tensor_gradient(
     primal_size: n,
     input_adj,
     param_adj,
+    input_shapes,
     output: values[target],
   }
+}
+
+///|
+/// Whether the binding has the shapes the program was compiled for.
+///
+/// A compiled gradient is valid for the shapes it was compiled
+/// against: the backward rules bake the operand shapes into the
+/// program, because the shapes are what say how a broadcast has to
+/// be summed back down. Evaluating the same program against
+/// differently-shaped inputs would therefore compute the gradient of
+/// a different function, quietly. This check is what turns that into
+/// a reportable condition.
+pub fn TGradGraph::shapes_match(self : TGradGraph, b : TBinding) -> Bool {
+  if b.inputs.length() < self.input_shapes.length() {
+    return false
+  }
+  for i = 0; i < self.input_shapes.length(); i = i + 1 {
+    let want = self.input_shapes[i]
+    let got = b.inputs[i].shape
+    if want.length() != got.length() {
+      return false
+    }
+    for d = 0; d < want.length(); d = d + 1 {
+      if want[d] != got[d] {
+        return false
+      }
+    }
+  }
+  true
 }
 
 ///|
