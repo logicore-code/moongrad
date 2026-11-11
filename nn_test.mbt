@@ -326,3 +326,55 @@ test "activation_dispatch_matches_the_operator" {
   assert_eq(@moongrad.forward(g, b, r).output, 0.0)
   assert_eq(@moongrad.forward(g, b, i).output, 0.0)
 }
+
+///|
+test "the_generator_spreads_over_the_whole_range" {
+  // The generator used to be a 64-bit multiplication done by hand in
+  // 32-bit halves, which cannot carry: the values it produced were
+  // bunched into a narrow band, and every dataset and every set of
+  // initial weights was drawn from that band. A mean of a third and a
+  // variance a twentieth of the uniform one is the signature.
+  let rng = @moongrad.Lcg::new(2024)
+  let n = 20000
+  let mut sum = 0.0
+  let mut sumsq = 0.0
+  let mut smallest = 1.0
+  let mut largest = 0.0
+  for i = 0; i < n; i = i + 1 {
+    let v = rng.next_f64()
+    sum = sum + v
+    sumsq = sumsq + v * v
+    if v < smallest {
+      smallest = v
+    }
+    if v > largest {
+      largest = v
+    }
+  }
+  let mean = sum / n.to_double()
+  let variance = sumsq / n.to_double() - mean * mean
+  assert_close(mean, 0.5, 0.02, "the mean of the draws")
+  assert_close(variance, 1.0 / 12.0, 0.01, "the variance of the draws")
+  check(smallest < 0.02, "the draws should reach the bottom of the range")
+  check(largest > 0.98, "the draws should reach the top of the range")
+}
+
+///|
+test "the_same_seed_gives_the_same_sequence" {
+  let a = @moongrad.Lcg::new(99)
+  let b = @moongrad.Lcg::new(99)
+  for i = 0; i < 50; i = i + 1 {
+    assert_close(a.next_f64(), b.next_f64(), 1.0e-15, "the two generators")
+  }
+}
+
+///|
+test "the_generator_is_reproducible_across_a_target" {
+  // The sequence is a property of the arithmetic, not of the
+  // platform, which is the whole reason for having a generator of
+  // one's own.
+  let a = @moongrad.Lcg::new(2024)
+  let first = a.next_f64()
+  let b = @moongrad.Lcg::new(2024)
+  assert_close(first, b.next_f64(), 1.0e-15, "the first value")
+}

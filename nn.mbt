@@ -340,12 +340,12 @@ pub fn bce_value_mean(pred : Array[Double], target : Array[Double]) -> Double {
 /// for weight initialisation, and identical on every target.
 #derive(Debug)
 pub(all) struct Lcg {
-  // Kept in two halves because MoonBit's shift operators are defined
-  // on 32-bit integers, and silently truncating a 64-bit state would
-  // leave the generator with a period short enough to repeat
-  // weights inside a single layer.
-  mut hi : Int32
-  mut lo : Int32
+  // The whole 64-bit state. It used to be kept in two 32-bit halves
+  // and multiplied by hand, which does not work: MoonBit's `Int` is
+  // 32 bits, so the carries a 64-bit product needs cannot be
+  // recovered from it, and the generator degenerated into something
+  // that produced a narrow band of values rather than a spread one.
+  mut state : Int64
 }
 
 ///|
@@ -355,40 +355,33 @@ pub extend Lcg with Debug::{to_repr}
 /// An LCG with a fixed seed, in the 64-bit constants from Numerical
 /// Recipes: x' = 6364136223846793005 * x + 1442695040888963407.
 pub fn Lcg::new(seed : Int32) -> Lcg {
-  { hi: seed, lo: 0, }
+  { state: seed.to_int64(), }
 }
 
 ///|
 /// One step of the generator, multiplying the 128-bit product by
 /// hand. The high 32 bits of the result are the ones worth keeping:
 /// they are the most decorrelated part of the state.
-fn Lcg::step(self : Lcg) -> Int32 {
-  let a_hi = 0x5851F42D
-  let a_lo = 0x4C957F2D
-  // (hi:a_lo : lo) * (a_hi:a_lo)
-  let t0 = self.lo * a_lo
-  let t1 = self.hi * a_lo + (t0 >> 32)
-  let lo = (t1 << 32) | (t0 & 0xFFFFFFFF)
-  let hi = self.hi * a_hi + (t1 >> 32) + 0x14057B7E
-  self.hi = hi
-  self.lo = lo
-  hi
+fn Lcg::step(self : Lcg) -> Int64 {
+  // x' = 6364136223846793005 * x + 1442695040888963407, the
+  // constants from Numerical Recipes. The multiplication wraps, which
+  // is what makes it a generator rather than an accumulator.
+  self.state = self.state * 6364136223846793005L + 1442695040888963407L
+  self.state
 }
 
 ///|
 /// Next value in `[0, 1)`.
 pub fn Lcg::next_f64(self : Lcg) -> Double {
-  // 52 bits of mantissa, assembled from two 32-bit draws.
+  // The high bits of a linear congruential generator are the good
+  // ones and the low bits are the poor ones, so the value is taken
+  // from the top of the state: 53 bits, which is exactly what a
+  // double's mantissa holds.
   //
-  // Assembling the two halves as a single integer does not work:
-  // MoonBit's `Int` is 32 bits, so a 53-bit value cannot be held in
-  // one at all, and `hi << 27` overflows into the sign bit and
-  // makes the generator hand out values just below zero. Scaling
-  // the two halves separately keeps every intermediate inside the
-  // representable range and every result inside [0, 1).
-  let hi = self.step() & 0x001FFFFF // 21 bits, scaled by 2^-21
-  let lo = self.step() & 0x7FFFFFFF // 31 bits, scaled by 2^-53
-  hi.to_double() / 2097152.0 + lo.to_double() / 9007199254740992.0
+  // The shift is arithmetic, so the sign has to be masked off before
+  // the bits are used.
+  let bits = (self.step() >> 11) & 0x1FFFFFFFFFFFFFL
+  bits.to_double() / 9007199254740992.0
 }
 
 ///|

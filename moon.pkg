@@ -1,9 +1,11 @@
 // moongrad's core package.
 //
 // The only imports are the MoonBit standard library. `math` supplies
-// the double-precision transcendentals; `hashmap` backs the
-// graph's hash-cons table; `ref` provides the interior mutability the
-// counter in `Graph::intern` needs.
+// the double-precision transcendentals; `hashmap` backs the graph's
+// hash-cons table and the JSON object type; `json` is the standard
+// serialiser `model_io.mbt` uses; `double` supplies the infinities
+// the model reader has to recognise. The 64-bit state of the random
+// number generator is a builtin type and needs no import.
 
 import {
   "moonbitlang/core/math",
