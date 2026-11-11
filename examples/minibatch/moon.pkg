@@ -1,0 +1,7 @@
+// Mini-batch training example — see main.mbt.
+
+import {
+  "logicore-code/moongrad",
+}
+
+pkgtype(kind: "executable")
