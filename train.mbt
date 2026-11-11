@@ -302,10 +302,6 @@ pub fn Trainer::train_step(
   // 2. Re-evaluate the compiled gradient. The graph structure has
   //    not changed, so recompiling would produce the same program
   //    and measure the same coefficients again.
-  let grads : Array[Double] = []
-  for i = 0; i < self.var_adj.length(); i = i + 1 {
-    grads.push(forward(self.grad_graph, b, self.var_adj[i]).output)
-  }
   // Parameter gradients: a partial evaluation of the accumulated
   // adjoint circuit, refreshed against the current binding. The
   // primal values have to travel with it — the partial evaluator
@@ -318,14 +314,22 @@ pub fn Trainer::train_step(
   //    replaces the optimiser entirely rather than just rescaling
   //    it, so a caller can ask for plain SGD on the same trainer
   //    and get exactly that.
-  if lr_override >= 0.0 {
-    self.opt_state.kind = Optimizer::Sgd(lr_override)
-  }
   self.step_count = self.step_count + 1
-  match self.opt_state.kind {
-    Optimizer::Adam(_) | Optimizer::AdamWithSteps(_, _) =>
-      self.opt_state.step_adam(self.flat, param_grads, self.step_count)
-    _ => self.opt_state.step(self.flat, param_grads)
+  if lr_override >= 0.0 {
+    // The override is for this step. Writing it into the state would
+    // leave the trainer running plain SGD for ever, which is not what
+    // a per-step override should mean.
+    let plain = OptimizerState::new(
+      Optimizer::Sgd(lr_override),
+      self.flat.length(),
+    )
+    plain.step(self.flat, param_grads)
+  } else {
+    match self.opt_state.kind {
+      Optimizer::Adam(_) | Optimizer::AdamWithSteps(_, _) =>
+        self.opt_state.step_adam(self.flat, param_grads, self.step_count)
+      _ => self.opt_state.step(self.flat, param_grads)
+    }
   }
   // 4. Write the updated weights back into the parameter matrices.
   //    The optimiser works on `flat`, which is a separate array from
