@@ -115,6 +115,12 @@ pub(all) struct TGraph {
   mut failed : Bool
   /// How many parameter slots have been handed out.
   mut param_count : Int32
+  /// The next input slot the graph will hand out.
+  ///
+  /// Declaring an input slot moves it forward, so a layer that
+  /// claims a slot through `new_variable_slot` cannot collide with
+  /// an input the caller declared afterwards.
+  mut next_var_slot : Int32
   /// Geometry for the operators that need it. An entry is a list of
   /// integers whose meaning depends on the operator:
   ///
@@ -137,6 +143,7 @@ pub fn TGraph::new() -> TGraph {
     shapes: [],
     failed: false,
     param_count: 0,
+    next_var_slot: 0,
     geo: [],
   }
 }
@@ -165,7 +172,24 @@ pub fn TGraph::constant(self : TGraph, t : Tensor) -> Int32 {
 ///|
 /// An input tensor slot, by name of the slot.
 pub fn TGraph::variable(self : TGraph, slot : Int32) -> Int32 {
+  if slot >= self.next_var_slot {
+    self.next_var_slot = slot + 1
+  }
   self.input(slot)
+}
+
+///|
+/// Claim an input slot.
+///
+/// A layer that needs an input of its own — a dropout mask, say —
+/// takes one of these instead of a slot the caller has to keep
+/// track of. The slot comes after every input declared so far, so
+/// declaring the caller's inputs first is enough to keep the two
+/// apart.
+pub fn TGraph::new_variable_slot(self : TGraph) -> Int32 {
+  let slot = self.next_var_slot
+  self.next_var_slot = slot + 1
+  slot
 }
 
 ///|

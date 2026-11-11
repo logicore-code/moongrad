@@ -174,8 +174,8 @@ test "conv_grad_matches_finite_differences" {
   // The gradient with respect to the input, by central difference.
   let h = 1.0e-6
   for i = 0; i < xv.data.length(); i = i + 1 {
-    let xp = xv.to_data()
-    let xm = xv.to_data()
+    let xp = xv.data.copy()
+    let xm = xv.data.copy()
     xp[i] = xp[i] + h
     xm[i] = xm[i] - h
     let fp = conv_of(
@@ -209,8 +209,8 @@ test "conv_grad_matches_finite_differences" {
   }
   // And the gradient with respect to the weight.
   for i = 0; i < wv.data.length(); i = i + 1 {
-    let wp = wv.to_data()
-    let wm = wv.to_data()
+    let wp = wv.data.copy()
+    let wm = wv.data.copy()
     wp[i] = wp[i] + h
     wm[i] = wm[i] - h
     let fp = conv_of(
@@ -269,8 +269,8 @@ test "conv_grad_with_padding_matches_finite_differences" {
   let grad = @moongrad.t_grad(g, b, loss)
   let h = 1.0e-6
   for i = 0; i < xv.data.length(); i = i + 1 {
-    let xp = xv.to_data()
-    let xm = xv.to_data()
+    let xp = xv.data.copy()
+    let xm = xv.data.copy()
     xp[i] = xp[i] + h
     xm[i] = xm[i] - h
     let fp = conv_of(
@@ -334,8 +334,8 @@ test "conv_grad_with_two_input_channels_matches_finite_differences" {
   let grad = @moongrad.t_grad(g, b, loss)
   let h = 1.0e-6
   for i = 0; i < wv.data.length(); i = i + 1 {
-    let wp = wv.to_data()
-    let wm = wv.to_data()
+    let wp = wv.data.copy()
+    let wm = wv.data.copy()
     wp[i] = wp[i] + h
     wm[i] = wm[i] - h
     let fp = conv_of(
@@ -446,8 +446,8 @@ test "linear_layer_gradient_matches_finite_differences" {
     acc
   }
   let h = 1.0e-6
-  let wv = layer.w.to_data()
-  let bv = layer.b.to_data()
+  let wv = layer.w.data.copy()
+  let bv = layer.b.data.copy()
   for i = 0; i < wv.length(); i = i + 1 {
     let wp = wv.copy()
     let wm = wv.copy()
@@ -490,15 +490,49 @@ test "dropout_zeroes_some_units_and_scales_the_rest" {
   let y = d.apply(g, x)
   let b = @moongrad.TBinding::new()
   b.set_input(0, @moongrad.Tensor::vector([1.0, 1.0, 1.0, 1.0]))
-  let grad = @moongrad.t_grad(g, b, y)
+  d.bind(b)
+  let values = @moongrad.t_forward(g, b)
   // Every unit is either dropped (0) or kept and scaled by 1/keep.
   let mut kept = 0
-  for v in grad.output.data {
+  for v in values[y].data {
     if v != 0.0 {
       kept = kept + 1
     }
   }
-  check(kept >= 0, "the mask should be a product of zeros and twos")
+  check(kept > 0, "some units should be kept")
+  for v in values[y].data {
+    check(
+      v == 0.0 || v == 2.0,
+      "a kept unit is scaled by one over the keep probability",
+    )
+  }
+}
+
+///|
+test "the_dropout_mask_can_be_redrawn_without_rebuilding_the_graph" {
+  // The mask is an input, so the same graph serves every step with
+  // a different mask. That is the difference between dropout and a
+  // fixed random projection.
+  let g = @moongrad.TGraph::new()
+  let d = @moongrad.Dropout::new(0.5, 9)
+  let x = g.input(0)
+  let y = d.apply(g, x)
+  let b = @moongrad.TBinding::new()
+  b.set_input(
+    0,
+    @moongrad.Tensor::vector([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]),
+  )
+  d.bind(b)
+  let first = @moongrad.t_forward(g, b)
+  d.refresh(b)
+  let second = @moongrad.t_forward(g, b)
+  let mut different = false
+  for i = 0; i < first[y].data.length(); i = i + 1 {
+    if first[y].data[i] != second[y].data[i] {
+      different = true
+    }
+  }
+  check(different, "a redrawn mask should differ from the first one")
 }
 
 ///|

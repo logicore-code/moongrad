@@ -150,15 +150,28 @@ pub fn Embedding::write_back(self : Embedding, b : TBinding) -> Unit {
 ///|
 /// Dropout, applied during training.
 ///
-/// The mask is drawn once per call from a deterministic generator, so
-/// a training run is reproducible. Dropout is not differentiable in
-/// the usual sense — the gradient is scaled by the mask and divided
-/// by the keep probability, which is the standard "straight-through"
+/// The mask is an **input** to the graph rather than a constant in
+/// it, so it can be redrawn between steps without rebuilding the
+/// graph — which is what makes dropout different from a fixed
+/// random projection. The training loop calls `refresh` before each
+/// step; the forward pass and the gradient program then see the same
+/// mask, so the gradient matches the output it belongs to.
+///
+/// The generator is deterministic, so a training run with a given
+/// seed is reproducible. Dropout is not differentiable in the usual
+/// sense — the gradient is scaled by the mask and divided by the
+/// keep probability, which is the standard "straight-through"
 /// estimator.
 #derive(Debug)
 pub(all) struct Dropout {
   rate : Double
   seed : Int32
+  /// The input slot the mask is read from.
+  mut slot : Int32
+  /// The mask's shape.
+  mut shape : Array[Int32]
+  /// The mask the layer is currently using.
+  mut mask : Tensor
   mut calls : Int32
 }
 
@@ -168,21 +181,59 @@ pub extend Dropout with Debug::{to_repr}
 ///|
 /// A dropout layer that keeps each unit with probability `1 - rate`.
 pub fn Dropout::new(rate : Double, seed : Int32) -> Dropout {
-  { rate, seed, calls: 0, }
+  { rate, seed, slot: -1, shape: [], mask: Tensor::zeros([]), calls: 0, }
 }
 
 ///|
 /// Apply the mask to a tensor.
+///
+/// The mask becomes an input of the graph, and the layer draws one
+/// so that the graph is complete. `refresh` draws the next one.
 pub fn Dropout::apply(self : Dropout, g : TGraph, x : Int32) -> Int32 {
+  self.slot = g.new_variable_slot()
+  self.shape = g.last_shape(x)
+  self.draw()
+  g.mul(x, g.variable(self.slot))
+}
+
+///|
+/// Draw a mask and keep it.
+fn Dropout::draw(self : Dropout) -> Unit {
   let keep = 1.0 - self.rate
   let rng = Lcg::new(self.seed + self.calls * 7919)
   self.calls = self.calls + 1
-  let shape = g.last_shape(x)
-  let mask = Tensor::zeros(shape)
+  let mask = Tensor::zeros(self.shape)
   for i = 0; i < mask.data.length(); i = i + 1 {
     mask.data[i] = if rng.next_f64() < keep { 1.0 / keep } else { 0.0 }
   }
-  g.scale_tensor(x, mask)
+  self.mask = mask
+}
+
+///|
+/// Write the current mask into the binding.
+///
+/// The graph reads the mask from an input slot, so the binding has
+/// to hold it. Call this once after the layer has been applied.
+pub fn Dropout::bind(self : Dropout, b : TBinding) -> Unit {
+  if self.slot < 0 {
+    return
+  }
+  b.set_input(self.slot, self.mask)
+}
+
+///|
+/// Draw the next mask and write it into the binding.
+///
+/// Calling this between steps is what makes the dropout different
+/// from one fixed mask for the whole run. The forward pass and the
+/// gradient program both read the mask from the same slot, so they
+/// always agree.
+pub fn Dropout::refresh(self : Dropout, b : TBinding) -> Unit {
+  if self.slot < 0 {
+    return
+  }
+  self.draw()
+  self.bind(b)
 }
 
 // ---------------------------------------------------------------------------
