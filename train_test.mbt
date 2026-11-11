@@ -318,3 +318,40 @@ test "initial_loss_of_an_untouched_trainer_is_zero" {
   assert_eq(trainer.initial_loss(), 0.0)
   assert_eq(trainer.final_loss(), 0.0)
 }
+
+///|
+test "the_tensor_trainer_handles_a_parameter_of_rank_two" {
+  // The optimiser's state is sized by the number of *elements* in a
+  // parameter, so a weight of shape (8, 4) needs thirty-two slots and
+  // not twelve. Getting that wrong made the state run out in the
+  // middle of a step.
+  let g = @moongrad.TGraph::new()
+  let b = @moongrad.TBinding::new()
+  let trainer = @moongrad.TensorTrainer::new(
+    g,
+    b,
+    @moongrad.TensorOptimizer::Adam(0.01),
+    fn(
+      graph : @moongrad.TGraph,
+      _binding : @moongrad.TBinding,
+    ) -> (Int32, Array[@moongrad.Tensor]) {
+      let x = graph.variable(0)
+      let y = graph.variable(1)
+      let layer = @moongrad.Linear::new(graph, 4, 8, 17)
+      let pred = layer.apply(graph, x)
+      let diff = graph.sub(pred, y)
+      let squared = graph.mul(diff, diff)
+      let total = graph.sum_axis(graph.sum_axis(squared, 1), 0)
+      let loss = graph.div(
+        total,
+        graph.constant(@moongrad.Tensor::filled([], 6.0)),
+      )
+      ignore(y)
+      (loss, layer.tensors())
+    },
+  )
+  b.set_input(0, @moongrad.Tensor::zeros([6, 8]))
+  b.set_input(1, @moongrad.Tensor::zeros([6, 4]))
+  let report = trainer.step()
+  check(report.ok, "the step should have succeeded")
+}

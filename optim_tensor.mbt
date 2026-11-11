@@ -68,9 +68,14 @@ pub fn TensorOptState::new(
   let mut total = 0
   for i = 0; i < shapes.length(); i = i + 1 {
     layout.push(total)
+    // The size of a tensor is the product of its shape, not the sum:
+    // a 2x3 parameter has six elements, and sizing the state by five
+    // would have two parameters share a moment slot.
+    let mut count = 1
     for d in shapes[i] {
-      total = total + d
+      count = count * d
     }
+    total = total + count
   }
   for i = 0; i < total; i = i + 1 {
     m.push(0.0)

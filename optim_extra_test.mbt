@@ -236,3 +236,108 @@ test "lr_schedule_cosine" {
   assert_close(schedule.at(100), 0.01, 1.0e-12, "at the end of the period")
   assert_close(schedule.at(200), 0.01, 1.0e-12, "past the end of the period")
 }
+
+///|
+/// A tensor with a given shape and one entry per position.
+fn shaped(shape : Array[Int32], values : Array[Double]) -> @moongrad.Tensor {
+  let t = @moongrad.Tensor::zeros(shape)
+  for i = 0; i < values.length(); i = i + 1 {
+    t.data[i] = values[i]
+  }
+  t
+}
+
+///|
+test "the_optimiser_state_sizes_a_parameter_by_its_elements" {
+  // A 2x3 parameter has six elements, not five. Sizing the state by
+  // the sum of the shape would have two parameters share a moment
+  // slot and the state run out before the parameters did.
+  let state = @moongrad.ExtraOptState::new(
+    @moongrad.ExtraOptimizer::AdamW(0.1, 0.0, 1.0e-8),
+    [[2, 3]],
+  )
+  let p = [shaped([2, 3], [1.0, 1.0, 1.0, 1.0, 1.0, 1.0])]
+  let g = [shaped([2, 3], [1.0, 1.0, 1.0, 1.0, 1.0, 1.0])]
+  state.step(p, g, 1)
+  // The update is the same for every entry, so they all move
+  // together; the point is that the sixth entry did not run past the
+  // end of the state.
+  assert_close(p[0].data[5], 0.9, 1.0e-6, "the sixth element")
+}
+
+///|
+test "two_parameters_do_not_share_a_moment_slot" {
+  // The second parameter's first element must not inherit the first
+  // parameter's moment.
+  let state = @moongrad.ExtraOptState::new(
+    @moongrad.ExtraOptimizer::AdamW(0.1, 0.0, 1.0e-8),
+    [[2, 3], [2]],
+  )
+  let p0 = shaped([2, 3], [1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+  let p1 = shaped([2], [1.0, 1.0])
+  let g0 = shaped([2, 3], [0.0, 0.0, 0.0, 0.0, 0.0, 0.5])
+  let g1 = shaped([2], [1.0, 1.0])
+  state.step([p0, p1], [g0, g1], 1)
+  // The second parameter sees a gradient of one and nothing else,
+  // so it takes the first step's full move.
+  assert_close(p1.data[0], 0.9, 1.0e-6, "the second parameter")
+  assert_close(p1.data[1], 0.9, 1.0e-6, "the second parameter")
+}
+
+///|
+test "the_first_adamw_step_is_not_a_nan" {
+  // The bias correction divides by 1 - beta^t, so t has to be at
+  // least one. A zero index used to turn every parameter into a NaN.
+  let state = @moongrad.ExtraOptState::new(
+    @moongrad.ExtraOptimizer::AdamW(0.1, 0.5, 1.0e-8),
+    [[1]],
+  )
+  let p = [shaped([1], [1.0])]
+  let g = [shaped([1], [1.0])]
+  state.step(p, g, 0)
+  check(p[0].data[0] == p[0].data[0], "the parameter should not be a NaN")
+}
+
+///|
+test "one_nan_does_not_poison_the_whole_gradient" {
+  let g0 = shaped([2], [3.0, 4.0])
+  let g1 = shaped([1], [0.0 / 0.0])
+  let norm = @moongrad.clip_grad_norm([g0, g1], 1.0)
+  check(norm != norm, "the norm should report that it is not finite")
+  // The finite gradient is left alone.
+  assert_close(g0.data[0], 3.0, 1.0e-12, "the finite gradient")
+  assert_close(g0.data[1], 4.0, 1.0e-12, "the finite gradient")
+}
+
+///|
+test "a_negative_clip_limit_is_a_magnitude" {
+  let g = shaped([2], [5.0, -5.0])
+  @moongrad.clip_grad_value([g], -1.0)
+  assert_close(g.data[0], 1.0, 1.0e-12, "the clipped value")
+  assert_close(g.data[1], -1.0, 1.0e-12, "the clipped value")
+}
+
+///|
+test "the_optimiser_stops_at_the_end_of_its_state" {
+  // A state built for one parameter, handed two, must not read past
+  // its own moment arrays.
+  let state = @moongrad.ExtraOptState::new(
+    @moongrad.ExtraOptimizer::Nesterov(0.1, 0.0),
+    [[1]],
+  )
+  let p = [shaped([1], [1.0]), shaped([1], [1.0])]
+  let g = [shaped([1], [1.0]), shaped([1], [1.0])]
+  state.step(p, g, 1)
+  assert_close(p[0].data[0], 0.9, 1.0e-12, "the first parameter")
+}
+
+///|
+test "a_gradient_too_large_to_square_is_scaled_rather_than_zeroed" {
+  // The sum of the squares of these entries overflows, so a norm
+  // computed from it would be infinite and the scale would be zero.
+  let g = shaped([2], [1.0e200, 1.0e200])
+  let norm = @moongrad.clip_grad_norm([g], 1.0)
+  check(norm == norm, "the norm should be finite")
+  let after = g.data[0] * g.data[0] + g.data[1] * g.data[1]
+  check(after <= 2.0, "the scaled gradient should have a bounded length")
+}

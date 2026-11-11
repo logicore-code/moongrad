@@ -96,9 +96,14 @@ pub fn ExtraOptState::new(
   let mut total = 0
   for i = 0; i < shapes.length(); i = i + 1 {
     layout.push(total)
+    // The size of a tensor is the product of its shape, not the sum:
+    // a 2x3 parameter has six elements, and sizing the state by five
+    // would have two parameters share a moment slot.
+    let mut count = 1
     for d in shapes[i] {
-      total = total + d
+      count = count * d
     }
+    total = total + count
   }
   for i = 0; i < total; i = i + 1 {
     m.push(0.0)
@@ -120,10 +125,15 @@ pub fn ExtraOptState::step(
   grads : Array[Tensor],
   step_index : Int32,
 ) -> Unit {
-  let n = if params.length() < grads.length() {
+  let mut n = if params.length() < grads.length() {
     params.length()
   } else {
     grads.length()
+  }
+  // The state was sized for the parameters it was built with, so a
+  // caller that hands it more is stopped at the state, not past it.
+  if n > self.layout.length() {
+    n = self.layout.length()
   }
   match self.kind {
     RmsProp(lr, decay) => {
@@ -194,7 +204,11 @@ pub fn ExtraOptState::step(
     AdamW(lr, weight_decay, eps) => {
       let b1 = 0.9
       let b2 = 0.999
-      let t = step_index.to_double()
+      // The step index is one-based, so the first update is step 1.
+      // A caller that passes 0 gets the first step's correction
+      // rather than a division by zero, which would turn every
+      // parameter into a NaN.
+      let t = if step_index < 1 { 1.0 } else { step_index.to_double() }
       let bias_m = 1.0 - @math.pow(b1, t)
       let bias_v = 1.0 - @math.pow(b2, t)
       for i = 0; i < n; i = i + 1 {
@@ -233,41 +247,57 @@ pub fn ExtraOptState::step(
 // ---------------------------------------------------------------------------
 
 ///|
-/// Scale a set of gradients so their combined Euclidean norm is at
-/// most `max_norm`, and return the norm they had beforehand.
-///
-/// Clipping is what stops one bad batch from ending a run: the
-/// gradient is a sum over the batch, so a single pathological
-/// example can make the step far too long in a direction nothing else
-/// supports. Scaling by one common factor keeps the direction of the
-/// gradient, which clipping the entries one at a time does not.
+/// Scale a list of gradients so that their combined Euclidean norm
+/// is at most `max_norm`.
 ///
 /// The norm from before the clipping is returned because that is the
 /// number worth watching: a norm that sits at the limit on every step
 /// means the limit, not the learning rate, is what is setting the
 /// pace.
+///
+/// A gradient that is not finite has no norm to scale to, so it is
+/// reported and the gradients are left alone: scaling by a factor
+/// derived from a NaN would turn every finite gradient into a NaN as
+/// well.
+///
+/// The norm is computed from the largest entry rather than from the
+/// sum of the squares, so a gradient large enough to overflow the
+/// sum is scaled rather than silently zeroed.
 pub fn clip_grad_norm(grads : Array[Tensor], max_norm : Double) -> Double {
+  if max_norm < 0.0 {
+    return 0.0
+  }
+  let mut largest = 0.0
+  for g in grads {
+    for x in g.data {
+      let a = if x < 0.0 { -x } else { x }
+      if a > largest {
+        largest = a
+      }
+    }
+  }
+  if largest == 0.0 {
+    return 0.0
+  }
   let mut acc = 0.0
   for g in grads {
     for x in g.data {
-      acc = acc + x * x
+      let scaled = x / largest
+      acc = acc + scaled * scaled
     }
   }
-  let norm = acc.sqrt()
-  // Nothing to scale when there is no gradient, when the limit is
-  // negative and there is no such norm to clip to, or when the
-  // gradient is already inside the limit. A zero norm has no
-  // direction to preserve, and dividing by it would give a NaN.
-  if norm == 0.0 || max_norm < 0.0 || norm <= max_norm {
+  let norm = largest * acc.sqrt()
+  if !is_finite(norm) {
+    return norm
+  }
+  if norm <= max_norm {
     return norm
   }
   let scale = max_norm / norm
-  for i = 0; i < grads.length(); i = i + 1 {
-    let g = grads[i]
-    for j = 0; j < g.data.length(); j = j + 1 {
-      g.data[j] = g.data[j] * scale
+  for g in grads {
+    for i = 0; i < g.data.length(); i = i + 1 {
+      g.data[i] = g.data[i] * scale
     }
-    grads[i] = g
   }
   norm
 }
@@ -280,18 +310,20 @@ pub fn clip_grad_norm(grads : Array[Tensor], max_norm : Double) -> Double {
 /// does not bound the length of the step. It is the right tool when
 /// one entry is known to be the problem and the shape of the gradient
 /// matters more than its size.
+///
+/// The limit is a magnitude, so a negative one is taken as its
+/// absolute value: `max_value = -1.0` means the same as `1.0`.
 pub fn clip_grad_value(grads : Array[Tensor], max_value : Double) -> Unit {
-  for i = 0; i < grads.length(); i = i + 1 {
-    let g = grads[i]
-    for j = 0; j < g.data.length(); j = j + 1 {
-      let x = g.data[j]
-      if x > max_value {
-        g.data[j] = max_value
-      } else if x < -max_value {
-        g.data[j] = -max_value
+  let limit = if max_value < 0.0 { -max_value } else { max_value }
+  for g in grads {
+    for i = 0; i < g.data.length(); i = i + 1 {
+      let x = g.data[i]
+      if x > limit {
+        g.data[i] = limit
+      } else if x < -limit {
+        g.data[i] = -limit
       }
     }
-    grads[i] = g
   }
 }
 
