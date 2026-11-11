@@ -36,6 +36,10 @@ pub(all) enum UnaryOp {
   Sigmoid
   Softplus
   Relu
+  /// The sigmoid linear unit, `x * sigmoid(x)`. Also called swish.
+  Silu
+  /// The Gaussian error linear unit, in its tanh approximation.
+  Gelu
 }
 
 ///|
@@ -119,6 +123,8 @@ pub fn UnaryOp::symbol(self : UnaryOp) -> String {
     Sigmoid => "sigmoid"
     Softplus => "softplus"
     Relu => "relu"
+    Silu => "silu"
+    Gelu => "gelu"
   }
 }
 

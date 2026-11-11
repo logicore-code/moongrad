@@ -410,6 +410,18 @@ pub fn TGraph::relu(self : TGraph, x : Int32) -> Int32 {
 }
 
 ///|
+/// The sigmoid linear unit, `x * sigmoid(x)`. Also called swish.
+pub fn TGraph::silu(self : TGraph, x : Int32) -> Int32 {
+  self.unary(UnaryOp::Silu, x)
+}
+
+///|
+/// The Gaussian error linear unit, in its tanh approximation.
+pub fn TGraph::gelu(self : TGraph, x : Int32) -> Int32 {
+  self.unary(UnaryOp::Gelu, x)
+}
+
+///|
 /// A 2-D convolution node.
 ///
 /// The geometry is stored in the graph's geometry pool rather than
@@ -1197,6 +1209,33 @@ fn t_derivative_expr(h : TGraph, op : UnaryOp, x : Int32) -> Int32 {
     }
     UnaryOp::Softplus => h.sigmoid(x)
     UnaryOp::Relu => h.relu_deriv(x)
+    UnaryOp::Silu => {
+      // s + x s (1 - s) with s = sigmoid(x)
+      let s = h.sigmoid(x)
+      h.add(s, h.mul(x, h.mul(s, h.sub(one, s))))
+    }
+    UnaryOp::Gelu => {
+      // The derivative of 0.5 x (1 + tanh u), with
+      // u = c (x + 0.044715 x^3).
+      let x3 = h.pow(x, 3.0)
+      let x2 = h.pow(x, 2.0)
+      let inner = h.add(x, h.mul(h.constant(Tensor::filled([], 0.044715)), x3))
+      let u = h.mul(h.constant(Tensor::filled([], gelu_c)), inner)
+      let t = h.tanh(u)
+      let du = h.mul(
+        h.constant(Tensor::filled([], gelu_c)),
+        h.add(
+          one,
+          h.mul(h.constant(Tensor::filled([], 3.0 * 0.044715)), x2),
+        ),
+      )
+      let first = h.mul(h.constant(Tensor::filled([], 0.5)), h.add(one, t))
+      let second = h.mul(
+        h.constant(Tensor::filled([], 0.5)),
+        h.mul(x, h.mul(h.sub(one, h.mul(t, t)), du)),
+      )
+      h.add(first, second)
+    }
   }
 }
 

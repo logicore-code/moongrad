@@ -346,6 +346,18 @@ pub fn Graph::relu(self : Graph, x : Int32) -> Int32 {
 }
 
 ///|
+/// The sigmoid linear unit, `x * sigmoid(x)`. Also called swish.
+pub fn Graph::silu(self : Graph, x : Int32) -> Int32 {
+  self.unary(UnaryOp::Silu, x)
+}
+
+///|
+/// The Gaussian error linear unit, in its tanh approximation.
+pub fn Graph::gelu(self : Graph, x : Int32) -> Int32 {
+  self.unary(UnaryOp::Gelu, x)
+}
+
+///|
 /// Build the derivative of ReLU as a node.
 ///
 /// The node is not simplified: it has no constant form, because the

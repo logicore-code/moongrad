@@ -290,8 +290,20 @@ pub fn apply_unary(op : UnaryOp, x : Double) -> Double? {
       // does not overflow for large x.
       Some(maxf(x, 0.0) + @math.ln(1.0 + @math.exp(-absf(x))))
     UnaryOp::Relu => Some(if x > 0.0 { x } else { 0.0 })
+    UnaryOp::Silu => Some(x / (1.0 + @math.exp(-x)))
+    UnaryOp::Gelu => {
+      // The tanh approximation, which is the form every framework
+      // ships. The exact form needs the normal CDF.
+      let u = gelu_c * (x + 0.044715 * x * x * x)
+      Some(0.5 * x * (1.0 + @math.tanh(u)))
+    }
   }
 }
+
+///|
+/// The scale factor in the tanh approximation of GELU: the square
+/// root of two over pi.
+pub let gelu_c : Double = 0.7978845608028654
 
 ///|
 /// `x ^ c` with a guard against the 0^negative case.
@@ -330,6 +342,20 @@ pub fn unary_derivative(op : UnaryOp, x : Double) -> Double {
     }
     UnaryOp::Softplus => 1.0 / (1.0 + @math.exp(-x))
     UnaryOp::Relu => if x > 0.0 { 1.0 } else { 0.0 }
+    UnaryOp::Silu => {
+      // s + x s (1 - s) with s = sigmoid(x)
+      let s = 1.0 / (1.0 + @math.exp(-x))
+      s + x * s * (1.0 - s)
+    }
+    UnaryOp::Gelu => {
+      // The derivative of 0.5 x (1 + tanh u), with
+      // u = c (x + 0.044715 x^3):
+      //   0.5 (1 + tanh u) + 0.5 x (1 - tanh^2 u) u'
+      let u = gelu_c * (x + 0.044715 * x * x * x)
+      let t = @math.tanh(u)
+      let du = gelu_c * (1.0 + 3.0 * 0.044715 * x * x)
+      0.5 * (1.0 + t) + 0.5 * x * (1.0 - t * t) * du
+    }
   }
 }
 

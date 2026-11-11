@@ -435,6 +435,11 @@ pub fn t_unary(op : UnaryOp, a : Tensor) -> Tensor {
         mx + @math.ln(1.0 + @math.exp(-ax))
       }
       UnaryOp::Relu => if x > 0.0 { x } else { 0.0 }
+      UnaryOp::Silu => x / (1.0 + @math.exp(-x))
+      UnaryOp::Gelu => {
+        let u = gelu_c * (x + 0.044715 * x * x * x)
+        0.5 * x * (1.0 + @math.tanh(u))
+      }
     }
     out.data[i] = v
   }
