@@ -256,6 +256,15 @@ pub fn t_sum_axis(a : Tensor, axis : Int32) -> Tensor? {
 ///|
 /// Mean along one axis.
 pub fn t_mean_axis(a : Tensor, axis : Int32) -> Tensor? {
+  if axis < 0 || axis >= a.shape.length() {
+    return None
+  }
+  if a.shape[axis] <= 0 {
+    // An empty axis has no mean. The graph's mean node refuses it
+    // too, and the two versions of the same reduction should agree
+    // about what a failure is.
+    return None
+  }
   let summed = match t_sum_axis(a, axis) {
     Some(t) => t
     None => return None
@@ -299,6 +308,11 @@ pub fn t_softmax(a : Tensor) -> Tensor? {
   for d = 0; d < r - 1; d = d + 1 {
     outer = outer * a.shape[d]
   }
+  if last <= 0 {
+    // A row with no entries has no maximum to subtract, and the
+    // result would be a division by zero. It is refused instead.
+    return None
+  }
   let out = Tensor::zeros(a.shape)
   for o = 0; o < outer; o = o + 1 {
     let base = o * last
@@ -333,6 +347,11 @@ pub fn t_log_softmax(a : Tensor) -> Tensor? {
   let mut outer = 1
   for d = 0; d < r - 1; d = d + 1 {
     outer = outer * a.shape[d]
+  }
+  if last <= 0 {
+    // A row with no entries has no maximum to subtract, and the
+    // result would be a division by zero. It is refused instead.
+    return None
   }
   let out = Tensor::zeros(a.shape)
   for o = 0; o < outer; o = o + 1 {
@@ -388,6 +407,11 @@ pub fn t_cross_entropy(logits : Tensor, labels : Array[Int32]) -> Double? {
     }
     let lse = m + @math.ln(sum)
     total = total + (lse - logits.data[base + label])
+  }
+  if batch <= 0 {
+    // An empty batch has no loss to speak of, and dividing by its
+    // size would give a NaN.
+    return None
   }
   Some(total / batch.to_double())
 }

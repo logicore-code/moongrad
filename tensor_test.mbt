@@ -98,7 +98,13 @@ test "tensor_row_and_column_are_views" {
   let r = t.row(1)
   assert_eq(r.data.length(), 2)
   assert_eq(r.data[0], 3.0)
-  let c = t.column(0)
+  let c = match t.column(0) {
+    Some(x) => x
+    None => {
+      check(false, "the column should be there")
+      return
+    }
+  }
   assert_eq(c.data.length(), 2)
   assert_eq(c.data[1], 3.0)
 }
@@ -687,4 +693,49 @@ test "tensor_grad_output_is_the_forward_value" {
   let grad = @moongrad.t_grad(g, b, z)
   assert_eq(grad.output.data[0], 1.0)
   assert_eq(grad.output.data[1], @math.exp(1.0))
+}
+
+///|
+test "a_softmax_of_an_empty_row_is_refused" {
+  // A row with no entries has no maximum to subtract and no total to
+  // divide by. It used to read past the end of the buffer.
+  let t = expect_tensor(
+    @moongrad.Tensor::from_data([2, 0], []),
+    "the tensor should build",
+  )
+  let softmax = @moongrad.t_softmax(t)
+  let log_softmax = @moongrad.t_log_softmax(t)
+  check(softmax is None, "the softmax should be refused")
+  check(log_softmax is None, "the log-softmax should be refused")
+}
+
+///|
+test "a_cross_entropy_of_an_empty_batch_is_refused" {
+  // An empty batch has no loss, and dividing by its size gave a NaN.
+  let t = expect_tensor(
+    @moongrad.Tensor::from_data([0, 3], []),
+    "the tensor should build",
+  )
+  let loss = @moongrad.t_cross_entropy(t, [])
+  check(loss is None, "the loss should be refused")
+}
+
+///|
+test "a_mean_over_an_empty_axis_is_refused" {
+  // The graph's mean node refuses an empty axis, and the two
+  // versions of the same reduction should agree about what a
+  // failure is.
+  let t = expect_tensor(
+    @moongrad.Tensor::from_data([2, 0, 3], []),
+    "the tensor should build",
+  )
+  let mean = @moongrad.t_mean_axis(t, 1)
+  check(mean is None, "the mean should be refused")
+}
+
+///|
+test "a_vector_has_no_column" {
+  let t = @moongrad.Tensor::vector([1.0, 2.0, 3.0])
+  let column = t.column(0)
+  check(column is None, "a vector should have no column")
 }
