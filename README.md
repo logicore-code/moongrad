@@ -144,7 +144,7 @@ catches a wrong rule rather than merely a typo.
 polynomials, quotients, matrix products, broadcasting products, chains of
 nonlinearities, and logarithms. All six agree to the last bit.
 
-The test suite (290 cases) additionally checks each local derivative rule
+The test suite (299 cases) additionally checks each local derivative rule
 against its closed form, and each layer against a hand-computed
 backpropagation.
 
@@ -181,7 +181,7 @@ moon run examples/minibatch     --target native   # mini-batch training
 ## Building
 
 ```bash
-moon test          # 290 unit tests
+moon test          # 299 unit tests
 moon check         # 0 warnings, 0 errors
 moon fmt           # format
 moon build         # build for the preferred target (wasm)

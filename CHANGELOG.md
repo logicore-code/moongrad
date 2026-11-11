@@ -53,7 +53,7 @@ project follows Semantic Versioning: bump the
   reported instead of returning the gradient of a different function.
 
 ### Changed
-- The test suite grew from 212 cases to 290.
+- The test suite grew from 212 cases to 299.
 
 ## [0.4.0] — 2026-11-08
 

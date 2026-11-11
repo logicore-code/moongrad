@@ -101,7 +101,8 @@ test "a_newton_step_lands_on_the_minimum" {
   let loss = g.sum_axis(g.mul(d, d), 0)
   let b = @moongrad.TBinding::new()
   b.set_param(0, @moongrad.Tensor::vector([1.0]))
-  let step = match @moongrad.newton_cg_step(g, b, loss, 1.0e-6, 50, 1.0e-12, 3) {
+  let step = match
+    @moongrad.newton_cg_step(g, b, loss, 1.0e-6, 50, 1.0e-12, 3) {
     Some(v) => v
     None => {
       check(false, "the newton-cg iteration broke down")
@@ -126,7 +127,8 @@ test "the_dense_newton_step_agrees_with_the_iterative_one" {
       return
     }
   }
-  let iterative = match @moongrad.newton_cg_step(g, b, loss, 1.0e-6, 50, 1.0e-12, 3) {
+  let iterative = match
+    @moongrad.newton_cg_step(g, b, loss, 1.0e-6, 50, 1.0e-12, 3) {
     Some(v) => v
     None => {
       check(false, "the newton-cg iteration broke down")
@@ -147,7 +149,14 @@ test "conjugate_gradient_solves_a_spd_system" {
       -v[2] + 5.0 * v[3],
     ]
   }
-  let solution = match @moongrad.cg_operator(op, [1.0, 2.0, 3.0, 4.0], [0.0, 0.0, 0.0, 0.0], 50, 1.0e-12) {
+  let solution = match
+    @moongrad.cg_operator(
+      op,
+      [1.0, 2.0, 3.0, 4.0],
+      [0.0, 0.0, 0.0, 0.0],
+      50,
+      1.0e-12,
+    ) {
     Some(v) => v
     None => {
       check(false, "the iteration broke down on a positive definite system")
@@ -166,9 +175,7 @@ test "conjugate_gradient_reports_an_indefinite_operator" {
   // The matrix [[-1,0],[0,1]] is indefinite, so the first curvature
   // p'Ap is negative and the iteration must notice rather than
   // return nonsense.
-  let op = fn(v : Array[Double]) -> Array[Double] {
-    [-v[0], v[1]]
-  }
+  let op = fn(v : Array[Double]) -> Array[Double] { [-v[0], v[1]] }
   let result = @moongrad.cg_operator(op, [1.0, 1.0], [0.0, 0.0], 50, 1.0e-12)
   assert_true(result is None)
 }

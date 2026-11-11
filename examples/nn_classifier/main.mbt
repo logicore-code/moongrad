@@ -15,7 +15,7 @@
 // separates them, which is the difference the example is making.
 
 ///|
-fn main raise @moongrad.ADError {
+fn main {
   println("| moongrad: a tensor neural network, trained by gradient descent")
   println("|")
 

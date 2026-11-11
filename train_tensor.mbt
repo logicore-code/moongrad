@@ -124,10 +124,7 @@ pub fn TensorTrainer::step(self : TensorTrainer) -> TensorStep {
 
 ///|
 /// Run `steps` iterations and return the final loss.
-pub fn TensorTrainer::fit(
-  self : TensorTrainer,
-  steps : Int32,
-) -> Double raise ADError {
+pub fn TensorTrainer::fit(self : TensorTrainer, steps : Int32) -> Double {
   let mut last = 0.0
   for i = 0; i < steps; i = i + 1 {
     let report = self.step()

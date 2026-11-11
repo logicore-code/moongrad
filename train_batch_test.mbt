@@ -19,7 +19,10 @@ fn build_linear(graph : @moongrad.TGraph, batch : Int32) -> Int32 {
   let sq = graph.mul(diff, diff)
   let s1 = graph.sum_axis(sq, 1)
   let s2 = graph.sum_axis(s1, 0)
-  let loss = graph.div(s2, graph.constant(@moongrad.Tensor::filled([], batch.to_double())))
+  let loss = graph.div(
+    s2,
+    graph.constant(@moongrad.Tensor::filled([], batch.to_double())),
+  )
   ignore(x)
   ignore(w)
   loss
@@ -62,10 +65,10 @@ test "mini_batch_training_reduces_the_loss" {
     batch,
     false,
     7,
-    fn(graph : @moongrad.TGraph, _binding : @moongrad.TBinding) -> (
-      Int32,
-      Array[@moongrad.Tensor],
-    ) {
+    fn(
+      graph : @moongrad.TGraph,
+      _binding : @moongrad.TBinding,
+    ) -> (Int32, Array[@moongrad.Tensor]) {
       let node = build_linear(graph, batch)
       (node, [make_weight()])
     },
@@ -100,10 +103,10 @@ test "the_batch_size_is_respected" {
     batch,
     false,
     3,
-    fn(graph : @moongrad.TGraph, _binding : @moongrad.TBinding) -> (
-      Int32,
-      Array[@moongrad.Tensor],
-    ) {
+    fn(
+      graph : @moongrad.TGraph,
+      _binding : @moongrad.TBinding,
+    ) -> (Int32, Array[@moongrad.Tensor]) {
       let node = build_linear(graph, batch)
       (node, [make_weight()])
     },
@@ -136,10 +139,10 @@ test "the_visit_order_is_reproducible" {
     batch,
     false,
     11,
-    fn(graph : @moongrad.TGraph, _binding : @moongrad.TBinding) -> (
-      Int32,
-      Array[@moongrad.Tensor],
-    ) {
+    fn(
+      graph : @moongrad.TGraph,
+      _binding : @moongrad.TBinding,
+    ) -> (Int32, Array[@moongrad.Tensor]) {
       let node = build_linear(graph, batch)
       (node, [make_weight()])
     },
@@ -177,10 +180,10 @@ test "the_epoch_length_accounts_for_the_last_batch" {
     8,
     false,
     5,
-    fn(graph : @moongrad.TGraph, _binding : @moongrad.TBinding) -> (
-      Int32,
-      Array[@moongrad.Tensor],
-    ) {
+    fn(
+      graph : @moongrad.TGraph,
+      _binding : @moongrad.TBinding,
+    ) -> (Int32, Array[@moongrad.Tensor]) {
       let node = build_linear(graph, 8)
       (node, [make_weight()])
     },

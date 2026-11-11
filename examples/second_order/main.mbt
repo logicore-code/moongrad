@@ -63,7 +63,8 @@ fn main {
       return
     }
   }
-  let iterative = match @moongrad.newton_cg_step(g, b, loss, 1.0e-8, 50, 1.0e-12, 5) {
+  let iterative = match
+    @moongrad.newton_cg_step(g, b, loss, 1.0e-8, 50, 1.0e-12, 5) {
     Some(v) => v
     None => {
       println("| the conjugate-gradient iteration broke down")
@@ -92,5 +93,9 @@ fn main {
   println("| The step is the negative gradient here, because the Hessian")
   println("| is 2 I. One step lands exactly on the minimum.")
   let after = @moongrad.Tensor::vector(target)
-  println("|   w + step = [" + after.to_data().map(@moongrad.format_double).join(", ") + "]")
+  println(
+    "|   w + step = [" +
+    after.to_data().map(@moongrad.format_double).join(", ") +
+    "]",
+  )
 }

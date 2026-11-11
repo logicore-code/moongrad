@@ -119,11 +119,7 @@ pub fn BatchTrainer::new(
     shapes.push(p.shape.copy())
   }
   let opt = TensorOptState::new(opt_kind, shapes)
-  let width = if features.length() > 0 {
-    features[0].length()
-  } else {
-    0
-  }
+  let width = if features.length() > 0 { features[0].length() } else { 0 }
   let batch_features : Array[Double] = []
   for i = 0; i < batch_size * width; i = i + 1 {
     batch_features.push(0.0)
@@ -254,12 +250,7 @@ pub fn BatchTrainer::step(self : BatchTrainer) -> BatchStep {
     // The batch changed shape, which the compiled program was not
     // compiled for. Saying so beats returning the gradient of a
     // different function.
-    return {
-      loss: 0.0,
-      grad_norm: 0.0,
-      samples: used,
-      ok: false,
-    }
+    return { loss: 0.0, grad_norm: 0.0, samples: used, ok: false, }
   }
   let values = t_forward(self.grad.graph, self.binding)
   let loss_value = values[self.loss_node].sum()

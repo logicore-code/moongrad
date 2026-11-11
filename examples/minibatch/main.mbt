@@ -17,7 +17,10 @@
 ///|
 /// The dataset: two features, and a label that is a linear function
 /// of them plus a little noise.
-fn make_dataset(n : Int32, seed : Int32) -> (Array[Array[Double]], Array[Double]) {
+fn make_dataset(
+  n : Int32,
+  seed : Int32,
+) -> (Array[Array[Double]], Array[Double]) {
   let rng = @moongrad.Lcg::new(seed)
   let x : Array[Array[Double]] = []
   let y : Array[Double] = []
@@ -47,7 +50,10 @@ fn build(graph : @moongrad.TGraph) -> (Int32, @moongrad.Tensor) {
   let squared = graph.mul(diff, diff)
   let per_sample = graph.sum_axis(squared, 1)
   let total = graph.sum_axis(per_sample, 0)
-  let loss = graph.div(total, graph.constant(@moongrad.Tensor::filled([], 32.0)))
+  let loss = graph.div(
+    total,
+    graph.constant(@moongrad.Tensor::filled([], 32.0)),
+  )
   ignore(x)
   // The parameter the graph reads through `ParamRead`, and the
   // host-side tensor the optimiser updates. The trainer keeps the
@@ -78,10 +84,10 @@ fn main {
     batch,
     false,
     2024,
-    fn(graph : @moongrad.TGraph, _binding : @moongrad.TBinding) -> (
-      Int32,
-      Array[@moongrad.Tensor],
-    ) {
+    fn(
+      graph : @moongrad.TGraph,
+      _binding : @moongrad.TBinding,
+    ) -> (Int32, Array[@moongrad.Tensor]) {
       let (loss_node, weight) = build(graph)
       (loss_node, [weight])
     },
@@ -109,7 +115,9 @@ fn main {
   }
   println("|")
   let w = trainer.params[0]
-  println("| the recovered weight: [\{@moongrad.format_double(w.data[0])}, \{@moongrad.format_double(w.data[1])}]")
+  println(
+    "| the recovered weight: [\{@moongrad.format_double(w.data[0])}, \{@moongrad.format_double(w.data[1])}]",
+  )
   println("|")
   println("| The graph was built once and the gradient compiled once.")
   println("| Every step above rewrote the batch into the binding and")

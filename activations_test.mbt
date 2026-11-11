@@ -51,8 +51,10 @@ test "the_scalar_silu_gradient_matches_finite_differences" {
     let h = 1.0e-6
     let up = scalar_binding(v + h)
     let down = scalar_binding(v - h)
-    let numeric =
-      (@moongrad.forward(g, up, y).output - @moongrad.forward(g, down, y).output) /
+    let numeric = (
+        @moongrad.forward(g, up, y).output -
+        @moongrad.forward(g, down, y).output
+      ) /
       (2.0 * h)
     assert_close(grads[0], numeric, 1.0e-5, "silu gradient")
   }
@@ -69,8 +71,10 @@ test "the_scalar_gelu_gradient_matches_finite_differences" {
     let h = 1.0e-6
     let up = scalar_binding(v + h)
     let down = scalar_binding(v - h)
-    let numeric =
-      (@moongrad.forward(g, up, y).output - @moongrad.forward(g, down, y).output) /
+    let numeric = (
+        @moongrad.forward(g, up, y).output -
+        @moongrad.forward(g, down, y).output
+      ) /
       (2.0 * h)
     assert_close(grads[0], numeric, 1.0e-5, "gelu gradient")
   }
@@ -120,11 +124,6 @@ test "the_tensor_gelu_gradient_matches_finite_differences" {
     let vu = @moongrad.t_forward(g, bu)
     let vd = @moongrad.t_forward(g, bd)
     let numeric = (vu[loss].data[0] - vd[loss].data[0]) / (2.0 * h)
-    assert_close(
-      grads.input_grads[0].data[i],
-      numeric,
-      1.0e-5,
-      "gelu gradient",
-    )
+    assert_close(grads.input_grads[0].data[i], numeric, 1.0e-5, "gelu gradient")
   }
 }

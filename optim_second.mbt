@@ -90,11 +90,7 @@ pub fn compile_hvp(
   // The space is snapshotted before the direction slot is added: over
   // the inputs, the direction is itself an input, and it must not be
   // part of the space it is dotted with.
-  let space = if over_params {
-    b.params.copy()
-  } else {
-    b.inputs.copy()
-  }
+  let space = if over_params { b.params.copy() } else { b.inputs.copy() }
   let (offsets, total) = flat_layout(space)
   // The direction is an input, so the binding has to have a slot for
   // it before the gradient program is compiled.
@@ -103,11 +99,7 @@ pub fn compile_hvp(
   let h = first.graph
   let v = h.variable(slot)
   // q = sum over the space of (d f / d x) . v
-  let adjoints = if over_params {
-    first.param_adj
-  } else {
-    first.input_adj
-  }
+  let adjoints = if over_params { first.param_adj } else { first.input_adj }
   let mut q = h.constant(Tensor::filled([], 0.0))
   for s = 0; s < space.length(); s = s + 1 {
     let count = space[s].data.length()
@@ -122,7 +114,7 @@ pub fn compile_hvp(
   }
   // The gradient of q is the Hessian-vector product.
   let second = compile_tensor_gradient(h, b, q)
-  { first, grad: second, slot, size: total, offsets, over_params }
+  { first, grad: second, slot, size: total, offsets, over_params, }
 }
 
 ///|
@@ -272,11 +264,7 @@ pub fn cg_operator(
 ///|
 /// The inner product of two vectors.
 pub fn dot(a : Array[Double], b : Array[Double]) -> Double {
-  let n = if a.length() < b.length() {
-    a.length()
-  } else {
-    b.length()
-  }
+  let n = if a.length() < b.length() { a.length() } else { b.length() }
   let mut acc = 0.0
   for i = 0; i < n; i = i + 1 {
     acc = acc + a[i] * b[i]

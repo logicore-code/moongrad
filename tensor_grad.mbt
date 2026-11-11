@@ -222,6 +222,7 @@ pub fn TGraph::matmul(self : TGraph, a : Int32, b : Int32) -> Int32 {
 
 ///|
 /// Sum along an axis, dropping that axis.
+
 ///|
 /// Mean along one axis, dropping the axis.
 pub fn TGraph::mean_axis(self : TGraph, child : Int32, axis : Int32) -> Int32 {
@@ -235,7 +236,11 @@ pub fn TGraph::mean_axis(self : TGraph, child : Int32, axis : Int32) -> Int32 {
 /// Keeping the axis is what a normalisation layer wants: the mean
 /// stays broadcastable against the tensor it came from, without the
 /// caller having to know the tensor's shape to build the graph.
-pub fn TGraph::mean_keep_axis(self : TGraph, child : Int32, axis : Int32) -> Int32 {
+pub fn TGraph::mean_keep_axis(
+  self : TGraph,
+  child : Int32,
+  axis : Int32,
+) -> Int32 {
   self.nodes.push(TNode::MeanKeep(child, axis))
   self.nodes.length() - 1
 }
@@ -1266,10 +1271,7 @@ fn t_derivative_expr(h : TGraph, op : UnaryOp, x : Int32) -> Int32 {
       let t = h.tanh(u)
       let du = h.mul(
         h.constant(Tensor::filled([], gelu_c)),
-        h.add(
-          one,
-          h.mul(h.constant(Tensor::filled([], 3.0 * 0.044715)), x2),
-        ),
+        h.add(one, h.mul(h.constant(Tensor::filled([], 3.0 * 0.044715)), x2)),
       )
       let first = h.mul(h.constant(Tensor::filled([], 0.5)), h.add(one, t))
       let second = h.mul(
@@ -1375,7 +1377,10 @@ fn t_push_adjoints(
         return
       }
       let expanded = h.expand_axis(gbar, axis, values[child].shape)
-      let contrib = h.mul(expanded, h.constant(Tensor::filled([], 1.0 / n.to_double())))
+      let contrib = h.mul(
+        expanded,
+        h.constant(Tensor::filled([], 1.0 / n.to_double())),
+      )
       adj[child] = h.add(adj[child], contrib)
     }
     TNode::MeanKeep(child, axis) => {
@@ -1386,7 +1391,10 @@ fn t_push_adjoints(
         return
       }
       let expanded = h.broadcast_to(gbar, values[child].shape)
-      let contrib = h.mul(expanded, h.constant(Tensor::filled([], 1.0 / n.to_double())))
+      let contrib = h.mul(
+        expanded,
+        h.constant(Tensor::filled([], 1.0 / n.to_double())),
+      )
       adj[child] = h.add(adj[child], contrib)
     }
     TNode::Reshape(child, _) => {
