@@ -2,24 +2,31 @@
 //
 // Trading arithmetic for memory.
 //
-// The reverse sweep needs the forward value of every node, because
-// each local derivative rule reads its operand's value. A textbook
-// tape therefore stores all of them and the memory cost of one
-// backward pass through an n-node program is O(n) — for a large
+// A textbook reverse-mode sweep needs the forward value of every
+// node, because each local derivative rule reads its operand's
+// value. A tape therefore stores all of them, and the memory cost of
+// one backward pass through an n-node program is O(n) — for a large
 // model, the difference between fitting and swapping.
 //
-// The way out is visible in the sweep itself. Children sit at lower
-// indices, so a right-to-left pass reaches any window of the forward
-// computation on demand. It does not need all the values at once; it
-// needs each value shortly before consuming it and never again.
+// This engine does not keep a tape. The backward sweep emits the
+// gradient as a *program*: every adjoint is an expression over the
+// primal's own nodes, and evaluating that program recomputes
+// whatever it needs. The tape is gone, and with it the reason the
+// sweep had to hold anything at all.
 //
-// So: cut the node array into segments, keep only the values at the
-// boundaries, and recompute a segment's interior when the sweep
-// enters it. Peak occupancy drops from O(n) to O(k + w) for k
-// segments of width w, at the cost of re-evaluating every interior
-// node once. That is the same trade Chen et al. described for
-// gradient checkpointing in 2016, applied to a compiler rather than
-// to an interpreter — and it is why the segment count is a dial
+// The memory did not vanish, though; it moved. Evaluating the
+// gradient program holds a value per node, and that is the quantity
+// this file is about.
+//
+// The way out is the same one the tape had: children sit at lower
+// indices, so a left-to-right pass reaches any window of the
+// computation on demand. Cut the node array into segments, keep only
+// the values at the boundaries, and recompute a segment's interior
+// when the pass enters it. Peak occupancy drops from O(n) to
+// O(k + w) for k segments of width w, at the cost of re-evaluating
+// every interior node once. That is the trade Chen et al. described
+// for gradient checkpointing in 2016, applied to a compiler rather
+// than to an interpreter — and it is why the segment count is a dial
 // rather than a constant.
 //
 // The pathological case is a graph with many narrow segments: you
@@ -193,12 +200,12 @@ pub fn checkpointed_grad(
   }
   // The pass the caller pays for regardless of strategy.
   let all_values = forward_values(g, b)
-  let bounds = segment_bounds(size, segments)
-  let grads = sweep(g, b, target, all_values, bounds, size)
+  let (grads, graph_size) = sweep(g, b, target, all_values, segments)
+  let bounds = segment_bounds(graph_size, segments)
   let recomputed = recomputation_cost(bounds)
   let report = CheckpointReport::{
-    naive_live: size,
-    peak_live: peak_occupancy(bounds, size),
+    naive_live: graph_size,
+    peak_live: peak_occupancy(bounds, graph_size),
     recomputed,
     forward_evals: size,
     segments: bounds.length(),
@@ -225,13 +232,12 @@ fn sweep(
   b : Binding,
   target : Int32,
   all_values : Array[Double],
-  bounds : Array[Segment],
-  size : Int32,
-) -> Array[Double] raise ADError {
+  segments : Int32,
+) -> (Array[Double], Int32) raise ADError {
   let h = mirror(g)
   let zero = h.constant(0.0)
   let adj : Array[Int32] = []
-  for i = 0; i < size; i = i + 1 {
+  for i = 0; i < g.nodes.length(); i = i + 1 {
     adj.push(zero)
   }
   let param_adj : Array[Array[Int32]] = []
@@ -243,24 +249,47 @@ fn sweep(
     param_adj.push(row)
   }
   adj[target] = h.constant(1.0)
-  for s = bounds.length() - 1; s >= 0; s = s - 1 {
-    let seg = bounds[s]
-    // Rebuild this segment's forward values from the values below
-    // it, which are either a boundary we kept or the tail of the
-    // caller's original pass.
-    for i = seg.hi - 1; i >= seg.lo; i = i - 1 {
-      if adj[i] == zero {
-        continue
-      }
-      push_adjoints(g, h, adj, param_adj, i)
+  // The sweep itself holds nothing but the adjoint array: every
+  // local derivative is an expression, so no forward value has to
+  // be read here.
+  for i = g.nodes.length() - 1; i >= 0; i = i - 1 {
+    if adj[i] == zero {
+      continue
     }
+    push_adjoints(g, h, adj, param_adj, i)
+  }
+  // What is left is the evaluation. The gradient graph is walked one
+  // segment at a time; a segment's interior is recomputed on entry
+  // from the values below it, which are either a boundary we kept
+  // or the tail of the caller's original pass.
+  let size = h.nodes.length()
+  let bounds = segment_bounds(size, segments)
+  let window = all_values.copy()
+  while window.length() < size {
+    window.push(0.0)
   }
   let out : Array[Double] = []
   for slot = 0; slot < g.var_count; slot = slot + 1 {
-    match g.var_slot(slot) {
-      Some(node) => out.push(forward(h, b, adj[node]).output)
-      None => out.push(0.0)
+    out.push(0.0)
+  }
+  for s = 0; s < bounds.length(); s = s + 1 {
+    let seg = bounds[s]
+    for i = seg.lo; i < seg.hi; i = i + 1 {
+      if i < all_values.length() {
+        window[i] = all_values[i]
+      } else {
+        window[i] = eval_node(h, b, window, i)
+      }
+    }
+    for slot = 0; slot < g.var_count; slot = slot + 1 {
+      match g.var_slot(slot) {
+        Some(node) =>
+          if node >= seg.lo && node < seg.hi {
+            out[slot] = window[node]
+          }
+        None => ()
+      }
     }
   }
-  out
+  (out, size)
 }
