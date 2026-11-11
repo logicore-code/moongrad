@@ -9,8 +9,7 @@ first-class value: you can print it, count its nodes, re-evaluate it at a
 different input, or differentiate it again to get a Hessian.
 
 ```moonbit
-import { "logicore-code/moongrad" }
-
+// main.mbt
 fn main {
   let g = @moongrad.TGraph::new()
   let b = @moongrad.TBinding::new()
@@ -21,8 +20,14 @@ fn main {
   let f = g.add(g.mul(g.pow(x, 2.0), y), g.exp(x))
 
   let grads = @moongrad.t_grad(g, b, f)
-  println(grads.input_grads[0].to_data())   // [0.1938, 0.49]
+  println(grads.input_grads[0].data)   // [0.1937, 0.4899]
 }
+```
+
+```bash
+# moon.pkg
+import { "logicore-code/moongrad" }
+pkgtype(kind: "executable")
 ```
 
 ## Why the gradient is a program
@@ -144,7 +149,7 @@ catches a wrong rule rather than merely a typo.
 polynomials, quotients, matrix products, broadcasting products, chains of
 nonlinearities, and logarithms. All six agree to the last bit.
 
-The test suite (299 cases) additionally checks each local derivative rule
+The test suite (339 cases) additionally checks each local derivative rule
 against its closed form, and each layer against a hand-computed
 backpropagation.
 
@@ -181,7 +186,7 @@ moon run examples/minibatch     --target native   # mini-batch training
 ## Building
 
 ```bash
-moon test          # 299 unit tests
+moon test          # 339 unit tests
 moon check         # 0 warnings, 0 errors
 moon fmt           # format
 moon build         # build for the preferred target (wasm)
