@@ -68,6 +68,16 @@ fn numeric_grad(vals : Array[Double]) -> Array[Double] {
 }
 
 ///|
+/// Pad a string on the right to a fixed width.
+fn pad(s : String, width : Int32) -> String {
+  let mut out = s
+  while out.length() < width {
+    out = out + " "
+  }
+  out
+}
+
+///|
 fn main {
   println("| moongrad: one gradient, many inputs")
   println("|")
@@ -89,16 +99,18 @@ fn main {
     [2.0, 3.0, 0.5],
     [-4.0, 1.5, -0.25],
   ]
-  println("|   x                  compiled gradient        finite difference")
+  println("|   x                      compiled gradient      finite difference")
   println("| -------------------------------------------------------")
   let mut worst = 0.0
   for p in points {
     let (grads, _) = @moongrad.evaluate_tensor_gradient(compiled, binding_of(p))
     let numeric = numeric_grad(p)
     let parts : Array[String] = []
+    let numbers : Array[String] = []
     let mut agrees = true
     for i = 0; i < p.length(); i = i + 1 {
       parts.push(@moongrad.format_double(grads[0].data[i]))
+      numbers.push(@moongrad.format_double(numeric[i]))
       let diff = grads[0].data[i] - numeric[i]
       if diff > worst {
         worst = diff
@@ -112,15 +124,20 @@ fn main {
       xs.push(@moongrad.format_double(p[i]))
     }
     let flag = if agrees { "" } else { "   MISMATCH" }
-    let xs_text = xs.join(", ")
-    let parts_text = parts.join(", ")
-    let line = "| [" + xs_text + "]   [" + parts_text + "]" + flag
+    let xs_text = "[" + xs.join(", ") + "]"
+    let parts_text = "[" + parts.join(", ") + "]"
+    let numbers_text = "[" + numbers.join(", ") + "]"
+    let line = "| " +
+      pad(xs_text, 24) +
+      pad(parts_text, 24) +
+      numbers_text +
+      flag
     println(line)
   }
   println("|")
   println("| The largest disagreement with the finite difference is")
-  println("| \{@moongrad.format_double(worst)}, which is the")
-  println("| finite difference's own error.")
+  println("| \{@moongrad.format_double(worst)}, which is the finite")
+  println("| difference's own error rather than the gradient's.")
   println("|")
   println("| Note what happens on the second row: the gradient was")
   println("| compiled where x0 was positive, and it reports 0 there")
