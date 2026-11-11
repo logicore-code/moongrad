@@ -78,7 +78,7 @@ That is the whole design, and it is what the rest of the library hangs off:
 | `optim_second.mbt` | Hessian-vector products, Newton-CG, the dense Newton step |
 | `train_tensor.mbt` | The full-batch training loop |
 | `train_batch.mbt` | The mini-batch training loop: shuffling, batching, epochs |
-| `model_io.mbt` | Saving and loading model parameters |
+| `model_io.mbt` | Model parameters as JSON, with an exact round trip |
 | `dataset.mbt` | Deterministic shuffling, batching, k-fold splits, synthetic data |
 | `node.mbt`, `graph.mbt`, `simplify.mbt`, `forward.mbt`, `reverse.mbt`, `hessian.mbt`, `checkpoint.mbt`, `optim.mbt`, `train.mbt` | The scalar engine, which the tensor layer builds on and which still carries the Newton and checkpointing machinery |
 
