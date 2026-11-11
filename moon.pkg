@@ -8,4 +8,6 @@
 import {
   "moonbitlang/core/math",
   "moonbitlang/core/hashmap",
+  "moonbitlang/core/json",
+  "moonbitlang/core/double",
 }
