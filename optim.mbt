@@ -65,6 +65,11 @@ pub(all) struct OptimizerState {
   m : Array[Double]
   /// Squared velocity for Adam.
   v : Array[Double]
+  /// How many updates have been applied.
+  ///
+  /// Adam's bias correction needs it: the moment estimates start at
+  /// zero, and the correction divides them by 1 - beta^t.
+  mut steps : Int32
 }
 
 ///|
@@ -79,7 +84,14 @@ pub fn OptimizerState::new(kind : Optimizer, count : Int32) -> OptimizerState {
     m.push(0.0)
     v.push(0.0)
   }
-  { kind, m, v, }
+  // Adam's bias correction needs to know how many updates have been
+  // applied. `AdamWithSteps` says so up front; plain `Adam` starts
+  // from nothing and counts as it goes.
+  let steps = match kind {
+    AdamWithSteps(_, t) => t
+    _ => 0
+  }
+  { kind, m, v, steps, }
 }
 
 ///|
@@ -112,6 +124,7 @@ pub fn OptimizerState::step(
   } else {
     grads.length()
   }
+  st.steps = st.steps + 1
   match st.kind {
     Sgd(lr) =>
       for i = 0; i < n; i = i + 1 {
@@ -122,8 +135,11 @@ pub fn OptimizerState::step(
         st.m[i] = mu * st.m[i] + grads[i]
         params[i] = params[i] - lr * st.m[i]
       }
-    Adam(lr) => apply_adam(st, params, grads, lr, n, 1)
-    AdamWithSteps(lr, _) => apply_adam(st, params, grads, lr, n, 1)
+    // The bias correction is applied with the step that is being
+    // taken, so the first update is corrected by 1 - beta^1 rather
+    // than by 1 - beta^0.
+    Adam(lr) => apply_adam(st, params, grads, lr, n, st.steps)
+    AdamWithSteps(lr, _) => apply_adam(st, params, grads, lr, n, st.steps)
   }
 }
 

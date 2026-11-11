@@ -192,3 +192,32 @@ test "grad_cosine_of_a_dead_layer_is_zero" {
   let c = @moongrad.grad_cosine([1.0, 2.0], [0.0, 0.0])
   check(approx(c, 0.0, 1.0e-12), "a zero vector has no direction: \{c}")
 }
+
+///|
+test "the_first_adam_step_is_not_a_nan" {
+  // The bias correction divides by 1 - beta^t, so t has to be at
+  // least one. A zero index used to turn every parameter into a NaN.
+  let st = @moongrad.OptimizerState::new(@moongrad.Optimizer::Adam(0.1), 1)
+  let params = [1.0]
+  let grads = [1.0]
+  st.step(params, grads)
+  check(params[0] == params[0], "the parameter should not be a NaN")
+}
+
+///|
+test "the_adam_bias_correction_follows_the_step_count" {
+  // The second step must use 1 - beta^2, not 1 - beta^1: the
+  // correction is what stops the first few updates from being
+  // full-size steps in directions the optimiser has not earned.
+  let st = @moongrad.OptimizerState::new(@moongrad.Optimizer::Adam(0.1), 1)
+  let params = [1.0]
+  let grads = [1.0]
+  st.step(params, grads)
+  let first = params[0]
+  st.step(params, grads)
+  let second = params[0]
+  check(
+    first != second,
+    "the second step should not repeat the first one's correction",
+  )
+}

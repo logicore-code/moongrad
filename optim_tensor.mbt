@@ -105,10 +105,15 @@ pub fn TensorOptState::step(
   grads : Array[Tensor],
   step_index : Int32,
 ) -> Unit {
-  let n = if params.length() < grads.length() {
+  let mut n = if params.length() < grads.length() {
     params.length()
   } else {
     grads.length()
+  }
+  // The state was sized for the parameters it was built with, so a
+  // caller that hands it more is stopped at the state, not past it.
+  if n > self.layout.length() {
+    n = self.layout.length()
   }
   match self.kind {
     Sgd(lr) =>
@@ -145,7 +150,11 @@ pub fn TensorOptState::step(
       let b1 = 0.9
       let b2 = 0.999
       let eps = 1.0e-8
-      let t = step_index.to_double()
+      // The step index is one-based, so the first update is step 1.
+      // A caller that passes zero gets the first step's correction
+      // rather than a division by zero, which would turn every
+      // parameter into a NaN.
+      let t = if step_index < 1 { 1.0 } else { step_index.to_double() }
       let bias_m = 1.0 - @math.pow(b1, t)
       let bias_v = 1.0 - @math.pow(b2, t)
       for i = 0; i < n; i = i + 1 {
