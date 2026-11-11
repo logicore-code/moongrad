@@ -70,7 +70,11 @@ pub(all) struct BatchTrainer {
   batch_labels : Array[Double]
   /// Where in the order we are.
   mut cursor : Int32
-  /// How many epochs have been started.
+  /// How many times the visit order has been exhausted.
+  ///
+  /// A pass over the data is one epoch when the batch is smaller
+  /// than the dataset; a batch larger than the dataset makes
+  /// several passes in one step.
   mut epoch : Int32
   /// The loss at every step so far.
   history : Array[Double]
@@ -160,7 +164,13 @@ pub fn BatchTrainer::new(
     drop_last,
   }
   trainer.shuffle(seed)
+  // The backward rules bake the operand shapes into the program, so
+  // the binding has to hold a real batch before the gradient is
+  // compiled. The fill is undone afterwards: it was there to give the
+  // compiler the right shapes, not to consume a batch.
+  let cursor = trainer.cursor
   ignore(trainer.fill_batch())
+  trainer.cursor = cursor
   trainer.grad = compile_tensor_gradient(graph, binding, loss_node)
   trainer
 }
@@ -191,14 +201,26 @@ pub fn BatchTrainer::shuffle(self : BatchTrainer, seed : Int32) -> Unit {
 /// Returns the number of samples that went into the batch. A batch
 /// that runs off the end of the dataset either cycles back to the
 /// start or is dropped, depending on `drop_last`.
+///
+/// A dropped batch is a short one: fewer rows than the graph was
+/// built for. The binding is not written at all in that case, so a
+/// step that gets one is skipped rather than run on the previous
+/// batch's rows.
 pub fn BatchTrainer::fill_batch(self : BatchTrainer) -> Int32 {
   let n = self.order.length()
   let want = self.batch_size
+  if n == 0 || want <= 0 {
+    // Nothing to draw from, or a batch of nothing.
+    return 0
+  }
+  let width = self.features[0].length()
   let mut taken = 0
   let mut cursor = self.cursor
   while taken < want {
     if cursor >= n {
       if self.drop_last {
+        // The short final batch is dropped. The cursor stays where it
+        // is, so the next epoch starts from the top of the order.
         break
       }
       cursor = 0
@@ -208,21 +230,28 @@ pub fn BatchTrainer::fill_batch(self : BatchTrainer) -> Int32 {
     let idx = self.order[cursor]
     cursor = cursor + 1
     let row = self.features[idx]
+    // Every row has to be the same width: the batch is one tensor,
+    // and a row of a different width would land at the wrong
+    // offsets.
+    if row.length() != width {
+      return 0
+    }
     for j = 0; j < row.length(); j = j + 1 {
-      let at = taken * row.length() + j
+      let at = taken * width + j
       self.batch_features[at] = row[j]
     }
     self.batch_labels[taken] = self.labels[idx]
     taken = taken + 1
   }
   self.cursor = cursor
+  if taken < want {
+    // The batch is short, so it does not fit the graph. Leave the
+    // binding alone rather than filling it with the previous batch's
+    // rows.
+    return taken
+  }
   // The features go in as a [batch, features] tensor and the labels
   // as a [batch] vector, which is the shape the graph was built for.
-  let width = if self.features.length() > 0 {
-    self.features[0].length()
-  } else {
-    0
-  }
   let ft = Tensor::zeros([self.batch_size, width])
   for i = 0; i < ft.data.length(); i = i + 1 {
     ft.data[i] = self.batch_features[i]
@@ -246,6 +275,12 @@ pub fn BatchTrainer::fill_batch(self : BatchTrainer) -> Int32 {
 /// optimiser updates the host-side parameter tensors.
 pub fn BatchTrainer::step(self : BatchTrainer) -> BatchStep {
   let used = self.fill_batch()
+  if used < self.batch_size {
+    // The batch was short — the last one of the epoch, dropped on
+    // purpose. Running the step anyway would train on the previous
+    // batch's rows, which is worse than not stepping at all.
+    return { loss: 0.0, grad_norm: 0.0, samples: used, ok: false, }
+  }
   if !self.grad.shapes_match(self.binding) {
     // The batch changed shape, which the compiled program was not
     // compiled for. Saying so beats returning the gradient of a
@@ -292,7 +327,7 @@ pub fn BatchTrainer::fit(self : BatchTrainer, epochs : Int32) -> Double {
 /// How many steps an epoch takes.
 pub fn BatchTrainer::steps_per_epoch(self : BatchTrainer) -> Int32 {
   let n = self.samples()
-  if n <= 0 {
+  if n <= 0 || self.batch_size <= 0 {
     return 0
   }
   if self.drop_last {
@@ -311,16 +346,28 @@ pub fn BatchTrainer::steps_per_epoch(self : BatchTrainer) -> Int32 {
 
 ///|
 /// The mean loss over the steps of the epoch that just finished.
+///
+/// Only the last epoch's steps are counted: averaging the whole
+/// history would make the number fall more slowly every epoch and
+/// would say nothing about the epoch that just ran.
 pub fn BatchTrainer::epoch_loss(self : BatchTrainer) -> Double {
   let n = self.history.length()
   if n == 0 {
     return 0.0
   }
-  let mut acc = 0.0
-  for v in self.history {
-    acc = acc + v
+  let per_epoch = self.steps_per_epoch()
+  let mut count = per_epoch
+  if count > n {
+    count = n
   }
-  acc / n.to_double()
+  if count <= 0 {
+    return 0.0
+  }
+  let mut acc = 0.0
+  for i = 0; i < count; i = i + 1 {
+    acc = acc + self.history[n - count + i]
+  }
+  acc / count.to_double()
 }
 
 ///|
