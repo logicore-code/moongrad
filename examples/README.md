@@ -25,12 +25,12 @@ moon run examples/minibatch       --target native
 | `gradcheck/` | six functions, analytic gradient vs central difference | the two columns agree exactly |
 | `reuse/` | one compiled gradient, evaluated at four different inputs | the gradient follows the input across a ReLU's kink |
 | `tensor_hessian/` | the Hessian of a tensor objective | matches the closed form and a finite difference; one Newton step lands on the minimiser |
-| `nn_classifier/` | a two-layer network trained by gradient descent | loss 0.74 → 0.0003, eight predictions right |
+| `nn_classifier/` | a two-layer network trained by gradient descent | loss 0.92 → 0.0003, eight predictions right |
 | `linalg_demo/` | eigenvalues, Cholesky, QR, singular values | a symmetric matrix's spectrum |
 | `derivatives/` | seven functions, analytic gradient vs central difference | the two columns agree to four decimals |
 | `hessian/` | the Hessian, its eigenvalues, a Newton step | one Newton step reaches the minimum |
 | `checkpoint/` | the memory/arithmetic trade-off | less memory for more arithmetic |
-| `polyfit/`     | recovering a quadratic's coefficients from noisy data | `1.5 -> 1.5001`, `-0.8 -> -0.7988` |
+| `polyfit/`     | recovering a quadratic's coefficients from noisy data | `1.5 -> 1.4954`, `-0.8 -> -0.8019` |
 | `xor/`         | a linear model against a two-layer one | linear `0.25`, two-layer `0` |
 | `cse/`         | what the graph compiler saves | slots, folds, identities |
 | `second_order/` | the Hessian, a Hessian-vector product, Newton-CG | the dense and the matrix-free route agree |

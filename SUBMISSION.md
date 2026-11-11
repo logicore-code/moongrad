@@ -59,7 +59,7 @@ ReluDeriv(x)  =  1  if x > 0
 | `optim_second.mbt` | Hessian-向量积、Newton-CG、稠密 Newton 步 |
 | `train_tensor.mbt` | 全批量训练循环 |
 | `train_batch.mbt` | Mini-batch 训练循环：洗牌、分批、跨轮 |
-| `model_io.mbt` | 模型参数的 JSON 存取 |
+| `model_io.mbt` | 模型参数的 JSON 序列化，可精确往返 |
 | `dataset.mbt` | 数据集工具：确定性洗牌、分批、k 折切分、合成数据集 |
 
 此外还保留了标量版引擎（`node.mbt` / `graph.mbt` / `simplify.mbt` / `forward.mbt` /
@@ -99,7 +99,7 @@ moongrad 的通用性体现在三个层次：
 给定带噪声的观测数据，反推模型的参数。用 moongrad 拟合
 `y = 1.5x² - 0.8x + 0.25`，四个特征 `[1, x, x²]` 走一个线性层，
 训练完直接读出权重就是多项式系数——因为这个模型在特征上就是线性的，
-权重就是系数。训练区间外的留出点预测为 7.6299，真值 7.625。
+权重就是系数。训练区间外的留出点预测为 7.5937，真值 7.625。
 
 数据量大的时候走 mini-batch：图按批次大小编译一次，每一步把下一批写进
 绑定、在新权重上重新求值同一个已编译的梯度程序。`examples/minibatch`
@@ -154,7 +154,7 @@ Hessian-向量积加上共轭梯度给出 Newton-CG，矩阵全程不出现。
   对称方程组求解、一般线性方程组求解（部分选主元高斯消元）、QR（Householder）、
   奇异值（单边 Jacobi）、逆矩阵、行列式、矩阵指数；Krylov 子空间法的共轭
   梯度与 GMRES。
-- **模型存取**：参数以 JSON 序列化，可精确往返（双精度逐位还原，
+- **模型序列化**：参数以 JSON 写出并读回，可精确往返（双精度逐位还原，
   包括 -0.0 与非有限值）。
 - **内存**：梯度检查点。
 - **正确性验证**：梯度与中心差分逐项对照的检查工具。
@@ -172,14 +172,17 @@ Hessian-向量积加上共轭梯度给出 Newton-CG，矩阵全程不出现。
 - Golub 与 Van Loan，*Matrix Computations*——Cholesky、QR 与奇异值分解；
 - Nocedal 与 Wright，*Numerical Optimization*——Newton-CG、Levenberg-Marquardt
   与共轭梯度法；
+- Press 等，*Numerical Recipes*——线性同余伪随机数发生器的常数（`nn.mbt`
+  中生成器的那两个 64 位常数取自该书第三章，其余实现为独立编写）；
 - 高斯消元与 Householder 变换的标准教科书处理。
 
-以上均为思想与公式层面的公开参考，代码为独立实现。
+以上均为思想、公式与公开常数层面的参考，代码为独立实现，没有移植或改写
+任何已有开源项目。
 
 ## 7. 许可与合规
 
 - 许可证：**Apache-2.0**，仓库根目录附完整 `LICENSE`；
-- 依赖：仅 MoonBit 标准库（`math`、`hashmap`、`ref`、`bench`、`json`），
+- 依赖：仅 MoonBit 标准库（`math`、`hashmap`、`json`、`double`、`int64`），
   无任何第三方 crate，无 FFI；
 - CI：GitHub Actions 覆盖 `moon fmt --check`、`moon check`（零 warning）、
   `moon test`（339 个用例）、全部十四个示例的冒烟运行，以及

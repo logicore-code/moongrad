@@ -161,7 +161,7 @@ checks the tensor Hessian against the closed form, against a finite difference
 of the gradient, and for symmetry.
 
 `examples/nn_classifier` trains a two-layer network on two clusters: the loss
-falls from 0.74 to 0.0003 over 400 steps and all eight predictions land on
+falls from 0.92 to 0.0003 over 360 steps and all eight predictions land on
 the right side.
 
 ## Examples

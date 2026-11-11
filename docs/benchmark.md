@@ -87,13 +87,14 @@ In rough order of expected payoff:
    graph, so a single left-to-right pass could produce the forward
    values and the gradient values together, instead of evaluating the
    primal once to compile and again to run.
-3. **Reuse the buffers.** Every node of the gradient program allocates
-   a tensor, and a graph of any size allocates a lot of them. A pool
-   keyed by node slot would remove most of that pressure. It is not
-   done here because the gradient program has to be re-evaluable at
-   more than one binding, and a buffer that has been written by one
-   evaluation cannot be reused by the next without knowing what is
-   still live.
+3. **Reuse the buffers.** Every node of the gradient program
+   allocates a tensor, and a graph of any size allocates a lot of
+   them. A pool keyed by node slot would remove most of that
+   pressure, and it is safe: the program is evaluated in node order,
+   so a slot's value is always written before it is read. It is not
+   done here because the pool has to be threaded through the
+   evaluator's inner loop, which is the part of the library that has
+   to stay simple enough to be obviously right.
 
 ## Caveats
 
