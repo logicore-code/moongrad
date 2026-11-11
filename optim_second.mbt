@@ -54,6 +54,13 @@ pub(all) struct HvpProgram {
   /// True when the product is over the parameters, false when it is
   /// over the inputs.
   over_params : Bool
+  /// How many slots the product is over.
+  ///
+  /// The direction is itself an input slot, so the gradient program
+  /// has one more input slot than the primal; this counts the
+  /// primal's, so that the product is not confused with the
+  /// derivative of the objective with respect to the direction.
+  slots : Int32
 }
 
 ///|
@@ -86,14 +93,19 @@ pub fn compile_hvp(
   target : Int32,
   slot : Int32,
   over_params : Bool,
-) -> HvpProgram {
+) -> HvpProgram? {
   // The space is snapshotted before the direction slot is added: over
   // the inputs, the direction is itself an input, and it must not be
   // part of the space it is dotted with.
   let space = if over_params { b.params.copy() } else { b.inputs.copy() }
   let (offsets, total) = flat_layout(space)
   // The direction is an input, so the binding has to have a slot for
-  // it before the gradient program is compiled.
+  // it before the gradient program is compiled. Writing over one of
+  // the primal's own inputs would replace it with the direction and
+  // change the objective, so that is refused rather than done.
+  if slot < b.inputs.length() {
+    return None
+  }
   b.set_input(slot, Tensor::zeros([total]))
   let first = compile_tensor_gradient(g, b, target)
   let h = first.graph
@@ -114,7 +126,15 @@ pub fn compile_hvp(
   }
   // The gradient of q is the Hessian-vector product.
   let second = compile_tensor_gradient(h, b, q)
-  { first, grad: second, slot, size: total, offsets, over_params, }
+  Some({
+    first,
+    grad: second,
+    slot,
+    size: total,
+    offsets,
+    over_params,
+    slots: space.length(),
+  })
 }
 
 ///|
@@ -124,7 +144,7 @@ pub fn compile_param_hvp(
   b : TBinding,
   target : Int32,
   slot : Int32,
-) -> HvpProgram {
+) -> HvpProgram? {
   compile_hvp(g, b, target, slot, true)
 }
 
@@ -135,7 +155,7 @@ pub fn compile_input_hvp(
   b : TBinding,
   target : Int32,
   slot : Int32,
-) -> HvpProgram {
+) -> HvpProgram? {
   compile_hvp(g, b, target, slot, false)
 }
 
@@ -158,7 +178,9 @@ pub fn HvpProgram::apply(
       out.push(values[self.grad.param_adj[i]])
     }
   } else {
-    for i = 0; i < self.grad.input_adj.length(); i = i + 1 {
+    // Only the primal's own input slots: the direction slot is not
+    // part of the space the product is over.
+    for i = 0; i < self.slots; i = i + 1 {
       out.push(values[self.grad.input_adj[i]])
     }
   }
@@ -173,7 +195,10 @@ pub fn t_input_hvp(
   target : Int32,
   v : Array[Double],
 ) -> Array[Tensor] {
-  let hvp = compile_input_hvp(g, b, target, b.inputs.length())
+  let hvp = match compile_input_hvp(g, b, target, b.inputs.length()) {
+    Some(h) => h
+    None => return []
+  }
   hvp.apply(b, v)
 }
 
@@ -185,7 +210,10 @@ pub fn t_param_hvp(
   target : Int32,
   v : Array[Double],
 ) -> Array[Tensor] {
-  let hvp = compile_param_hvp(g, b, target, b.inputs.length())
+  let hvp = match compile_param_hvp(g, b, target, b.inputs.length()) {
+    Some(h) => h
+    None => return []
+  }
   hvp.apply(b, v)
 }
 
@@ -302,7 +330,10 @@ pub fn newton_cg_step(
   tol : Double,
   slot : Int32,
 ) -> Array[Double]? {
-  let hvp = compile_param_hvp(g, b, target, slot)
+  let hvp = match compile_param_hvp(g, b, target, slot) {
+    Some(h) => h
+    None => return None
+  }
   // The gradient of the objective, read out of the gradient program
   // the Hessian-vector product was compiled from.
   let first = hvp.first

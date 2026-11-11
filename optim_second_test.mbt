@@ -61,7 +61,13 @@ test "the_compiled_hessian_vector_product_serves_every_direction" {
   let g = cube_input_graph()
   let b = @moongrad.TBinding::new()
   b.set_input(0, @moongrad.Tensor::vector([1.5, -0.5]))
-  let hvp = @moongrad.compile_param_hvp(g, b, 2, 7)
+  let hvp = match @moongrad.compile_param_hvp(g, b, 2, 7) {
+    Some(h) => h
+    None => {
+      check(false, "the product should compile")
+      return
+    }
+  }
   let first = @moongrad.t_input_hvp(g, b, 2, [1.0, 0.0])
   let compiled = hvp.apply(b, [1.0, 0.0])
   // The compiled product is over the parameters, and this graph has
@@ -178,4 +184,35 @@ test "conjugate_gradient_reports_an_indefinite_operator" {
   let op = fn(v : Array[Double]) -> Array[Double] { [-v[0], v[1]] }
   let result = @moongrad.cg_operator(op, [1.0, 1.0], [0.0, 0.0], 50, 1.0e-12)
   assert_true(result is None)
+}
+
+///|
+test "the_input_product_has_one_tensor_per_input_slot" {
+  // The direction is itself an input slot, so the gradient program
+  // has one more input than the primal. The product must not hand
+  // back the derivative with respect to the direction along with it.
+  let g = @moongrad.TGraph::new()
+  let x = g.variable(0)
+  let cube = g.pow(x, 3.0)
+  let loss = g.sum_axis(cube, 0)
+  let b = @moongrad.TBinding::new()
+  b.set_input(0, @moongrad.Tensor::vector([1.5, -0.5]))
+  let product = @moongrad.t_input_hvp(g, b, loss, [1.0, 0.0])
+  assert_eq(product.length(), 1)
+  assert_close(product[0].data[0], 9.0, 1.0e-9, "the product")
+  assert_close(product[0].data[1], 0.0, 1.0e-9, "the product")
+}
+
+///|
+test "the_product_refuses_to_take_over_an_input" {
+  // Writing the direction into a slot the primal already uses would
+  // replace that input with the direction and change the objective.
+  let g = @moongrad.TGraph::new()
+  let x = g.variable(0)
+  let cube = g.pow(x, 3.0)
+  let loss = g.sum_axis(cube, 0)
+  let b = @moongrad.TBinding::new()
+  b.set_input(0, @moongrad.Tensor::vector([1.5, -0.5]))
+  let refused = @moongrad.compile_input_hvp(g, b, loss, 0)
+  check(refused is None, "the direction must not take over an input")
 }
