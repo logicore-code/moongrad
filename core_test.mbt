@@ -655,12 +655,3 @@ test "zz_summary_of_gradient_mismatches" {
   }
   assert_eq(list.length(), 0)
 }
-
-///|
-test "zz_summary_of_gradient_mismatches" {
-  let list = failures
-  for f in list {
-    println("  FAIL \{f}")
-  }
-  assert_eq(list.length(), 0)
-}
