@@ -50,7 +50,7 @@ jobs:
         run: |
           for ex in \
             tensor_basics gradcheck reuse tensor_hessian \
-            nn_classifier linalg_demo \
+            second_order minibatch nn_classifier linalg_demo \
             derivatives hessian checkpoint polyfit xor cse; do
             echo "--- examples/$ex"
             moon run "examples/$ex" --target native
