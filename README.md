@@ -45,7 +45,7 @@ and, wherever a node has a nonzero adjoint, emits the arithmetic for
 `adjoint * local derivative` into the graph. The result is a program that can
 be evaluated anywhere.
 
-Two things follow directly:
+That is the whole design, and it is what the rest of the library hangs off:
 
 - **Training compiles once.** `train_tensor.mbt` builds the graph once and
   compiles the gradient once; every step re-evaluates the compiled gradient at
@@ -53,6 +53,11 @@ Two things follow directly:
 - **The Hessian is nearly free.** `H[i][j]` is just another call to the same
   compiler with the first sweep's output as the target, because that output is
   a node and not a number.
+- **A gradient is correct wherever it is evaluated.** Every local derivative
+  is an expression over the primal's own nodes, so it is recomputed rather
+  than remembered. This matters most for the operators whose derivative is not
+  a smooth function — ReLU's is a step, and a step has to be evaluated where
+  the input is known, not where the gradient was compiled.
 
 ## What is in the box
 
@@ -60,13 +65,15 @@ Two things follow directly:
 |---|---|
 | `tensor.mbt` | The tensor type: shape, row-major buffer, broadcasting, indexing, reshape, transpose, concat, slice |
 | `tensor_op.mbt` | Elementwise arithmetic with broadcasting, matrix product, reductions, softmax, log-softmax, cross-entropy |
-| `tensor_grad.mbt` | The tensor gradient compiler |
+| `tensor_grad.mbt` | The tensor gradient compiler: the backward sweep that emits a program |
+| `tensor_shape.mbt` | Shape adjustments — cropping, padding, scattering a row back into a parameter |
+| `tensor_hessian.mbt` | The Hessian of a tensor objective, and the mixed parameter-input block |
 | `nn_tensor.mbt` | Dense layers, embeddings, dropout, sequential containers |
 | `conv.mbt` | 2-D convolution, with im2col forward and a col2im backward |
 | `linalg.mbt` | Eigenvalues, Cholesky, linear solve, QR, singular values, inverse, determinant, matrix exponential |
 | `optim_tensor.mbt` | SGD, momentum, Adam, with per-element state |
 | `train_tensor.mbt` | The training loop |
-| `node.mbt`, `graph.mbt`, `simplify.mbt`, `forward.mbt`, `reverse.mbt`, `hessian.mbt`, `checkpoint.mbt`, `optim.mbt`, `train.mbt` | The scalar engine, which the tensor layer builds on and which still carries the Hessian / Newton / checkpointing machinery |
+| `node.mbt`, `graph.mbt`, `simplify.mbt`, `forward.mbt`, `reverse.mbt`, `hessian.mbt`, `checkpoint.mbt`, `optim.mbt`, `train.mbt` | The scalar engine, which the tensor layer builds on and which still carries the Newton and checkpointing machinery |
 
 The scalar engine is not legacy: it is the rank-0 case of the same ideas, and
 it is where the second-order and memory work lives. The tensor layer is the
@@ -83,6 +90,12 @@ broadcasting, matrix product, reduction along an axis, reshape, transpose,
 concatenation, slicing, power, convolution, gather, and scaling by a
 constant.
 
+It compiles them into a program rather than a number, so the gradient can be
+evaluated at any binding — see `examples/reuse`. The second derivative comes
+out of the same machinery: `t_hessian` differentiates the gradient program,
+and `t_mixed_hessian` gives the parameter-against-input block that a
+Gauss-Newton step needs.
+
 ### The layer set
 
 `Linear`, `Conv2d`, `Embedding`, `Dropout`, `Sequential`, and the activations
@@ -98,9 +111,16 @@ catches a wrong rule rather than merely a typo.
 polynomials, quotients, matrix products, broadcasting products, chains of
 nonlinearities, and logarithms. All six agree to the last bit.
 
-The test suite (202 cases) additionally checks each local derivative rule
+The test suite (212 cases) additionally checks each local derivative rule
 against its closed form, and each layer against a hand-computed
 backpropagation.
+
+The reusability claim has its own tests, because it is the kind of property
+that can rot quietly. `tensor_program_test.mbt` compiles a gradient once and
+then evaluates it at other inputs, including on the other side of a ReLU's
+kink; a gradient frozen at its compile point fails those tests. The same file
+checks the tensor Hessian against the closed form, against a finite difference
+of the gradient, and for symmetry.
 
 `examples/nn_classifier` trains a two-layer network on two clusters: the loss
 falls from 0.74 to 0.0003 over 400 steps and all eight predictions land on
@@ -119,12 +139,14 @@ moon run examples/checkpoint    --target native   # the memory / arithmetic trad
 moon run examples/polyfit       --target native   # regression with the scalar engine
 moon run examples/xor           --target native   # a linear model against a two-layer one
 moon run examples/cse           --target native   # what the graph compiler saves
+moon run examples/reuse         --target native   # one gradient, evaluated at many inputs
+moon run examples/tensor_hessian --target native  # second derivatives on the tensor side
 ```
 
 ## Building
 
 ```bash
-moon test          # 202 unit tests
+moon test          # 212 unit tests
 moon check         # 0 warnings, 0 errors
 moon fmt           # format
 moon build         # build for the preferred target (wasm)
@@ -133,21 +155,38 @@ moon build         # build for the preferred target (wasm)
 The library targets `wasm`, `wasm-gc`, `js` and `native` from the same source
 with no conditional compilation.
 
-## The one real limitation
+## Where the gradient decides things
 
-ReLU's derivative is discontinuous, so it cannot be expressed as a smooth
-function of the operand, and the IR has no comparison with which to say "if
-the runtime value is positive". The compiler therefore reads the primal
-value and emits a literal 0 or 1.
+Most derivative rules are ordinary functions of the operand, and the compiler
+emits them as expressions: `d/dx cos(x)` becomes `cos(x)` applied to the
+primal's own node, `d/dx tanh(x)` becomes `1 - tanh(x)^2`, and so on. Those
+re-evaluate themselves wherever the gradient is evaluated.
 
-That means **a ReLU's gradient is correct at the point it was compiled and
-has to be recompiled for another point**. Everything else in the library is
-re-evaluable, and the tests pin the behaviour on both sides of the kink so
-the boundary is documented rather than accidental.
+ReLU is the one operator whose derivative is not a function of the operand's
+*value* in any smooth sense: it is one where the input is positive and zero
+where it is negative. Folding that branch into a literal at compile time
+gives a gradient that is right at the point it was compiled and wrong at every
+other point — and wrong in a way that looks exactly like right, because the
+number is still a plausible gradient.
 
-A system that wanted a re-evaluable ReLU gradient would need a conditional in
-the IR, which means a forward pass with branches — a different design, not a
-small patch.
+So the compiler does not fold it. `ReluDeriv` is a node in the IR, and its
+value is computed where the gradient is evaluated:
+
+```
+d/dx relu(x)  =  ReluDeriv(x)
+ReluDeriv(x)  =  1  if x > 0
+                 0  otherwise
+```
+
+The comparison lives in the node, not in the compiler, which is the difference
+between a branch that is decided once and a branch that is decided every time
+the gradient runs. `examples/reuse` compiles a gradient where the input is
+positive and then evaluates it where it is negative; the gradient follows the
+input.
+
+The same node makes the second derivative of a ReLU zero almost everywhere,
+which is the honest answer: the kink is the one place where the second
+derivative does not exist.
 
 ## Documentation
 
