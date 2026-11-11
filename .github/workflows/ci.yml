@@ -49,7 +49,8 @@ jobs:
       - name: Smoke-test every example on the native target
         run: |
           for ex in \
-            tensor_basics gradcheck nn_classifier linalg_demo \
+            tensor_basics gradcheck reuse tensor_hessian \
+            nn_classifier linalg_demo \
             derivatives hessian checkpoint polyfit xor cse; do
             echo "--- examples/$ex"
             moon run "examples/$ex" --target native
