@@ -213,3 +213,43 @@ test "the_mixed_tensor_hessian_crosses_parameters_and_inputs" {
   let h = @moongrad.t_mixed_hessian(g, b, f)
   assert_close(h.get(0, 0), 6.0, 1.0e-9, "d2f/dwdx = 2x")
 }
+
+///|
+test "summing_while_keeping_an_axis_handles_an_axis_longer_than_one" {
+  // The reduction that keeps the axis has to write its output with
+  // the reduced strides, not the original ones. An axis longer than
+  // one is what makes the difference visible: with a single element
+  // the two layouts coincide.
+  let t = @moongrad.Tensor::zeros([2, 3])
+  for i = 0; i < t.data.length(); i = i + 1 {
+    t.data[i] = (i + 1).to_double()
+  }
+  let kept = match @moongrad.t_sum_axis_keep(t, 1) {
+    Some(x) => x
+    None => {
+      check(false, "the reduction should succeed")
+      return
+    }
+  }
+  assert_eq(kept.shape[0], 2)
+  assert_eq(kept.shape[1], 1)
+  // Each row is summed: 1 + 2 + 3 and 4 + 5 + 6.
+  assert_close(kept.data[0], 6.0, 1.0e-12, "row 0")
+  assert_close(kept.data[1], 15.0, 1.0e-12, "row 1")
+}
+
+///|
+test "a_summed_axis_keeps_its_values_when_the_axis_is_longer_than_one" {
+  // The same reduction reached through the backward pass, where it
+  // is what adjusts a broadcast gradient back down.
+  let g = @moongrad.TGraph::new()
+  let x = g.variable(0)
+  let scaled = g.mul(x, g.constant(@moongrad.Tensor::filled([3], 2.0)))
+  let loss = g.sum_axis(scaled, 0)
+  let b = @moongrad.TBinding::new()
+  b.set_input(0, @moongrad.Tensor::vector([1.0, 2.0, 3.0]))
+  let grads = @moongrad.t_grad(g, b, loss)
+  assert_close(grads.input_grads[0].data[0], 2.0, 1.0e-12, "d/dx0")
+  assert_close(grads.input_grads[0].data[1], 2.0, 1.0e-12, "d/dx1")
+  assert_close(grads.input_grads[0].data[2], 2.0, 1.0e-12, "d/dx2")
+}

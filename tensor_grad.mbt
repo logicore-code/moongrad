@@ -218,6 +218,8 @@ pub fn TGraph::matmul(self : TGraph, a : Int32, b : Int32) -> Int32 {
 
 ///|
 /// Sum along an axis, dropping that axis.
+///|
+/// Sum along one axis, dropping the axis.
 pub fn TGraph::sum_axis(self : TGraph, child : Int32, axis : Int32) -> Int32 {
   self.nodes.push(TNode::Sum(child, axis))
   self.nodes.length() - 1
@@ -966,7 +968,13 @@ pub fn compile_tensor_gradient(
     }
     t_push_adjoints(g, h, b, values, adj, input_adj, param_adj, i)
   }
-  { graph: h, primal_size: n, input_adj, param_adj, output: values[target], }
+  {
+    graph: h,
+    primal_size: n,
+    input_adj,
+    param_adj,
+    output: values[target],
+  }
 }
 
 ///|
@@ -1087,8 +1095,13 @@ pub fn t_sum_axis_keep(t : Tensor, axis : Int32) -> Tensor? {
   for o = 0; o < outer; o = o + 1 {
     for i = 0; i < len; i = i + 1 {
       for j = 0; j < inner; j = j + 1 {
+        // The source is read with the original strides; the
+        // destination is written with the reduced ones, because the
+        // output's axis has length one and its buffer is a
+        // correspondingly smaller.
         let src = o * len * inner + i * inner + j
-        out.data[src] = out.data[src] + t.data[src]
+        let dst = o * inner + j
+        out.data[dst] = out.data[dst] + t.data[src]
       }
     }
   }
