@@ -142,15 +142,22 @@ test "simplifier_drops_the_multiplicative_identity" {
 }
 
 ///|
-test "simplifier_drops_annihilated_subtrees" {
+test "simplifier_drops_annihilated_literals" {
   let g = @moongrad.Graph::new()
   ignore(g.new_vars(2))
   let x = g.variable(0)
   let y = g.variable(1)
+  let _ = y
   let zero = g.constant(0.0)
+  let two = g.constant(2.0)
   // The whole `mul` disappears, and with it the subtree under it.
-  assert_eq(g.mul(g.exp(x), zero), zero)
-  assert_eq(g.mul(zero, g.sin(y)), zero)
+  assert_eq(g.mul(two, zero), zero)
+  assert_eq(g.mul(zero, two), zero)
+  // A subtree the simplifier cannot see is kept: the fold is only
+  // valid when the other operand is known to be finite, and `0 * inf`
+  // is a NaN rather than a zero.
+  assert_true(g.mul(g.exp(x), zero) != zero)
+  assert_true(g.mul(zero, g.sin(y)) != zero)
 }
 
 ///|
@@ -173,12 +180,17 @@ test "simplifier_folds_nested_literals" {
 }
 
 ///|
-test "simplifier_knows_x_minus_x" {
+test "simplifier_knows_a_literal_minus_itself" {
   let g = @moongrad.Graph::new()
   ignore(g.new_vars(1))
   let x = g.variable(0)
+  let two = g.constant(2.0)
   let zero = g.constant(0.0)
-  assert_eq(g.sub(x, x), zero)
+  // Two is two, and two minus two is zero.
+  assert_eq(g.sub(two, two), zero)
+  // A variable is not known to be finite, so it is not subtracted
+  // from itself: `inf - inf` is a NaN, not a zero.
+  assert_true(g.sub(x, x) != zero)
 }
 
 ///|
@@ -195,10 +207,9 @@ test "simplifier_knows_double_negation" {
 
 ///|
 test "simplifier_keeps_0_times_a_subtree_it_cannot_see" {
-  // `0 * (x + 1)` collapses too, because the whole product is
-  // annihilated regardless of what is under it. The subtree is never
-  // evaluated, so the fold is safe even when the subtree would have
-  // been a domain error.
+  // `0 * (x + 1)` is kept, because the simplifier cannot tell what
+  // the subtree will evaluate to. Folding it would turn a domain
+  // error into a zero, and `0 * inf` is a NaN rather than a zero.
   let g = @moongrad.Graph::new()
   ignore(g.new_vars(1))
   let x = g.variable(0)
@@ -206,7 +217,7 @@ test "simplifier_keeps_0_times_a_subtree_it_cannot_see" {
   let _ = x
   let would_be_bad = g.ln(negative) // unfolded: log of a negative
   let zero = g.constant(0.0)
-  assert_eq(g.mul(would_be_bad, zero), zero)
+  assert_true(g.mul(would_be_bad, zero) != zero)
 }
 
 ///|
@@ -245,11 +256,10 @@ test "stats_account_for_every_rewrite" {
   let g = @moongrad.Graph::new()
   ignore(g.new_vars(2))
   let x = g.variable(0)
-  let y = g.variable(1)
   let one = g.constant(1.0)
   let zero = g.constant(0.0)
   let _ = g.mul(one, x) // identity
-  let _ = g.mul(zero, y) // annihilator
+  let _ = g.mul(zero, g.constant(2.0)) // annihilator of a literal
   let _ = g.add(g.constant(2.0), g.constant(3.0)) // fold
   assert_eq(g.stats.identities, 1)
   assert_eq(g.stats.annihilated, 1)
@@ -638,9 +648,15 @@ test "a_higher_order_polynomial_has_exact_second_derivative_behaviour" {
 }
 
 ///|
-/// Report everything that went wrong during the run. Kept as its own
-/// test so the report prints in full rather than stopping at the
-/// first failure.
+test "zz_summary_of_gradient_mismatches" {
+  let list = failures
+  for f in list {
+    println("  FAIL \{f}")
+  }
+  assert_eq(list.length(), 0)
+}
+
+///|
 test "zz_summary_of_gradient_mismatches" {
   let list = failures
   for f in list {

@@ -33,15 +33,22 @@ pub fn Graph::simplify_binary(
 ) -> Int32 {
   let lv = self.literal_of(left)
   let rv = self.literal_of(right)
-  // Rule 1: annihilator. `x * 0` is 0 for any finite x, and `x - x`
-  // is 0 for any finite x. Both drop the subtree.
+  // Rule 1: annihilator. `x * 0` is 0 for any *finite* x, and
+  // `x - x` is 0 for any finite x. Both drop the subtree — but only
+  // when the other operand is known to be finite. A node that
+  // evaluates to an infinity makes `x * 0` a NaN, and folding it
+  // away would replace a loud error with a quiet wrong number.
   if op.kills_product() {
-    if lv == Some(0.0) || rv == Some(0.0) {
+    if lv == Some(0.0) && rv_is_finite(self, right) {
+      self.stats.annihilated = self.stats.annihilated + 1
+      return self.constant(0.0)
+    }
+    if rv == Some(0.0) && rv_is_finite(self, left) {
       self.stats.annihilated = self.stats.annihilated + 1
       return self.constant(0.0)
     }
   }
-  if op == BinaryOp::Sub && left == right {
+  if op == BinaryOp::Sub && left == right && rv_is_finite(self, left) {
     self.stats.annihilated = self.stats.annihilated + 1
     return self.constant(0.0)
   }
@@ -286,9 +293,12 @@ pub fn apply_unary(op : UnaryOp, x : Double) -> Double? {
     UnaryOp::Tanh => Some(@math.tanh(x))
     UnaryOp::Sigmoid => Some(1.0 / (1.0 + @math.exp(-x)))
     UnaryOp::Softplus =>
-      // log(1 + e^x), evaluated as max(x,0) + log(1 + e^-|x|) so it
-      // does not overflow for large x.
-      Some(maxf(x, 0.0) + @math.ln(1.0 + @math.exp(-absf(x))))
+      // log(1 + e^x), evaluated as max(x,0) + log1p(e^-|x|) so it
+      // does not overflow for large x. The log1p matters: for a
+      // large negative x the sum rounds to one and the logarithm
+      // of it is zero, while the true value is a small number that
+      // still matters.
+      Some(maxf(x, 0.0) + log1p(@math.exp(-absf(x))))
     UnaryOp::Relu => Some(if x > 0.0 { x } else { 0.0 })
     UnaryOp::Silu => Some(x / (1.0 + @math.exp(-x)))
     UnaryOp::Gelu => {
@@ -320,6 +330,34 @@ pub fn safe_pow(x : Double, c : Double) -> Double? {
 }
 
 ///|
+/// The logarithm of one plus a small number.
+///
+/// The standard library has no `log1p`, and the naive form loses
+/// the answer entirely for a small argument: `1 + u` rounds to one
+/// and its logarithm is zero, while the true value is very nearly u.
+fn log1p(u : Double) -> Double {
+  if u > 1.0e-4 {
+    @math.ln(1.0 + u)
+  } else {
+    u - u * u * 0.5 + u * u * u / 3.0
+  }
+}
+
+///|
+/// Whether a node is known to be finite.
+///
+/// A literal is finite if its value is. Anything else is not known:
+/// the simplifier cannot tell what a node will evaluate to, and a
+/// node that evaluates to an infinity is exactly the case where the
+/// annihilator rules would be wrong.
+fn rv_is_finite(g : Graph, id : Int32) -> Bool {
+  match g.literal_of(id) {
+    Some(v) => is_finite(v)
+    None => false
+  }
+}
+
+///|
 /// Local derivative of a unary operator, given the value of its
 /// operand. This is the table the reverse pass and the forward-mode
 /// cross-check both consult, so the two implementations cannot drift
@@ -333,12 +371,27 @@ pub fn unary_derivative(op : UnaryOp, x : Double) -> Double {
     UnaryOp::Sin => @math.cos(x)
     UnaryOp::Cos => -@math.sin(x)
     UnaryOp::Tanh => {
-      let t = @math.tanh(x)
-      1.0 - t * t
+      // 1 - t^2 cancels catastrophically for a large argument: the
+      // square of a number very close to one has no significant
+      // digits left. The form below keeps them.
+      let e = @math.exp(-2.0 * x)
+      if x > 0.0 {
+        4.0 * e / ((1.0 + e) * (1.0 + e))
+      } else {
+        let p = @math.exp(2.0 * x)
+        4.0 * p / ((1.0 + p) * (1.0 + p))
+      }
     }
     UnaryOp::Sigmoid => {
+      // s * (1 - s) has the same problem. The form below keeps the
+      // small factor instead of subtracting it from one.
       let s = 1.0 / (1.0 + @math.exp(-x))
-      s * (1.0 - s)
+      if x > 0.0 {
+        let e = @math.exp(-x)
+        e / ((1.0 + e) * (1.0 + e))
+      } else {
+        s * (1.0 - s)
+      }
     }
     UnaryOp::Softplus => 1.0 / (1.0 + @math.exp(-x))
     UnaryOp::Relu => if x > 0.0 { 1.0 } else { 0.0 }
