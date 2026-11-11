@@ -154,6 +154,16 @@ fn eval_node(
         None => raise DomainError("x^\{exponent} at x = \{x}")
       }
     }
+    Node::ReluDeriv(child) => {
+      // The branch is taken here, where the value is known, rather
+      // than where the gradient was compiled.
+      let x = values[child]
+      if x > 0.0 {
+        1.0
+      } else {
+        0.0
+      }
+    }
   }
 }
 
@@ -303,5 +313,9 @@ fn dual_of_node(
     Node::Unary(op, child) => Dual::unary(values[child], op)
     Node::Binary(op, a, c) => Dual::binary(op, values[a], values[c])
     Node::PowBy(exponent, base) => Dual::pow(values[base], exponent)
+    Node::ReluDeriv(child) =>
+      // The forward-mode tangent of a step function is zero almost
+      // everywhere.
+      Dual::constant(values[child].value * 0.0)
   }
 }

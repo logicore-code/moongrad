@@ -128,7 +128,7 @@ pub fn compile_gradient(
     if adj[i] == zero {
       continue
     }
-    push_adjoints(g, h, primal_values, adj, param_adj, i)
+    push_adjoints(g, h, adj, param_adj, i)
   }
   let var_adj : Array[Int32] = []
   for slot = 0; slot < g.var_count; slot = slot + 1 {
@@ -182,6 +182,7 @@ fn reintern(h : Graph, node : Node) -> Int32 raise ADError {
     Node::Unary(op, a) => h.unary(op, a)
     Node::Binary(op, a, b) => h.binary(op, a, b)
     Node::PowBy(exponent, a) => h.pow(a, exponent)
+    Node::ReluDeriv(a) => h.relu_deriv(a)
   }
 }
 
@@ -196,7 +197,6 @@ fn reintern(h : Graph, node : Node) -> Int32 raise ADError {
 fn push_adjoints(
   g : Graph,
   h : Graph,
-  primal_values : Array[Double],
   adj : Array[Int32],
   param_adj : Array[Array[Int32]],
   i : Int32,
@@ -212,7 +212,7 @@ fn push_adjoints(
       // re-evaluated at a different binding later.
       param_adj[slot][index] = h.add(param_adj[slot][index], incoming)
     Node::Unary(op, a) => {
-      let d = derivative_expr(h, op, a, primal_values[a])
+      let d = derivative_expr(h, op, a)
       adj[a] = h.add(adj[a], h.mul(incoming, d))
     }
     Node::Binary(op, a, b) => {
@@ -221,6 +221,10 @@ fn push_adjoints(
       adj[a] = h.add(adj[a], h.mul(incoming, dleft))
       adj[b] = h.add(adj[b], h.mul(incoming, dright))
     }
+    // ReLU's derivative is a step function, so its own derivative is
+    // zero almost everywhere. At the kink the derivative does not
+    // exist, and zero is as good an answer as any.
+    Node::ReluDeriv(_) => ()
     Node::PowBy(exponent, a) => {
       // d/dx x^c = c * x^(c-1)
       let inner = h.pow(a, exponent - 1.0)
@@ -247,12 +251,7 @@ fn push_adjoints(
 /// correct at the point it was compiled and has to be recompiled
 /// for another point. The tests pin the behaviour at both sides of
 /// the kink so the boundary is documented rather than accidental.
-pub fn derivative_expr(
-  h : Graph,
-  op : UnaryOp,
-  x : Int32,
-  x_value : Double,
-) -> Int32 {
+pub fn derivative_expr(h : Graph, op : UnaryOp, x : Int32) -> Int32 {
   match op {
     UnaryOp::Neg => h.constant(-1.0)
     UnaryOp::Exp => h.exp(x)
@@ -272,12 +271,7 @@ pub fn derivative_expr(
       h.mul(s, h.sub(h.constant(1.0), s))
     }
     UnaryOp::Softplus => h.sigmoid(x)
-    UnaryOp::Relu =>
-      if x_value > 0.0 {
-        h.constant(1.0)
-      } else {
-        h.constant(0.0)
-      }
+    UnaryOp::Relu => h.relu_deriv(x)
   }
 }
 
@@ -368,6 +362,12 @@ pub fn eval_adjoint(
         Some(v) => v
         None => 0.0
       }
+    }
+    Node::ReluDeriv(child) => {
+      // The branch is taken here, where the value is known, rather
+      // than where the gradient was compiled.
+      let x = eval_adjoint(h, b, primal_values, child)
+      if x > 0.0 { 1.0 } else { 0.0 }
     }
     Node::PowBy(exponent, base) => {
       let x = eval_adjoint(h, b, primal_values, base)

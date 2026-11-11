@@ -86,6 +86,14 @@ pub(all) enum Node {
   /// `PowBy` at arity one so the graph stays a tree in that
   /// direction.
   PowBy(Double, Int32)
+  /// The derivative of ReLU, as a node rather than a literal.
+  ///
+  /// ReLU's derivative is a step function: it is 1 where the input
+  /// is positive and 0 elsewhere. Folding that into a literal at
+  /// compile time would freeze the gradient at the point where it was
+  /// compiled, so the branch has to be decided where the gradient is
+  /// evaluated instead.
+  ReluDeriv(Int32)
 }
 
 ///|
@@ -159,6 +167,7 @@ pub fn Node::arity(self : Node) -> Int32 {
     Unary(_, _) => 1
     Binary(_, _, _) => 2
     PowBy(_, _) => 1
+    ReluDeriv(_) => 1
   }
 }
 
@@ -175,6 +184,7 @@ pub fn Node::children(self : Node) -> Array[Int32] {
     Unary(_, a) => [a]
     Binary(_, a, b) => [a, b]
     PowBy(_, a) => [a]
+    ReluDeriv(a) => [a]
   }
 }
 

@@ -248,12 +248,11 @@ fn sweep(
     // Rebuild this segment's forward values from the values below
     // it, which are either a boundary we kept or the tail of the
     // caller's original pass.
-    let window = rebuild(g, b, all_values, seg)
     for i = seg.hi - 1; i >= seg.lo; i = i - 1 {
       if adj[i] == zero {
         continue
       }
-      push_adjoints(g, h, window, adj, param_adj, i)
+      push_adjoints(g, h, adj, param_adj, i)
     }
   }
   let out : Array[Double] = []
@@ -264,27 +263,4 @@ fn sweep(
     }
   }
   out
-}
-
-///|
-/// Forward values for the nodes in `seg`, rebuilt from scratch.
-///
-/// Children below `seg.lo` are read from `all` — the caller keeps
-/// those live, which is the k boundary values the model accounts
-/// for. Children inside the segment are taken from the window as it
-/// fills, which is safe because they always sit at a lower index.
-fn rebuild(
-  g : Graph,
-  b : Binding,
-  all : Array[Double],
-  seg : Segment,
-) -> Array[Double] raise ADError {
-  // A full-length view whose tail is authoritative and whose head
-  // we refresh segment by segment. Indexing stays O(1) and the
-  // caller keeps control of what stays live.
-  let window = all.copy()
-  for i = seg.lo; i < seg.hi; i = i + 1 {
-    window[i] = eval_node(g, b, window, i)
-  }
-  window
 }

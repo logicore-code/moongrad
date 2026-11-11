@@ -346,11 +346,21 @@ pub fn Graph::relu(self : Graph, x : Int32) -> Int32 {
 }
 
 ///|
+/// Build the derivative of ReLU as a node.
+///
+/// The node is not simplified: it has no constant form, because the
+/// point where the derivative is one and the point where it is zero
+/// are decided when the graph is evaluated.
+pub fn Graph::relu_deriv(self : Graph, x : Int32) -> Int32 {
+  self.intern(Node::ReluDeriv(x))
+}
+
+///|
 /// The literal stored in slot `id`, or `None`. Used by
 /// `derivative_expr` for operators whose derivative is not an
 /// ordinary smooth function of the operand — ReLU is the only one,
 /// and the discontinuity means the branch has to be decided at
-/// compile time rather than represented symbolically.
+/// evaluation time rather than folded into a literal.
 pub fn Graph::eval_literal(self : Graph, id : Int32) -> Double {
   match self.literal_of(id) {
     Some(v) => v
