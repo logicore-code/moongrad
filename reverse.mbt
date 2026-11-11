@@ -342,7 +342,7 @@ pub fn derivative_right(
 pub fn eval_adjoint(h : Graph, b : Binding, id : Int32) -> Double raise ADError {
   let values = forward_values(h, b)
   if id < 0 || id >= values.length() {
-    return 0.0
+    raise DanglingNode(id)
   }
   values[id]
 }

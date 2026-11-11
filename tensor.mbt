@@ -213,8 +213,11 @@ pub fn Tensor::mset(
 }
 
 ///|
-/// The row `i` of a rank-2 tensor, as a rank-1 tensor. The result
-/// shares the underlying buffer, so it is a view rather than a copy.
+/// The row `i` of a rank-2 tensor, as a rank-1 tensor.
+///
+/// The result is a copy, not a view: the row's elements are gathered
+/// into a fresh array, so writing to it does not write through to
+/// the tensor it came from.
 pub fn Tensor::row(self : Tensor, i : Int32) -> Tensor {
   let cols = if self.shape.length() >= 2 { self.shape[1] } else { 1 }
   let data : Array[Double] = []
@@ -226,13 +229,19 @@ pub fn Tensor::row(self : Tensor, i : Int32) -> Tensor {
 
 ///|
 /// The column `j` of a rank-2 tensor.
-pub fn Tensor::column(self : Tensor, j : Int32) -> Tensor {
-  let rows = if self.shape.length() >= 2 { self.shape[0] } else { 1 }
+///
+/// A vector has no columns, and asking for one is a mistake rather
+/// than a request for an empty tensor, so it is refused.
+pub fn Tensor::column(self : Tensor, j : Int32) -> Tensor? {
+  if self.shape.length() < 2 {
+    return None
+  }
+  let rows = self.shape[0]
   let data : Array[Double] = []
   for i = 0; i < rows; i = i + 1 {
     data.push(self.data[i * self.shape[1] + j])
   }
-  { shape: [rows], data, }
+  Some({ shape: [rows], data, })
 }
 
 ///|
