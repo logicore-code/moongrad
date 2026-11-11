@@ -129,7 +129,11 @@ pub fn Conv2d::apply(self : Conv2d, g : TGraph, x : Int32) -> Int32 {
     self.pad_h,
     self.pad_w,
   )
-  g.binary(BinaryOp::Add, conv, g.param(self.slot_b))
+  // The bias is one number per output channel. A rank-one parameter
+  // would be aligned to the last axis of the activation, which is
+  // the width, so it is reshaped to (1, channels, 1, 1) first.
+  let shaped_bias = g.reshape(g.param(self.slot_b), [1, self.out_channels, 1, 1])
+  g.binary(BinaryOp::Add, conv, shaped_bias)
 }
 
 ///|
@@ -336,11 +340,22 @@ pub fn t_conv2d(
     None => return None
   }
   match bias {
-    Some(bv) =>
-      match t_add(moved, bv) {
-        Some(t) => Some(t)
-        None => Some(moved)
+    Some(bv) => {
+      // The bias is one number per output channel, and a rank-one
+      // tensor is aligned to the *last* axis. The channel axis is the
+      // second one here, so the bias has to be given its shape
+      // explicitly: a rank-one bias added to a rank-four tensor
+      // would land on the width.
+      let channels = moved.shape[1]
+      let shaped_bias = match bv.reshape([1, channels, 1, 1]) {
+        Some(t) => t
+        None => return None
       }
+      match t_add(moved, shaped_bias) {
+        Some(t) => Some(t)
+        None => None
+      }
+    }
     None => Some(moved)
   }
 }
