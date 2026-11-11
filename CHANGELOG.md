@@ -7,6 +7,76 @@ project follows Semantic Versioning: bump the
 - `MINOR` part on new functionality in a backward-compatible way
 - `PATCH` part on backward-compatible bug fixes
 
+## [0.6.0] — 2026-11-12
+
+### Fixed
+- The **failure report could not see the failures of most test
+  files**. MoonBit runs the test files in reverse alphabetical
+  order, and the summary lived in `core_test.mbt`, which runs early
+  — so a failure in any later file was recorded after the only test
+  that would have printed it. The checkpoint tests had been failing
+  for weeks without anything going red. The summary now lives in a
+  file that runs last.
+- The **checkpointed gradient returned the primal's values** rather
+  than the gradient, for every segment count. The variable's own
+  slot was read out of the evaluation window instead of its
+  adjoint's.
+- The **convolution's bias was broadcast along the width** instead of
+  the channel axis, and a bias whose length did not match the width
+  was silently dropped — while the graph layer, whose output has the
+  channel axis second, could not broadcast at all and collapsed the
+  whole layer to a zero.
+- The **tensor trainer never checked that the binding still matched
+  the compiled program**: a change of shape produced a zero gradient
+  and a step that reported success. The gradient is now compiled on
+  the first step, so the order the caller sets the inputs up in stops
+  mattering, and the shapes are checked on every step.
+- The **variable slots were indexed by the order the variables were
+  first used in**, so a graph that used its variables out of order
+  credited one variable's gradient to another.
+- The **forward-mode engine returned zero for a ReLU's derivative
+  node** and substituted zeros for domain errors, so the oracle the
+  reverse pass is checked against could not see either.
+- The **simplifier folded `x * 0` and `x - x` to zero** without
+  knowing that the other operand was finite: `0 * inf` is a NaN, and
+  folding it away turns a loud error into a quiet wrong number.
+- The **random number generator was producing a narrow band** of
+  values: the 64-bit multiplication was done by hand in 32-bit
+  halves, and MoonBit's `Int` is 32 bits, so the carries a 64-bit
+  product needs could not be recovered from it. Every dataset and
+  every set of initial weights was drawn from that band.
+- The **dropout mask was a constant in the graph**, so a training
+  run used one mask for every step — a fixed random projection
+  rather than a dropout. The mask is an input now, and the layer
+  redraws it between steps.
+- The **normalisation layers claimed running averages** they did not
+  keep. They do now, and there is an inference form that uses them.
+- The **optimiser's moment arrays were sized by the sum of a
+  parameter's shape** rather than by its number of elements, so a
+  parameter of rank two or more either ran past the end of the state
+  or shared a moment slot with the next parameter.
+- **Adam's bias correction was frozen at the first step** in the
+  scalar optimiser's state, and divided by zero when the step index
+  was zero.
+- The **Newton step damped the caller's Hessian** in place, so a
+  loop that reused one Hessian accumulated the damping.
+- The **learning-rate override destroyed the configured optimiser**:
+  one call to plain SGD left the trainer running plain SGD for ever.
+- The **scalar trainer evaluated the whole gradient graph once per
+  variable**, for an array that was never read again.
+- The **softmax, the cross-entropy and the mean over an empty axis**
+  read past the end of their buffers or divided by zero.
+
+### Changed
+- The test suite grew from 339 cases to 352.
+- `checkpoint.mbt` now says what it delivers. The classic segmented
+  recomputation does not pay for a gradient program, because every
+  gradient node refers back into the primal — so a dropped primal
+  value has to be recomputed, and the recomputation grows with the
+  depth of the primal. The module measures that arithmetic and checks
+  that the answer is the same either way, instead of promising a
+  memory bound the design does not deliver.
+
 ## [0.5.0] — 2026-11-11
 
 ### Added

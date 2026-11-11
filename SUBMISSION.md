@@ -72,7 +72,7 @@ ReluDeriv(x)  =  1  if x > 0
 逐位吻合。归一化层、mini-batch 训练、Hessian-向量积各自另有针对闭式解或有限
 差分的对照测试。
 
-339 个单元测试，`moon check` 零 warning 零 error，wasm / wasm-gc / js / native
+352 个单元测试，`moon check` 零 warning 零 error，wasm / wasm-gc / js / native
 四个目标同一份源码编译通过。
 
 ## 3. 项目方向与通用性
@@ -189,7 +189,7 @@ Hessian-向量积加上共轭梯度给出 Newton-CG，矩阵全程不出现。
 - 依赖：仅 MoonBit 标准库（`math`、`hashmap`、`json`、`double`、`int64`），
   无任何第三方 crate，无 FFI；
 - CI：GitHub Actions 覆盖 `moon fmt --check`、`moon check`（零 warning）、
-  `moon test`（339 个用例）、全部十四个示例的冒烟运行，以及
+  `moon test`（352 个用例）、全部十四个示例的冒烟运行，以及
   `moon check --target all` 的四目标类型检查；
 - 提交历史：七十余次原子提交，每次提交对应一个可独立验证的变更
   （IR → 构建器 → 化简 → 前向 → 反向 → 张量 → 张量梯度 → 网络层 →
