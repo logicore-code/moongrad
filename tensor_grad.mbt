@@ -55,6 +55,33 @@ pub(all) enum TNode {
   GatherRow(Int32, Int32, Int32)
   /// `base ^ exponent`, with the exponent carried inline.
   PowBy(Double, Int32)
+  /// Broadcast a tensor up to a larger shape.
+  BroadcastTo(Int32, Array[Int32])
+  /// Move a tensor to another shape: broadcast it up when the target
+  /// has more axes, sum it down when it has fewer.
+  Adjust(Int32, Array[Int32])
+  /// Broadcast a tensor up to a shape that has one extra axis, the
+  /// shape a reduction came from.
+  ExpandAxis(Int32, Int32, Array[Int32])
+  /// Pad a tensor with zeros along one axis.
+  PadTo(Int32, Array[Int32], Int32, Int32)
+  /// Take a window out of a tensor, the inverse of `PadTo`.
+  CropTo(Int32, Array[Int32], Int32, Int32)
+  /// The derivative of ReLU: 1 where the input is positive, 0
+  /// elsewhere. It is a node rather than a literal precisely so
+  /// that a compiled gradient stays correct at a different input.
+  ReluDeriv(Int32)
+  /// Expand a tensor into a matrix of overlapping patches.
+  Im2Col(Int32, Int32)
+  /// Scatter a matrix of patches back into a tensor.
+  Col2Im(Int32, Int32)
+  /// Place a row of values into a larger tensor, the gradient of a
+  /// `GatherRow`.
+  ScatterRow(Int32, Array[Int32], Int32, Int32)
+  /// One element of a tensor, taken by flat index.
+  Select(Int32, Int32)
+  /// One element of a scalar put back into a tensor of a given shape.
+  Scatter(Int32, Array[Int32], Int32)
   /// A 2-D convolution. The operands are the input and the weight;
   /// the rest are the geometry.
   Conv2d(Int32, Int32, Int32, Int32, Int32, Int32, Int32, Int32, Int32, Int32)
@@ -84,6 +111,9 @@ pub(all) struct TGraph {
   mut failed : Bool
   /// How many parameter slots have been handed out.
   mut param_count : Int32
+  /// Geometry for the operators that need it. An entry is a list of
+  /// integers whose meaning depends on the operator.
+  mut geo : Array[Array[Int32]]
 }
 
 ///|
@@ -99,6 +129,7 @@ pub fn TGraph::new() -> TGraph {
     shapes: [],
     failed: false,
     param_count: 0,
+    geo: [],
   }
 }
 
@@ -538,6 +569,94 @@ fn t_eval_node(
       }
     TNode::ScaleBy(child, slot) => t_mul_or(values[child], g.pool[slot])
     TNode::PowBy(exponent, child) => t_pow(values[child], exponent)
+    TNode::BroadcastTo(child, shape) =>
+      match values[child].broadcast_to(shape) {
+        Some(t) => t
+        None => {
+          g.failed = true
+          Tensor::zeros([])
+        }
+      }
+    TNode::Adjust(child, shape) => t_sum_to_shape(values[child], shape)
+    TNode::ExpandAxis(child, axis, shape) =>
+      t_expand_axis(values[child], axis, shape)
+    TNode::CropTo(child, shape, axis, start) =>
+      match t_crop_to(values[child], shape, axis, start) {
+        Some(t) => t
+        None => {
+          g.failed = true
+          Tensor::zeros([])
+        }
+      }
+    TNode::ScatterRow(child, shape, index, dim) =>
+      match t_scatter_row(values[child], shape, index, dim) {
+        Some(t) => t
+        None => {
+          g.failed = true
+          Tensor::zeros([])
+        }
+      }
+    TNode::Select(child, index) => {
+      let x = values[child]
+      if index < 0 || index >= x.data.length() {
+        g.failed = true
+        return Tensor::zeros([])
+      }
+      Tensor::filled([], x.data[index])
+    }
+    TNode::Scatter(child, shape, index) => {
+      let x = values[child]
+      if x.data.length() != 1 {
+        g.failed = true
+        return Tensor::zeros([])
+      }
+      let out = Tensor::zeros(shape)
+      if index >= 0 && index < out.data.length() {
+        out.data[index] = x.data[0]
+      } else {
+        g.failed = true
+      }
+      out
+    }
+    TNode::PadTo(child, shape, axis, start) =>
+      match t_pad_to(values[child], shape, axis, start) {
+        Some(t) => t
+        None => {
+          g.failed = true
+          Tensor::zeros([])
+        }
+      }
+    TNode::ReluDeriv(child) => {
+      // The whole point of this node: the derivative is decided at
+      // evaluation time, so a compiled gradient stays correct when
+      // it is re-evaluated at a different input.
+      let x = values[child]
+      let out = Tensor::zeros(x.shape)
+      for i = 0; i < x.data.length(); i = i + 1 {
+        out.data[i] = if x.data[i] > 0.0 { 1.0 } else { 0.0 }
+      }
+      out
+    }
+    TNode::Im2Col(child, geo) => {
+      let gv = g.geo[geo]
+      t_im2col(values[child], gv[0], gv[1], gv[2], gv[3], gv[4], gv[5], gv[6])
+    }
+    TNode::Col2Im(child, geo) => {
+      let gv = g.geo[geo]
+      t_col2im(
+        values[child],
+        gv[0],
+        gv[1],
+        gv[2],
+        gv[3],
+        gv[4],
+        gv[5],
+        gv[6],
+        gv[7],
+        gv[8],
+        gv[9],
+      )
+    }
     TNode::Conv2d(
       input,
       weight,
@@ -833,6 +952,20 @@ fn t_push_adjoints(
       let contrib = t_mul_or(gbar, d)
       adj[child] = t_add_or(adj[child], contrib)
     }
+    // The gradient-program nodes. A tape-based sweep never produces
+    // them, so they contribute nothing here; the rules arrive with
+    // the program-based sweep.
+    TNode::BroadcastTo(_, _) => ()
+    TNode::Adjust(_, _) => ()
+    TNode::ExpandAxis(_, _, _) => ()
+    TNode::PadTo(_, _, _, _) => ()
+    TNode::CropTo(_, _, _, _) => ()
+    TNode::ReluDeriv(_) => ()
+    TNode::Im2Col(_, _) => ()
+    TNode::Col2Im(_, _) => ()
+    TNode::ScatterRow(_, _, _, _) => ()
+    TNode::Select(_, _) => ()
+    TNode::Scatter(_, _, _) => ()
     TNode::Conv2d(
       input,
       weight,

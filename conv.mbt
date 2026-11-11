@@ -374,3 +374,48 @@ pub fn t_crop2d(x : Tensor, pad_h : Int32, pad_w : Int32) -> Tensor {
   }
   out
 }
+
+///|
+/// Pad a tensor with zeros along one axis.
+///
+/// The padding starts at `start` along `axis`, so the result has the
+/// original tensor's extent shifted by that much. This is the
+/// operation a slice's backward rule needs: the gradient of a slice
+/// is the incoming gradient placed back where the slice came from,
+/// with zeros everywhere else.
+pub fn t_pad_to(
+  x : Tensor,
+  shape : Array[Int32],
+  axis : Int32,
+  start : Int32,
+) -> Tensor? {
+  if x.shape.length() != shape.length() {
+    return None
+  }
+  if axis < 0 || axis >= shape.length() {
+    return None
+  }
+  let out = Tensor::zeros(shape)
+  let mut outer = 1
+  for d = 0; d < axis; d = d + 1 {
+    outer = outer * x.shape[d]
+  }
+  let mut inner = 1
+  for d = axis + 1; d < x.shape.length(); d = d + 1 {
+    inner = inner * x.shape[d]
+  }
+  let len = x.shape[axis]
+  if start < 0 || start + len > shape[axis] {
+    return None
+  }
+  for o = 0; o < outer; o = o + 1 {
+    for i = 0; i < len; i = i + 1 {
+      for j = 0; j < inner; j = j + 1 {
+        let src = o * len * inner + i * inner + j
+        let dst = o * shape[axis] * inner + (start + i) * inner + j
+        out.data[dst] = x.data[src]
+      }
+    }
+  }
+  Some(out)
+}
