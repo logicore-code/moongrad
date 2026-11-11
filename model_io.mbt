@@ -237,6 +237,12 @@ pub fn Model::from_json(text : String) -> Model raise ModelError {
       if extent < 0.0 {
         raise ModelError::NegativeDimension(name)
       }
+      // A dimension is a whole number of elements. A fractional one
+      // is not a shape that could have been written, and truncating
+      // it would accept a file that describes nothing.
+      if extent != extent.floor() {
+        raise ModelError::BadModel("\{name}: a dimension is not a whole number")
+      }
       shape.push(extent.to_int())
     }
     let data_items = match fields.get("data") {
@@ -255,13 +261,22 @@ pub fn Model::from_json(text : String) -> Model raise ModelError {
         None => raise ModelError::BadModel("a data entry is not a number")
       }
     }
-    let mut count = 1
+    // The element count is computed as a double, because the product
+    // of a shape's dimensions can be larger than a machine integer
+    // and would otherwise wrap round to something that looks like a
+    // plausible count.
+    let mut count = 1.0
     for d in shape {
-      count = count * d
+      count = count * d.to_double()
     }
-    if count != data.length() {
+    if count > 2147483647.0 {
       raise ModelError::ShapeMismatch(
-        "\{name}: the shape implies \{count} elements but there are \{data.length()}",
+        "\{name}: the shape implies more elements than can be held",
+      )
+    }
+    if count != data.length().to_double() {
+      raise ModelError::ShapeMismatch(
+        "\{name}: the shape implies \{count.to_int()} elements but there are \{data.length()}",
       )
     }
     let value = Tensor::zeros(shape)

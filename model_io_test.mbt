@@ -268,3 +268,36 @@ test "set_refuses_a_missing_parameter" {
 }
 
 ///|
+
+///|
+test "a_fractional_dimension_is_refused" {
+  // A dimension is a whole number of elements. Truncating one would
+  // accept a file that describes no shape that could have been
+  // written.
+  let text = "{\"params\":[{\"name\":\"w\",\"shape\":[2.5],\"data\":[1.0,2.0]}]}"
+  let mut raised = false
+  try {
+    let _ = @moongrad.Model::from_json(text)
+  } catch {
+    _ => raised = true
+  } noraise {
+    v => v
+  }
+  check(raised, "a fractional dimension should be refused")
+}
+
+///|
+test "a_shape_larger_than_a_machine_integer_is_refused" {
+  // The product of the dimensions overflows, and the check against
+  // the data would then compare a wrapped count with a real one.
+  let text = "{\"params\":[{\"name\":\"w\",\"shape\":[65536,65536],\"data\":[]}]}"
+  let mut raised = false
+  try {
+    let _ = @moongrad.Model::from_json(text)
+  } catch {
+    _ => raised = true
+  } noraise {
+    v => v
+  }
+  check(raised, "an impossible shape should be refused")
+}
