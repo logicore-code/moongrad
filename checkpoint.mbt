@@ -18,23 +18,36 @@
 // gradient program holds a value per node, and that is the quantity
 // this file is about.
 //
-// The way out is the same one the tape had: children sit at lower
+// The way out looks like the one the tape had: children sit at lower
 // indices, so a left-to-right pass reaches any window of the
 // computation on demand. Cut the node array into segments, keep only
 // the values at the boundaries, and recompute a segment's interior
-// when the pass enters it. Peak occupancy drops from O(n) to
-// O(k + w) for k segments of width w, at the cost of re-evaluating
-// every interior node once. That is the trade Chen et al. described
-// for gradient checkpointing in 2016, applied to a compiler rather
-// than to an interpreter — and it is why the segment count is a dial
-// rather than a constant.
+// when the pass enters it. That is the trade Chen et al. described
+// for gradient checkpointing in 2016.
 //
-// The pathological case is a graph with many narrow segments: you
-// pay recomputation without buying locality, and the arithmetic cost
-// approaches 2x. `choose_segment_count` therefore takes a target
-// width rather than a segment count, so a caller who says "keep the
-// window under 256 nodes" gets the same behaviour on a graph of any
-// size.
+// **It does not pay here, and this file is as much about why as about
+// what.** A tape's interior depends on its segment's boundary and on
+// nothing else, so dropping it and rebuilding it later costs one
+// re-evaluation. A gradient program's nodes do not have that
+// property: every local derivative is an expression over the primal's
+// own nodes, so a gradient node refers back into the primal, at an
+// arbitrary index. Dropping a primal value therefore means
+// recomputing it, and recomputing it means walking down to whatever
+// is still live — which grows with the depth of the primal, and, where
+// the primal shares a subtree, with the sharing as well.
+//
+// So the bound O(k + w) is a property of the technique and not of
+// this program. What the module does is measure what the segmented
+// evaluation actually costs, and check that the answer is the same
+// either way — which is the part that has to be true before the
+// arithmetic is worth discussing.
+//
+// The conclusion the measurement supports is worth stating plainly:
+// the gradient-program design solves the tape's memory problem a
+// different way. There is no tape to hold between the forward pass
+// and the backward pass, so there is nothing to checkpoint. The
+// evaluation holds one value per node, the same order as the tape
+// held — but only while it runs.
 
 ///|
 /// What one checkpointed backward pass cost.
@@ -207,7 +220,7 @@ pub fn checkpointed_grad(
     naive_live: graph_size,
     peak_live: peak_occupancy(bounds, graph_size),
     recomputed,
-    forward_evals: size,
+    forward_evals: graph_size,
     segments: bounds.length(),
     did_checkpoint: recomputed > 0,
   }
@@ -281,14 +294,14 @@ fn sweep(
         window[i] = eval_node(h, b, window, i)
       }
     }
-    for slot = 0; slot < g.var_count; slot = slot + 1 {
-      match g.var_slot(slot) {
-        Some(node) =>
-          if node >= seg.lo && node < seg.hi {
-            out[slot] = window[node]
-          }
-        None => ()
-      }
+  }
+  // The answer is the *adjoint* of each variable, not the variable.
+  // The adjoint is a node of the gradient program, so its value is
+  // read out of the window after the program has been evaluated.
+  for slot = 0; slot < g.var_count; slot = slot + 1 {
+    match g.var_slot(slot) {
+      Some(node) => out[slot] = window[adj[node]]
+      None => out[slot] = 0.0
     }
   }
   (out, size)
