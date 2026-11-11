@@ -69,10 +69,15 @@ pub fn layer_norm(
 /// Batch normalisation: normalise each feature over the batch.
 ///
 /// `axis` is the batch axis, which is the first one for the usual
-/// `[batch, features]` layout. In training mode the statistics come
-/// from the batch itself, which is what couples the samples in the
-/// gradient; at inference time they come from the running averages
-/// the layer has been accumulating, and the samples are independent.
+/// `[batch, features]` layout. The statistics come from the batch
+/// itself, which is what couples the samples in the gradient: a
+/// change to one sample moves the mean and the variance, and so
+/// moves every other sample's output.
+///
+/// At inference time a batch is a single sample, and there is no
+/// batch to take statistics over. `batch_norm_inference` takes them
+/// from a `BatchNormState` instead, which is where the running
+/// averages live.
 pub fn batch_norm(
   g : TGraph,
   x : Int32,
@@ -82,6 +87,145 @@ pub fn batch_norm(
   eps : Double,
 ) -> Int32 {
   normalize(g, x, axis, gamma, beta, eps)
+}
+
+///|
+/// Batch normalisation with the statistics given rather than taken
+/// from the batch.
+///
+/// `mean` and `variance` hold one entry per feature and are
+/// broadcast against the `[batch, features]` activation, so the
+/// samples are independent: no gradient crosses from one to another.
+pub fn batch_norm_inference(
+  g : TGraph,
+  x : Int32,
+  gamma : Int32,
+  beta : Int32,
+  eps : Double,
+  mean : Tensor,
+  variance : Tensor,
+) -> Int32 {
+  let centred = g.sub(x, g.constant(mean))
+  let shifted = g.add(g.constant(variance), g.constant(Tensor::filled([], eps)))
+  let inverse = g.div(g.constant(Tensor::filled([], 1.0)), g.sqrt(shifted))
+  let scaled = g.mul(centred, inverse)
+  let out = g.mul(scaled, gamma)
+  g.add(out, beta)
+}
+
+///|
+/// The running statistics of a batch-normalised layer.
+///
+/// The training form of the layer takes its statistics from the
+/// batch it is given; at inference time it has to take them from
+/// somewhere, and this is where they come from: an exponential
+/// average of every batch seen so far.
+#derive(Debug)
+pub(all) struct BatchNormState {
+  /// The running mean of each feature.
+  mean : Tensor
+  /// The running variance of each feature.
+  variance : Tensor
+  /// How much of each batch's statistics to keep.
+  momentum : Double
+  /// How many batches have been seen.
+  mut batches : Int32
+}
+
+///|
+pub extend BatchNormState with Debug::{to_repr}
+
+///|
+/// Fresh statistics for `features` features.
+///
+/// The variance starts at one and the mean at zero, which is the
+/// usual choice: before any batch has been seen the layer should be
+/// close to the identity.
+pub fn BatchNormState::new(
+  features : Int32,
+  momentum : Double,
+) -> BatchNormState {
+  {
+    mean: Tensor::zeros([features]),
+    variance: Tensor::filled([features], 1.0),
+    momentum,
+    batches: 0,
+  }
+}
+
+///|
+/// Fold one batch's statistics into the running averages.
+///
+/// The batch's mean and variance are one entry per feature. The
+/// update is the usual exponential average: the running value keeps
+/// a fraction of itself and takes the rest from the batch. The first
+/// batch is taken whole, because a running average that starts from
+/// a guess takes a long time to forget the guess.
+pub fn BatchNormState::update(
+  self : BatchNormState,
+  batch_mean : Array[Double],
+  batch_variance : Array[Double],
+) -> Unit {
+  let n = batch_mean.length()
+  if n != self.mean.data.length() {
+    return
+  }
+  if self.batches == 0 {
+    for i = 0; i < n; i = i + 1 {
+      self.mean.data[i] = batch_mean[i]
+      self.variance.data[i] = batch_variance[i]
+    }
+  } else {
+    let keep = 1.0 - self.momentum
+    for i = 0; i < n; i = i + 1 {
+      self.mean.data[i] = keep * self.mean.data[i] +
+        self.momentum * batch_mean[i]
+      self.variance.data[i] = keep * self.variance.data[i] +
+        self.momentum * batch_variance[i]
+    }
+  }
+  self.batches = self.batches + 1
+}
+
+///|
+/// The running mean and variance, as the pair the inference form
+/// takes.
+pub fn BatchNormState::statistics(self : BatchNormState) -> (Tensor, Tensor) {
+  (self.mean, self.variance)
+}
+
+///|
+/// The mean and variance of each feature of a batch.
+///
+/// The batch is `[batch, features]` and the statistics are taken over
+/// the rows. This is the host-side counterpart of the graph's
+/// `batch_norm`: the graph computes the same numbers inside itself
+/// (which is what makes the gradient correct), and this computes
+/// them outside it, where the running averages can be updated.
+pub fn batch_statistics(x : Tensor) -> (Array[Double], Array[Double]) {
+  let mean : Array[Double] = []
+  let variance : Array[Double] = []
+  if x.shape.length() != 2 {
+    return (mean, variance)
+  }
+  let rows = x.shape[0]
+  let features = x.shape[1]
+  for f = 0; f < features; f = f + 1 {
+    let mut total = 0.0
+    for r = 0; r < rows; r = r + 1 {
+      total = total + x.data[r * features + f]
+    }
+    let m = if rows > 0 { total / rows.to_double() } else { 0.0 }
+    let mut sum = 0.0
+    for r = 0; r < rows; r = r + 1 {
+      let d = x.data[r * features + f] - m
+      sum = sum + d * d
+    }
+    let v = if rows > 0 { sum / rows.to_double() } else { 0.0 }
+    mean.push(m)
+    variance.push(v)
+  }
+  (mean, variance)
 }
 
 ///|

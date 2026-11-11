@@ -148,3 +148,57 @@ test "the_mean_gradient_matches_finite_differences" {
     )
   }
 }
+
+///|
+test "the_running_statistics_average_the_batches" {
+  let state = @moongrad.BatchNormState::new(2, 0.5)
+  state.update([1.0, 10.0], [0.0, 100.0])
+  // The first batch is taken whole.
+  let (mean, variance) = state.statistics()
+  assert_close(mean.data[0], 1.0, 1.0e-12, "the first mean")
+  assert_close(variance.data[0], 0.0, 1.0e-12, "the first variance")
+  state.update([3.0, 14.0], [4.0, 144.0])
+  let (mean, variance) = state.statistics()
+  // The second batch is half old and half new.
+  assert_close(mean.data[0], 2.0, 1.0e-12, "the second mean")
+  assert_close(variance.data[0], 2.0, 1.0e-12, "the second variance")
+}
+
+///|
+test "the_batch_statistics_match_the_definition" {
+  let t = @moongrad.Tensor::zeros([3, 2])
+  let values = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+  for i = 0; i < values.length(); i = i + 1 {
+    t.data[i] = values[i]
+  }
+  let (mean, variance) = @moongrad.batch_statistics(t)
+  // Feature 0 is [1,3,5]: mean 3, variance 8/3.
+  assert_close(mean[0], 3.0, 1.0e-12, "the mean")
+  assert_close(variance[0], 8.0 / 3.0, 1.0e-12, "the variance")
+  // Feature 1 is [2,4,6]: mean 4, variance 8/3.
+  assert_close(mean[1], 4.0, 1.0e-12, "the mean")
+  assert_close(variance[1], 8.0 / 3.0, 1.0e-12, "the variance")
+}
+
+///|
+test "the_inference_form_does_not_couple_the_samples" {
+  // With the statistics given, a change to one sample must not move
+  // another sample's output: the gradient of one row is zero on the
+  // others.
+  let g = @moongrad.TGraph::new()
+  let x = g.variable(0)
+  let gamma = g.constant(@moongrad.Tensor::filled([2], 1.0))
+  let beta = g.constant(@moongrad.Tensor::filled([2], 0.0))
+  let mean = @moongrad.Tensor::zeros([2])
+  let variance = @moongrad.Tensor::filled([2], 1.0)
+  let out = @moongrad.batch_norm_inference(
+    g, x, gamma, beta, 1.0e-8, mean, variance,
+  )
+  let loss = g.sum_axis(g.mul(out, out), 0)
+  let b = @moongrad.TBinding::new()
+  b.set_input(0, @moongrad.Tensor::zeros([2, 2]))
+  let grads = @moongrad.t_grad(g, b, loss)
+  // The gradient of the sum of squares of the normalised values.
+  assert_close(grads.input_grads[0].data[0], 0.0, 1.0e-12, "d/dx00")
+  assert_close(grads.input_grads[0].data[1], 0.0, 1.0e-12, "d/dx01")
+}
