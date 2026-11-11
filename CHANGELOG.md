@@ -39,10 +39,39 @@ project follows Semantic Versioning: bump the
 - `examples/minibatch` and `examples/second_order`.
 
 ### Fixed
+- The optimiser's moment arrays were sized by the **sum** of a
+  parameter's shape rather than by its number of elements, so a
+  parameter of rank two or more either ran past the end of the state
+  or shared a moment slot with the next parameter. It was in both the
+  library's own trainer and the extra optimisers.
+- AdamW's bias correction divided by zero when the step index was
+  zero, which turned every parameter into a NaN on the first step.
+- Gradient clipping scaled *every* gradient by a factor derived from a
+  non-finite one, so a single NaN turned a healthy gradient into a NaN
+  as well. The norm is now computed from the largest entry, so a
+  gradient too large to square is scaled rather than silently zeroed.
+- The mini-batch loop trained on the **previous batch's rows** when
+  the final batch was dropped, could not draw from an empty dataset,
+  and wrote out of bounds on a ragged one. The batch used to fix the
+  shapes for the compilation also **consumed the first batch** of the
+  run, so an epoch skipped one sample and repeated another.
+- The epoch loss averaged the whole history rather than the epoch.
+- The input-space Hessian-vector product returned one tensor more
+  than the input space, because the direction is itself an input slot.
+- The model reader truncated a fractional dimension, and accepted a
+  shape whose element count overflowed.
+- **GMRES silently returned the untouched initial guess** on some
+  systems, reporting success. Conjugate gradient accepted a
+  non-symmetric matrix and returned a vector that was not a solution,
+  and both solvers reported a non-converged iterate as a success. The
+  Jacobi eigendecomposition returned numbers that were not
+  eigenvalues, with no way to tell.
 - The **tensor trainer recompiled the gradient at every step**, which
-  contradicted the design it was demonstrating and cost about twenty
-  times the work. The gradient program is now compiled once, when the
-  trainer is built, and re-evaluated at each step.
+  contradicted the design it was demonstrating. The gradient program is
+  now compiled once, when the trainer is built, and re-evaluated at
+  each step. On the tensor side a compilation is the cheaper half of a
+  step, so this saves about a tenth of the step's work rather than
+  twenty times it; `docs/benchmark.md` has the numbers.
 - `t_sum_axis_keep` wrote its output with the input's strides rather
   than the reduced ones, so a reduction that kept an axis longer than
   one read out of bounds. The mini-batch work found it.
@@ -53,7 +82,10 @@ project follows Semantic Versioning: bump the
   reported instead of returning the gradient of a different function.
 
 ### Changed
-- The test suite grew from 212 cases to 299.
+- The test suite grew from 212 cases to 339.
+- The continuous integration workflow **pins the toolchain** the
+  source is written against, and the format check is strict rather
+  than tolerant.
 
 ## [0.4.0] — 2026-11-08
 
