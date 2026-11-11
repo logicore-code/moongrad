@@ -103,6 +103,18 @@ pub fn Matrix::len(self : Matrix) -> Int32 {
 }
 
 ///|
+/// Number of rows.
+pub fn Matrix::nrows(self : Matrix) -> Int32 {
+  self.rows
+}
+
+///|
+/// Number of columns.
+pub fn Matrix::ncols(self : Matrix) -> Int32 {
+  self.cols
+}
+
+///|
 /// Element-wise sum.
 pub fn Matrix::add(self : Matrix, other : Matrix) -> Matrix {
   let out = Matrix::zeros(self.rows, self.cols)
