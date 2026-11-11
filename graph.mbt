@@ -153,6 +153,10 @@ pub fn Graph::new_vars(self : Graph, n : Int32) -> Int32 {
 pub fn Graph::var_slot(self : Graph, i : Int32) -> Int32? {
   if i < 0 || i >= self.var_slots.length() {
     None
+  } else if self.var_slots[i] < 0 {
+    // The variable was declared but never used, so it has no node
+    // and its gradient is zero.
+    None
   } else {
     Some(self.var_slots[i])
   }
@@ -214,9 +218,18 @@ pub fn Graph::variable(self : Graph, i : Int32) -> Int32 raise ADError {
     raise UnknownVar(i)
   }
   if i < self.var_slots.length() {
-    return self.var_slots[i]
+    if self.var_slots[i] >= 0 {
+      return self.var_slots[i]
+    }
   }
   let slot = self.intern(Node::Var(i))
+  // The slots are indexed by the variable they belong to, not by the
+  // order the variables were first used in. A graph that uses its
+  // variables out of order would otherwise hand one variable's
+  // gradient to another.
+  while self.var_slots.length() < i {
+    self.var_slots.push(-1)
+  }
   self.var_slots.push(slot)
   slot
 }
