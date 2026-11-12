@@ -148,16 +148,22 @@ pub fn TensorTrainer::step(self : TensorTrainer) -> TensorStep {
       compile_tensor_gradient(self.graph, self.binding, self.loss_node),
     )
   }
-  let grad = match self.grad {
+  let mut grad = match self.grad {
     Some(g) => g
     None => return { loss: 0.0, grad_norm: 0.0, ok: false, }
   }
-  // The program was compiled for the shapes it was compiled against.
-  // If the binding has moved on — a different batch size, a layer
-  // rebuilt — the program is not valid here, and evaluating it would
-  // quietly produce the gradient of a different function. That is
-  // checked before anything is computed.
   if !grad.shapes_match(self.binding) {
+    // The binding has moved on — a different batch size, say. The
+    // shapes are baked into the program, so it has to be compiled
+    // again rather than evaluated against shapes it was not built
+    // for.
+    grad = compile_tensor_gradient(self.graph, self.binding, self.loss_node)
+    self.grad = Some(grad)
+  }
+  if self.graph.input_count() > 0 && self.binding.inputs.length() == 0 {
+    // The graph declares inputs and the binding has none, so the
+    // caller never set them. Training on that would move the
+    // parameters against a gradient of nothing.
     return { loss: 0.0, grad_norm: 0.0, ok: false, }
   }
   // One evaluation of the gradient graph gives the primal's values

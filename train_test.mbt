@@ -427,9 +427,46 @@ test "the_tensor_trainer_reports_a_change_of_shape" {
   b.set_input(0, @moongrad.Tensor::filled([4, 2], 1.0))
   b.set_input(1, @moongrad.Tensor::filled([4, 2], 0.5))
   check(trainer.step().ok, "the first step should have succeeded")
-  // Now the inputs change shape.
+  // Now the inputs change shape. The shapes are baked into the
+  // compiled program, so the program is compiled again rather than
+  // evaluated against shapes it was not built for — and the run
+  // carries on.
   b.set_input(0, @moongrad.Tensor::filled([3, 2], 1.0))
   b.set_input(1, @moongrad.Tensor::filled([3, 2], 0.5))
   let report = trainer.step()
-  check(!report.ok, "a change of shape should be reported")
+  check(report.ok, "a change of shape should recompile, not stop the run")
+  check(report.loss > 0.0, "the loss should be a number")
+}
+
+///|
+test "the_tensor_trainer_refuses_to_train_on_inputs_that_were_never_set" {
+  // The graph declares inputs and the binding has none, so there is
+  // no gradient to apply. Reporting that is better than moving the
+  // parameters against nothing.
+  let g = @moongrad.TGraph::new()
+  let b = @moongrad.TBinding::new()
+  let trainer = @moongrad.TensorTrainer::new(
+    g,
+    b,
+    @moongrad.TensorOptimizer::Sgd(0.1),
+    fn(
+      graph : @moongrad.TGraph,
+      _binding : @moongrad.TBinding,
+    ) -> (Int32, Array[@moongrad.Tensor]) {
+      let x = graph.variable(0)
+      let y = graph.variable(1)
+      let layer = @moongrad.Linear::new(graph, 2, 2, 5)
+      let pred = layer.apply(graph, x)
+      let diff = graph.sub(pred, y)
+      let squared = graph.mul(diff, diff)
+      let loss = graph.div(
+        graph.sum_axis(graph.sum_axis(squared, 1), 0),
+        graph.constant(@moongrad.Tensor::filled([], 4.0)),
+      )
+      ignore(y)
+      (loss, layer.tensors())
+    },
+  )
+  let report = trainer.step()
+  check(!report.ok, "training on no inputs should be refused")
 }
