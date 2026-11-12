@@ -155,7 +155,7 @@ difference's own error, which is about ten digits — the finite difference is
 the approximate one, and the example prints the largest disagreement rather
 than rounding it away.
 
-The test suite (363 cases) additionally checks each local derivative rule
+The test suite (360 cases) additionally checks each local derivative rule
 against its closed form, and each layer against a hand-computed
 backpropagation.
 
@@ -192,7 +192,7 @@ moon run examples/minibatch     --target native   # mini-batch training
 ## Building
 
 ```bash
-moon test          # 363 unit tests
+moon test          # 360 unit tests
 moon check         # 0 warnings, 0 errors
 moon fmt           # format
 moon build         # build for the preferred target (wasm)

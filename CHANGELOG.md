@@ -332,7 +332,7 @@ The first release. The gradient compiler:
 - `error.mbt` — `ADError` as a suberror, so a failure comes back to
   the caller with its operands attached instead of taking the process
   down.
-- 89 unit tests covering the IR, the simplifier, both passes and
+- 46 unit tests covering the IR, the simplifier, both passes and
   the gradient compiler.
 
 Apache-2.0 licensed throughout.
