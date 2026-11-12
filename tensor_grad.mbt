@@ -85,6 +85,12 @@ pub(all) enum TNode {
   /// elsewhere. It is a node rather than a literal precisely so
   /// that a compiled gradient stays correct at a different input.
   ReluDeriv(Int32)
+  /// A softmax along one axis.
+  ///
+  /// The value is computed at evaluation time and the backward rule
+  /// recomputes it rather than freezing it, so a compiled gradient
+  /// stays correct when it is re-evaluated at a different input.
+  Softmax(Int32, Int32)
   /// Expand a tensor into a matrix of overlapping patches.
   Im2Col(Int32, Int32)
   /// Scatter a matrix of patches back into a tensor.
@@ -292,6 +298,18 @@ pub fn TGraph::mean_keep_axis(
 /// Sum along one axis, dropping the axis.
 pub fn TGraph::sum_axis(self : TGraph, child : Int32, axis : Int32) -> Int32 {
   self.nodes.push(TNode::Sum(child, axis))
+  self.nodes.length() - 1
+}
+
+///|
+/// A softmax along one axis.
+///
+/// The maximum along the axis is subtracted before the exponential,
+/// so the result cannot overflow for any finite input, and the
+/// value is the same as the plain formula wherever the plain formula
+/// is defined.
+pub fn TGraph::softmax(self : TGraph, x : Int32, axis : Int32) -> Int32 {
+  self.nodes.push(TNode::Softmax(x, axis))
   self.nodes.length() - 1
 }
 
@@ -892,6 +910,14 @@ fn t_eval_node(
       }
       out
     }
+    TNode::Softmax(child, axis) =>
+      match t_softmax_axis(values[child], axis) {
+        Some(t) => t
+        None => {
+          g.failed = true
+          Tensor::zeros([])
+        }
+      }
     TNode::Im2Col(child, geo) => {
       let gv = g.geo[geo]
       t_im2col(values[child], gv[0], gv[1], gv[2], gv[3], gv[4], gv[5], gv[6])
@@ -1546,6 +1572,20 @@ fn t_push_adjoints(
       // zero almost everywhere. The point where it is not is the
       // kink, where the derivative does not exist.
       ignore(child)
+    TNode::Softmax(child, axis) => {
+      // The Jacobian of a softmax is `s * (g - sum(g*s))`. The
+      // softmax itself is recomputed here rather than read from the
+      // primal's values, so that a gradient compiled at one input is
+      // still correct at another — the same reason ReLU's derivative
+      // is a node rather than a literal.
+      let s = h.softmax(child, axis)
+      let gs = h.mul(gbar, s)
+      let dot = h.sum_axis(gs, axis)
+      let dot_b = h.expand_axis(dot, axis, values[child].shape)
+      let diff = h.sub(gbar, h.broadcast_to(dot_b, values[child].shape))
+      let contrib = h.mul(s, diff)
+      adj[child] = h.add(adj[child], contrib)
+    }
     TNode::Im2Col(child, geo) => {
       // The gradient of a patch expansion is a patch accumulation.
       let gv = g.geo[geo]

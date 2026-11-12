@@ -316,34 +316,56 @@ pub fn t_softmax(a : Tensor) -> Tensor? {
   if a.shape.length() == 0 {
     return None
   }
+  t_softmax_axis(a, a.shape.length() - 1)
+}
+
+///|
+/// A softmax along one axis.
+///
+/// The maximum along the axis is subtracted before the exponential,
+/// so no finite input can overflow the intermediate, and the result
+/// agrees with the plain formula wherever the plain formula is
+/// defined.
+pub fn t_softmax_axis(a : Tensor, axis : Int32) -> Tensor? {
   let r = a.shape.length()
-  let last = a.shape[r - 1]
-  let mut outer = 1
-  for d = 0; d < r - 1; d = d + 1 {
-    outer = outer * a.shape[d]
+  if r == 0 || axis < 0 || axis >= r {
+    return None
   }
-  if last <= 0 {
-    // A row with no entries has no maximum to subtract, and the
+  let n = a.shape[axis]
+  if n <= 0 {
+    // A slice with no entries has no maximum to subtract, and the
     // result would be a division by zero. It is refused instead.
     return None
   }
+  // The distance between two neighbouring entries along the axis,
+  // and the number of such slices.
+  let mut stride = 1
+  for d = axis + 1; d < r; d = d + 1 {
+    stride = stride * a.shape[d]
+  }
+  let mut outer = 1
+  for d = 0; d < axis; d = d + 1 {
+    outer = outer * a.shape[d]
+  }
   let out = Tensor::zeros(a.shape)
   for o = 0; o < outer; o = o + 1 {
-    let base = o * last
-    let mut m = a.data[base]
-    for i = 1; i < last; i = i + 1 {
-      if a.data[base + i] > m {
-        m = a.data[base + i]
+    for t = 0; t < stride; t = t + 1 {
+      let base = o * n * stride + t
+      let mut m = a.data[base]
+      for i = 1; i < n; i = i + 1 {
+        if a.data[base + i * stride] > m {
+          m = a.data[base + i * stride]
+        }
       }
-    }
-    let mut total = 0.0
-    for i = 0; i < last; i = i + 1 {
-      let e = @math.exp(a.data[base + i] - m)
-      out.data[base + i] = e
-      total = total + e
-    }
-    for i = 0; i < last; i = i + 1 {
-      out.data[base + i] = out.data[base + i] / total
+      let mut sum = 0.0
+      for i = 0; i < n; i = i + 1 {
+        let e = @math.exp(a.data[base + i * stride] - m)
+        out.data[base + i * stride] = e
+        sum = sum + e
+      }
+      for i = 0; i < n; i = i + 1 {
+        out.data[base + i * stride] = out.data[base + i * stride] / sum
+      }
     }
   }
   Some(out)
