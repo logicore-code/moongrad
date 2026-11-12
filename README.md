@@ -69,6 +69,7 @@ That is the whole design, and it is what the rest of the library hangs off:
 | Module | What it holds |
 |---|---|
 | `tensor.mbt` | The tensor type: shape, row-major buffer, broadcasting, indexing, reshape, transpose, concat, slice |
+| `matrix.mbt` | The matrix type the linear algebra and the Hessian are built on |
 | `tensor_op.mbt` | Elementwise arithmetic with broadcasting, matrix product, reductions, softmax, log-softmax, cross-entropy |
 | `tensor_grad.mbt` | The tensor gradient compiler: the backward sweep that emits a program |
 | `tensor_shape.mbt` | Shape adjustments — cropping, padding, scattering a row back into a parameter |
@@ -86,6 +87,8 @@ That is the whole design, and it is what the rest of the library hangs off:
 | `model_io.mbt` | Model parameters as JSON, with an exact round trip |
 | `dataset.mbt` | Deterministic shuffling, batching, k-fold splits, synthetic data |
 | `node.mbt`, `graph.mbt`, `simplify.mbt`, `forward.mbt`, `reverse.mbt`, `hessian.mbt`, `checkpoint.mbt`, `optim.mbt`, `train.mbt` | The scalar engine, which the tensor layer builds on and which still carries the Newton and checkpointing machinery |
+| `nn.mbt` | The scalar layers and activations, the losses, and the random number generator every seed comes from |
+| `error.mbt` | `ADError`, the library's error discipline: every failure comes back with its operands attached |
 
 The scalar engine is not legacy: it is the rank-0 case of the same ideas, and
 it is where the second-order and memory work lives. The tensor layer is the
@@ -147,9 +150,12 @@ catches a wrong rule rather than merely a typo.
 
 `examples/gradcheck` runs that comparison for six functions covering
 polynomials, quotients, matrix products, broadcasting products, chains of
-nonlinearities, and logarithms. All six agree to the last bit.
+nonlinearities, and logarithms. All six agree to within the finite
+difference's own error, which is about ten digits — the finite difference is
+the approximate one, and the example prints the largest disagreement rather
+than rounding it away.
 
-The test suite (352 cases) additionally checks each local derivative rule
+The test suite (363 cases) additionally checks each local derivative rule
 against its closed form, and each layer against a hand-computed
 backpropagation.
 
@@ -186,10 +192,17 @@ moon run examples/minibatch     --target native   # mini-batch training
 ## Building
 
 ```bash
-moon test          # 352 unit tests
+moon test          # 363 unit tests
 moon check         # 0 warnings, 0 errors
 moon fmt           # format
 moon build         # build for the preferred target (wasm)
+```
+
+There is a pre-commit hook in `.githooks/`. It runs the type check and
+the tests, which is the same pair the continuous integration runs:
+
+```bash
+git config core.hooksPath .githooks
 ```
 
 The library targets `wasm`, `wasm-gc`, `js` and `native` from the same source
@@ -259,6 +272,7 @@ agree to the last bit.
 
 ## Documentation
 
+- `SUBMISSION.md` — the project application form
 - `docs/architecture.md` — the three decisions that shape everything else
 - `docs/math.md` — the derivative rules the compiler emits, one operator at a time
 - `docs/benchmark.md` — measured numbers and their caveats

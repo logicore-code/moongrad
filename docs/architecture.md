@@ -95,8 +95,8 @@ instead of 75.
 
 **Second-order derivatives need no second engine.** The Hessian entry
 `H[i][j]` is `d²f/dx_j dx_i`, which is another call to the same compiler
-with the first sweep's output as the target. `hessian.mbt` is eleven lines
-long because of it.
+with the first sweep's output as the target. the `hessian` function in
+`hessian.mbt` is about a dozen lines long because of it.
 
 ### The tensor engine does the same thing
 
@@ -187,6 +187,11 @@ live — which grows with the depth of the primal, and, where the primal
 shares a subtree, with the sharing too.
 
 So the `O(k + w)` bound belongs to the technique and not to this program.
+The module measures what the evaluation actually costs, and the measurement
+is the finding: holding a gradient program costs *more* than a tape would,
+not less, because the program is bigger than the primal it came from — and
+the cost does not depend on how the program is cut up.
+
 What the module establishes is the part that has to be true before the
 arithmetic is worth discussing: the segmented evaluation returns the same
 numbers as the plain one, in every configuration.
@@ -210,7 +215,7 @@ Three families of rule:
 
 | Family | Examples | Effect |
 |---|---|---|
-| annihilator | `x*0 → 0`, `x-x → 0` | drops the whole subtree |
+| annihilator | `x*0 → 0`, `x-x → 0` | drops the whole subtree, but only when the other operand is a literal known to be finite |
 | identity | `x+0 → x`, `x*1 → x`, `x/1 → x` | drops the operator |
 | fold | both operands literal | evaluates now |
 

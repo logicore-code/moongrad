@@ -13,8 +13,9 @@ moon test --target native --release perf
 
 ## Core passes
 
-All on a 400-node computation — a chain of `x -> x/2 + 0.1` repeated 200
-times, which is the shape of a moderately deep network's forward pass.
+All on a chain of `x -> x/2 + 0.1` repeated 400 times, which is 803 nodes
+once the constants are hash-consed — the shape of a moderately deep
+network's forward pass.
 
 | Operation | Median | What it covers |
 |---|---|---|
@@ -36,7 +37,7 @@ because the two sides have very different shapes.
 
 Reading the two tables together is the point of this file.
 
-- **The forward pass is cheap.** 14.7 µs for 400 nodes is about 37 ns per
+- **The forward pass is cheap.** 14.7 µs for 803 nodes is about 18 ns per
   node, which is what a hash-consed flat array with a linear scan should
   cost.
 - **On the scalar side, compiling is twenty times evaluating.** 559 µs

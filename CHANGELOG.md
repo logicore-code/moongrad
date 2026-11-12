@@ -12,11 +12,11 @@ project follows Semantic Versioning: bump the
 ### Fixed
 - The **failure report could not see the failures of most test
   files**. MoonBit runs the test files in reverse alphabetical
-  order, and the summary lived in `core_test.mbt`, which runs early
-  — so a failure in any later file was recorded after the only test
-  that would have printed it. The checkpoint tests had been failing
-  for weeks without anything going red. The summary now lives in a
-  file that runs last.
+  order, and the summary lived in `core_test.mbt`, which runs near the
+  end — so a failure in any file after it was recorded after the only
+  test that would have printed it. The checkpoint tests had been
+  failing for months of commits without anything going red. The
+  summary now lives in a file that runs last.
 - The **checkpointed gradient returned the primal's values** rather
   than the gradient, for every segment count. The variable's own
   slot was read out of the evaluation window instead of its
@@ -68,7 +68,7 @@ project follows Semantic Versioning: bump the
   read past the end of their buffers or divided by zero.
 
 ### Changed
-- The test suite grew from 339 cases to 352.
+- The test suite grew from 339 cases to 363.
 - `checkpoint.mbt` now says what it delivers. The classic segmented
   recomputation does not pay for a gradient program, because every
   gradient node refers back into the primal — so a dropped primal
@@ -263,7 +263,7 @@ project follows Semantic Versioning: bump the
   checked against finite differences, polynomial regression, XOR, a
   Hessian walkthrough, the checkpointing trade-off, and what the
   graph compiler saves.
-- 62 more unit tests: 89 to 151.
+- 70 more unit tests: 81 to 151.
 
 ### Fixed
 - The simplifier is literal-aware: `x - x` folds to zero instead of
