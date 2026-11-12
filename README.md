@@ -35,10 +35,11 @@ pkgtype(kind: "executable")
 ## Try it
 
 ```bash
-moon test                                       # 360 unit tests
+moon test                                       # 373 unit tests
 moon run examples/reuse        --target native  # one gradient, evaluated at four inputs
 moon run examples/second_order --target native  # a Newton step, with and without the Hessian
 moon run examples/nn_classifier --target native # a network that trains
+moon run examples/cnn        --target native --release # a convolutional network, trained
 ```
 
 `examples/reuse` is the one to start with: it compiles a gradient once and then
@@ -201,7 +202,7 @@ that is the approximate one. The example prints the largest disagreement
 in full, because a disagreement of 8.4e-10 rounded to four decimals is a
 report of nothing.
 
-The test suite (360 cases) additionally checks each local derivative rule
+The test suite (373 cases) additionally checks each local derivative rule
 against its closed form, and each layer against a hand-computed
 backpropagation.
 
@@ -224,6 +225,7 @@ moon run examples/second_order   --target native   # a Newton step, with and wit
 moon run examples/gradcheck      --target native   # gradients vs finite differences
 moon run examples/tensor_basics  --target native   # shapes and broadcasting
 moon run examples/nn_classifier  --target native   # a network that trains
+moon run examples/cnn            --target native --release  # a convolutional network, trained
 moon run examples/linalg_demo   --target native   # eigenvalues, Cholesky, QR
 moon run examples/derivatives   --target native   # the scalar engine
 moon run examples/hessian       --target native   # second-order derivatives
@@ -240,7 +242,7 @@ moon run examples/minibatch     --target native   # mini-batch training
 ## Building
 
 ```bash
-moon test          # 360 unit tests
+moon test          # 373 unit tests
 moon check         # 0 warnings, 0 errors
 moon fmt           # format
 moon build         # build for the preferred target (wasm)

@@ -7,6 +7,39 @@ project follows Semantic Versioning: bump the
 - `MINOR` part on new functionality in a backward-compatible way
 - `PATCH` part on backward-compatible bug fixes
 
+## [0.7.0] — 2026-11-12
+
+### Added
+- **A softmax and a log-softmax in the tensor graph.** The tensor
+  engine had a softmax on the host but none in the graph, so a
+  multi-class network could be evaluated but not trained: the
+  gradient of a cross-entropy had nowhere to come from. Both nodes
+  subtract the maximum along the axis before the exponential, so no
+  finite input can overflow the intermediate, and the log-softmax
+  keeps the logarithm of the sum rather than taking a logarithm of
+  the softmax — the softmax of a confident and wrong prediction can
+  underflow to zero, and the logarithm of a zero is not a number.
+  The backward rules recompute the softmax rather than reading the
+  primal's value, for the same reason ReLU's derivative is a node: a
+  gradient program that froze it would be right where it was compiled
+  and wrong everywhere else. The test for that fails on a frozen
+  version of the rule.
+- **An example that trains a convolutional network.** Two
+  convolutions, a dense layer and a softmax head, trained with AdamW
+  over mini-batches on a synthetic image task: a bright square in
+  one of four corners of a 12x12 image, with noise on every pixel.
+  The network has 41,828 parameters, the loss falls from 26.7 to
+  0.003 over four epochs, and the network labels unseen images
+  correctly. The point of the example is the scale it runs at rather
+  than the task, which is small on purpose.
+
+### Changed
+- The examples that report a disagreement now print it in full
+  rather than rounded to four decimals. A disagreement of 8.4e-10
+  rounded to four decimals is a report of nothing, and one example
+  said in the documentation that it printed the disagreement rather
+  than rounding it away.
+
 ## [0.6.0] — 2026-11-12
 
 ### Fixed
