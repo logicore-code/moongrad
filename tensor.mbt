@@ -69,6 +69,13 @@ pub fn Tensor::size(self : Tensor) -> Int32 {
 pub fn Tensor::zeros(shape : Array[Int32]) -> Tensor {
   let mut n = 1
   for d in shape {
+    // A negative dimension describes nothing, and the element count
+    // it implies would be negative. The shape is kept as it was
+    // given, so the mistake is visible rather than hidden.
+    if d < 0 {
+      n = 0
+      break
+    }
     n = n * d
   }
   let data : Array[Double] = []

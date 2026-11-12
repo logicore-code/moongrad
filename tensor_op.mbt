@@ -296,6 +296,20 @@ pub fn t_concat(a : Tensor, b : Tensor, axis : Int32) -> Tensor? {
 }
 
 ///|
+/// The logarithm of one plus a small number.
+///
+/// The standard library has no `log1p`, and the naive form loses the
+/// answer for a small argument: `1 + u` rounds to one and its
+/// logarithm is zero, while the true value is very nearly u.
+pub fn log1p(u : Double) -> Double {
+  if u > 1.0e-4 {
+    @math.ln(1.0 + u)
+  } else {
+    u - u * u * 0.5 + u * u * u / 3.0
+  }
+}
+
+///|
 /// Softmax along the last axis. Computed with the max-subtraction
 /// trick so the exponentials cannot overflow.
 pub fn t_softmax(a : Tensor) -> Tensor? {
@@ -454,9 +468,12 @@ pub fn t_unary(op : UnaryOp, a : Tensor) -> Tensor {
       UnaryOp::Tanh => @math.tanh(x)
       UnaryOp::Sigmoid => 1.0 / (1.0 + @math.exp(-x))
       UnaryOp::Softplus => {
+        // The stable form: for a large negative argument the sum
+        // rounds to one and the logarithm of it is zero, while the
+        // true value is a small number that still matters.
         let mx = if x > 0.0 { x } else { 0.0 }
         let ax = if x < 0.0 { -x } else { x }
-        mx + @math.ln(1.0 + @math.exp(-ax))
+        mx + log1p(@math.exp(-ax))
       }
       UnaryOp::Relu => if x > 0.0 { x } else { 0.0 }
       UnaryOp::Silu => x / (1.0 + @math.exp(-x))
