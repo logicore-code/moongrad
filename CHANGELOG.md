@@ -93,7 +93,7 @@ project follows Semantic Versioning: bump the
   other repository.
 
 ### Changed
-- The test suite grew from 339 cases to 361.
+- The test suite grew from 339 cases to 360.
 - `checkpoint.mbt` now says what it delivers. The classic segmented
   recomputation does not pay for a gradient program, because every
   gradient node refers back into the primal — so a dropped primal
