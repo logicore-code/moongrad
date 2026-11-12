@@ -85,6 +85,12 @@ pub(all) enum TNode {
   /// elsewhere. It is a node rather than a literal precisely so
   /// that a compiled gradient stays correct at a different input.
   ReluDeriv(Int32)
+  /// The log of a softmax along one axis.
+  ///
+  /// It is a node of its own rather than a logarithm of a softmax
+  /// node: the softmax can underflow to zero, and the logarithm of
+  /// zero would poison the loss with a NaN.
+  LogSoftmax(Int32, Int32)
   /// A softmax along one axis.
   ///
   /// The value is computed at evaluation time and the backward rule
@@ -298,6 +304,17 @@ pub fn TGraph::mean_keep_axis(
 /// Sum along one axis, dropping the axis.
 pub fn TGraph::sum_axis(self : TGraph, child : Int32, axis : Int32) -> Int32 {
   self.nodes.push(TNode::Sum(child, axis))
+  self.nodes.length() - 1
+}
+
+///|
+/// The log of a softmax along one axis.
+///
+/// The maximum along the axis is subtracted before the exponential,
+/// so the result stays finite even for a logit that is far from the
+/// others.
+pub fn TGraph::log_softmax(self : TGraph, x : Int32, axis : Int32) -> Int32 {
+  self.nodes.push(TNode::LogSoftmax(x, axis))
   self.nodes.length() - 1
 }
 
@@ -910,6 +927,14 @@ fn t_eval_node(
       }
       out
     }
+    TNode::LogSoftmax(child, axis) =>
+      match t_log_softmax_axis(values[child], axis) {
+        Some(t) => t
+        None => {
+          g.failed = true
+          Tensor::zeros([])
+        }
+      }
     TNode::Softmax(child, axis) =>
       match t_softmax_axis(values[child], axis) {
         Some(t) => t
@@ -1572,6 +1597,17 @@ fn t_push_adjoints(
       // zero almost everywhere. The point where it is not is the
       // kink, where the derivative does not exist.
       ignore(child)
+    TNode::LogSoftmax(child, axis) => {
+      // The Jacobian of a log-softmax is `g - softmax(x) * sum(g)`,
+      // and the softmax is recomputed here rather than frozen, so
+      // that the gradient stays correct at another input.
+      let s = h.softmax(child, axis)
+      let dot = h.sum_axis(gbar, axis)
+      let dot_b = h.expand_axis(dot, axis, values[child].shape)
+      let shared = h.mul(s, h.broadcast_to(dot_b, values[child].shape))
+      let contrib = h.sub(gbar, shared)
+      adj[child] = h.add(adj[child], contrib)
+    }
     TNode::Softmax(child, axis) => {
       // The Jacobian of a softmax is `s * (g - sum(g*s))`. The
       // softmax itself is recomputed here rather than read from the

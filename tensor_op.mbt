@@ -320,6 +320,55 @@ pub fn t_softmax(a : Tensor) -> Tensor? {
 }
 
 ///|
+/// The log of a softmax along one axis.
+///
+/// This is not the softmax followed by a logarithm: the plain
+/// softmax can underflow to zero for a confident and wrong
+/// prediction, and a logarithm of zero is not a number. Here the
+/// maximum is subtracted before the exponential and the logarithm is
+/// taken of the sum, so the result stays finite for any finite
+/// input.
+pub fn t_log_softmax_axis(a : Tensor, axis : Int32) -> Tensor? {
+  let r = a.shape.length()
+  if r == 0 || axis < 0 || axis >= r {
+    return None
+  }
+  let n = a.shape[axis]
+  if n <= 0 {
+    return None
+  }
+  let mut stride = 1
+  for d = axis + 1; d < r; d = d + 1 {
+    stride = stride * a.shape[d]
+  }
+  let mut outer = 1
+  for d = 0; d < axis; d = d + 1 {
+    outer = outer * a.shape[d]
+  }
+  let out = Tensor::zeros(a.shape)
+  for o = 0; o < outer; o = o + 1 {
+    for t = 0; t < stride; t = t + 1 {
+      let base = o * n * stride + t
+      let mut m = a.data[base]
+      for i = 1; i < n; i = i + 1 {
+        if a.data[base + i * stride] > m {
+          m = a.data[base + i * stride]
+        }
+      }
+      let mut sum = 0.0
+      for i = 0; i < n; i = i + 1 {
+        sum = sum + @math.exp(a.data[base + i * stride] - m)
+      }
+      let log_sum = @math.ln(sum)
+      for i = 0; i < n; i = i + 1 {
+        out.data[base + i * stride] = a.data[base + i * stride] - m - log_sum
+      }
+    }
+  }
+  Some(out)
+}
+
+///|
 /// A softmax along one axis.
 ///
 /// The maximum along the axis is subtracted before the exponential,

@@ -226,3 +226,137 @@ test "a_softmax_over_an_axis_that_does_not_exist_is_refused" {
   let s = @moongrad.t_softmax_axis(t, 5)
   check(s is None, "a softmax over a missing axis should be refused")
 }
+
+///|
+/// The graph `loss(x) = sum_ij log_softmax(x)[i,j] * x[i,j]`.
+fn log_softmax_loss_graph() -> (@moongrad.TGraph, Int32) {
+  let g = @moongrad.TGraph::new()
+  let x = g.variable(0)
+  let s = g.log_softmax(x, 1)
+  let prod = g.mul(s, x)
+  let per_row = g.sum_axis(prod, 1)
+  let total = g.sum_axis(per_row, 0)
+  (g, total)
+}
+
+///|
+test "the_log_softmax_matches_the_formula" {
+  let g = @moongrad.TGraph::new()
+  let x = g.variable(0)
+  let s = g.log_softmax(x, 1)
+  let b = softmax_binding([1.0, 2.0, 3.0, -1.0, 0.5, 1.5])
+  let values = @moongrad.t_forward(g, b)
+  let out = values[s]
+  // log_softmax(x) = x - log(sum(exp(x)))
+  let sum = @math.exp(1.0) + @math.exp(2.0) + @math.exp(3.0)
+  let log_sum = @math.ln(sum)
+  let row = [1.0, 2.0, 3.0]
+  for i = 0; i < 3; i = i + 1 {
+    assert_close(out.data[i], row[i] - log_sum, 1.0e-12, "the log-softmax")
+  }
+}
+
+///|
+test "the_log_softmax_of_a_confident_prediction_stays_finite" {
+  // The softmax of a logit that is far ahead can underflow to zero,
+  // and the logarithm of a zero is not a number. The log-softmax
+  // subtracts the maximum first, so it stays finite.
+  let g = @moongrad.TGraph::new()
+  let x = g.variable(0)
+  let s = g.log_softmax(x, 1)
+  let b = softmax_binding([1000.0, 0.0, -1000.0, 0.0, 0.0, 0.0])
+  let values = @moongrad.t_forward(g, b)
+  let out = values[s]
+  for i = 0; i < 6; i = i + 1 {
+    check(
+      out.data[i] == out.data[i],
+      "a log-softmax entry should be a number, not a NaN",
+    )
+  }
+  assert_close(
+    out.data[0],
+    0.0,
+    1.0e-12,
+    "the largest log-softmax entry is zero",
+  )
+}
+
+///|
+test "the_log_softmax_gradient_matches_a_finite_difference" {
+  let (g, target) = log_softmax_loss_graph()
+  let vals = [1.0, 2.0, 3.0, -1.0, 0.5, 1.5]
+  let grads = @moongrad.t_grad(g, softmax_binding(vals), target)
+  let h = 1.0e-6
+  for i = 0; i < 6; i = i + 1 {
+    let up = vals.copy()
+    let down = vals.copy()
+    up[i] = up[i] + h
+    down[i] = down[i] - h
+    let vu = @moongrad.t_forward(g, softmax_binding(up))
+    let vd = @moongrad.t_forward(g, softmax_binding(down))
+    let numeric = (vu[target].data[0] - vd[target].data[0]) / (2.0 * h)
+    assert_close(
+      grads.input_grads[0].data[i],
+      numeric,
+      1.0e-5,
+      "the log-softmax gradient",
+    )
+  }
+}
+
+///|
+test "a_compiled_log_softmax_gradient_is_reusable_at_another_input" {
+  let (g, target) = log_softmax_loss_graph()
+  let compiled = @moongrad.compile_tensor_gradient(
+    g,
+    softmax_binding([1.0, 2.0, 3.0, -1.0, 0.5, 1.5]),
+    target,
+  )
+  let other = [-3.0, 0.0, 4.0, 2.0, -2.0, 1.0]
+  let (grads, _) = @moongrad.evaluate_tensor_gradient(
+    compiled,
+    softmax_binding(other),
+  )
+  let h = 1.0e-6
+  for i = 0; i < 6; i = i + 1 {
+    let up = other.copy()
+    let down = other.copy()
+    up[i] = up[i] + h
+    down[i] = down[i] - h
+    let vu = @moongrad.t_forward(g, softmax_binding(up))
+    let vd = @moongrad.t_forward(g, softmax_binding(down))
+    let numeric = (vu[target].data[0] - vd[target].data[0]) / (2.0 * h)
+    assert_close(
+      grads[0].data[i],
+      numeric,
+      1.0e-5,
+      "the reused log-softmax gradient",
+    )
+  }
+}
+
+///|
+test "the_log_softmax_gradient_is_the_jacobian_it_claims" {
+  // The Jacobian of a log-softmax row is `I - softmax(x)`, so with
+  // an incoming gradient of one on each of a row's three entries the
+  // gradient is `1 - 3*softmax(x)`: the shared term is the softmax
+  // times the sum of the incoming gradient over the row.
+  let g = @moongrad.TGraph::new()
+  let x = g.variable(0)
+  let s = g.log_softmax(x, 1)
+  let b = softmax_binding([1.0, 2.0, 3.0, -1.0, 0.5, 1.5])
+  let grads = @moongrad.t_grad(g, b, s)
+  let values = @moongrad.t_forward(g, b)
+  let probs = match @moongrad.t_softmax_axis(values[x], 1) {
+    Some(p) => p
+    None => return
+  }
+  for i = 0; i < 3; i = i + 1 {
+    assert_close(
+      grads.input_grads[0].data[i],
+      1.0 - 3.0 * probs.data[i],
+      1.0e-12,
+      "the log-softmax jacobian",
+    )
+  }
+}
