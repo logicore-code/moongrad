@@ -287,7 +287,7 @@ pub fn forward_mode(
 ) -> (Double, Double) raise ADError {
   let values = forward_dual(g, b, direction)
   if target < 0 || target >= values.length() {
-    return (0.0, 0.0)
+    raise DanglingNode(target)
   }
   (values[target].value, values[target].tangent)
 }
