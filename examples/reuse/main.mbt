@@ -137,7 +137,7 @@ fn main {
   }
   println("|")
   println("| The largest disagreement with the finite difference is")
-  println("| \{@moongrad.format_double(worst)}, which is the finite")
+  println("| \{@moongrad.format_double_exact(worst)}, which is the finite")
   println("| difference's own error rather than the gradient's.")
   println("|")
   println("| Note what happens on the second row: the gradient was")

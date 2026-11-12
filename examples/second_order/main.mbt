@@ -88,7 +88,9 @@ fn main {
   println("|   dense:      [" + dense_parts.join(", ") + "]")
   println("|   conjugate:  [" + iterative_parts.join(", ") + "]")
   println("|")
-  println("| The largest disagreement is \{@moongrad.format_double(worst)}.")
+  println(
+    "| The largest disagreement is \{@moongrad.format_double_exact(worst)}.",
+  )
   println("|")
   println("| The step is the negative gradient here, because the Hessian")
   println("| is 2 I. One step lands exactly on the minimum.")

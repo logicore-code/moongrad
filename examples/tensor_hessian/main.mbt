@@ -100,7 +100,7 @@ fn main {
     }
   }
   println(
-    "| largest disagreement with the closed form 2I: \{@moongrad.format_double(max_error)}",
+    "| largest disagreement with the closed form 2I: \{@moongrad.format_double_exact(max_error)}",
   )
   // The finite difference of the gradient, which is an independent
   // derivation of the same object.

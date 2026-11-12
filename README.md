@@ -3,6 +3,8 @@
 A reverse-mode automatic differentiation engine, a tensor library, and a small
 deep-learning stack — written from scratch in MoonBit.
 
+[![CI](https://github.com/logicore-code/moongrad/actions/workflows/ci.yml/badge.svg)](https://github.com/logicore-code/moongrad/actions/workflows/ci.yml)
+
 `moongrad` compiles a program into a computation graph, then compiles the
 *derivative* of that program into a second graph. The gradient is therefore a
 first-class value: you can print it, count its nodes, re-evaluate it at a
@@ -20,7 +22,7 @@ fn main {
   let f = g.add(g.mul(g.pow(x, 2.0), y), g.exp(x))
 
   let grads = @moongrad.t_grad(g, b, f)
-  println(grads.input_grads[0].data)   // [0.1937, 0.4899]
+  println(Repr(grads.input_grads[0].data))   // [0.1937, 0.4899]
 }
 ```
 
@@ -29,6 +31,49 @@ fn main {
 import { "logicore-code/moongrad" }
 pkgtype(kind: "executable")
 ```
+
+## Try it
+
+```bash
+moon test                                       # 360 unit tests
+moon run examples/reuse        --target native  # one gradient, evaluated at four inputs
+moon run examples/second_order --target native  # a Newton step, with and without the Hessian
+moon run examples/nn_classifier --target native # a network that trains
+```
+
+`examples/reuse` is the one to start with: it compiles a gradient once and then
+evaluates it at four different inputs, including two on the other side of a
+ReLU's kink. A gradient that was frozen at its compile point would report the
+same numbers in all four rows. It does not, and that is the whole design in
+eight lines of output.
+
+## Who it is for
+
+Anything that has to be differentiated and then deployed somewhere awkward:
+a model that runs in a browser sandbox, a parameter fit that has to be solved
+inside another program, a rule engine whose thresholds are found by gradient
+descent rather than by hand. The gradient is a program, so it can be compiled
+once, evaluated anywhere, and differentiated again — which is what makes the
+second-order work possible at all.
+
+## Why MoonBit
+
+This is not a library that would read the same in any language.
+
+- **Suberrors are the error shape an autodiff engine wants.** A forward pass
+  can fail on a shape, a slot, a domain; MoonBit's `suberror` lets the
+  failure come back with its operands attached instead of taking the process
+  down. In another language that is a hierarchy of exception types somebody
+  has to design.
+- **Algebraic data types make the graph exhaustively matchable.** Adding a
+  node kind to the IR makes the compiler say which matches are missing, at
+  compile time. A large part of `moon check` reporting zero warnings is that
+  property.
+- **One source, four targets.** wasm, wasm-gc, js and native, built by the
+  same command in CI. An autodiff engine is most useful compiled into a
+  browser sandbox, and that is not free elsewhere.
+- **The builders read like arithmetic.** `g.add(g.mul(x, w), b)` rather
+  than `build_node(op, children)`. This code is meant to be read.
 
 ## Why the gradient is a program
 
@@ -151,9 +196,10 @@ catches a wrong rule rather than merely a typo.
 `examples/gradcheck` runs that comparison for six functions covering
 polynomials, quotients, matrix products, broadcasting products, chains of
 nonlinearities, and logarithms. All six agree to within the finite
-difference's own error, which is about ten digits — the finite difference is
-the approximate one, and the example prints the largest disagreement rather
-than rounding it away.
+difference's own error — about ten digits, and it is the finite difference
+that is the approximate one. The example prints the largest disagreement
+in full, because a disagreement of 8.4e-10 rounded to four decimals is a
+report of nothing.
 
 The test suite (360 cases) additionally checks each local derivative rule
 against its closed form, and each layer against a hand-computed
@@ -173,8 +219,10 @@ the right side.
 ## Examples
 
 ```bash
-moon run examples/tensor_basics --target native   # shapes and broadcasting
-moon run examples/gradcheck     --target native   # gradients vs finite differences
+moon run examples/reuse          --target native   # one gradient, at four inputs
+moon run examples/second_order   --target native   # a Newton step, with and without the Hessian
+moon run examples/gradcheck      --target native   # gradients vs finite differences
+moon run examples/tensor_basics  --target native   # shapes and broadcasting
 moon run examples/nn_classifier  --target native   # a network that trains
 moon run examples/linalg_demo   --target native   # eigenvalues, Cholesky, QR
 moon run examples/derivatives   --target native   # the scalar engine

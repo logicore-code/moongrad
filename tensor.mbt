@@ -837,3 +837,14 @@ pub fn format_double(x : Double) -> String {
   let scaled = (x * 10000.0).round() / 10000.0
   scaled.to_string()
 }
+
+///|
+/// A double in a form that shows its magnitude.
+///
+/// `format_double` rounds to four decimals, which is right for a
+/// table of numbers and wrong for a disagreement: a difference of
+/// 3.7e-11 rounds away to zero, and a report of zero is a report of
+/// nothing at all.
+pub fn format_double_exact(x : Double) -> String {
+  x.to_string()
+}
