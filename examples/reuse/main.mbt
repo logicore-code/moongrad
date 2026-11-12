@@ -112,8 +112,9 @@ fn main {
       parts.push(@moongrad.format_double(grads[0].data[i]))
       numbers.push(@moongrad.format_double(numeric[i]))
       let diff = grads[0].data[i] - numeric[i]
-      if diff > worst {
-        worst = diff
+      let magnitude = if diff < 0.0 { -diff } else { diff }
+      if magnitude > worst {
+        worst = magnitude
       }
       if diff > 1.0e-5 || diff < -1.0e-5 {
         agrees = false

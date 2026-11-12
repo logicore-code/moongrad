@@ -39,13 +39,19 @@ fn make_dataset(
 ///
 /// The features and the labels are inputs, so the graph is built
 /// once and reused for every batch.
-fn build(graph : @moongrad.TGraph) -> (Int32, @moongrad.Tensor) {
+fn build(graph : @moongrad.TGraph) -> (Int32, Array[@moongrad.Tensor]) {
   let x = graph.variable(0)
   let y = graph.variable(1)
+  // A weight and an intercept. The label carries a constant term, so
+  // a model without one would fit the data about as well while
+  // still being the wrong model: the weights would absorb part of
+  // the offset, and the numbers printed at the end would not be the
+  // ones that generated the data.
   let w = graph.param(0)
+  let bias = graph.param(1)
   // The weight is a column, so the product is the dot product of
   // each row of the features with the weight.
-  let pred = graph.matmul(x, w)
+  let pred = graph.add(graph.matmul(x, w), bias)
   let diff = graph.sub(pred, y)
   let squared = graph.mul(diff, diff)
   let per_sample = graph.sum_axis(squared, 1)
@@ -55,10 +61,11 @@ fn build(graph : @moongrad.TGraph) -> (Int32, @moongrad.Tensor) {
     graph.constant(@moongrad.Tensor::filled([], 32.0)),
   )
   ignore(x)
-  // The parameter the graph reads through `ParamRead`, and the
-  // host-side tensor the optimiser updates. The trainer keeps the
+  ignore(y)
+  // The parameters the graph reads through `ParamRead`, and the
+  // host-side tensors the optimiser updates. The trainer keeps the
   // two in step.
-  (loss, @moongrad.Tensor::zeros([2, 1]))
+  (loss, [@moongrad.Tensor::zeros([2, 1]), @moongrad.Tensor::zeros([1])])
 }
 
 ///|
@@ -88,8 +95,8 @@ fn main {
       graph : @moongrad.TGraph,
       _binding : @moongrad.TBinding,
     ) -> (Int32, Array[@moongrad.Tensor]) {
-      let (loss_node, weight) = build(graph)
-      (loss_node, [weight])
+      let (loss_node, weights) = build(graph)
+      (loss_node, weights)
     },
   )
   println("| epoch    loss        |grad|")
@@ -115,9 +122,11 @@ fn main {
   }
   println("|")
   let w = trainer.params[0]
+  let bias = trainer.params[1]
   println(
     "| the recovered weight: [\{@moongrad.format_double(w.data[0])}, \{@moongrad.format_double(w.data[1])}]",
   )
+  println("| the recovered intercept: \{@moongrad.format_double(bias.data[0])}")
   println("|")
   println("| The graph was built once and the gradient compiled once.")
   println("| Every step above rewrote the batch into the binding and")

@@ -10,10 +10,13 @@
 // `x*y` twice because the algebra says to, and the builder hands
 // back the same slot both times.
 //
-// The example also shows the peephole rules firing. `x + 0` and
-// `x * 1` collapse to `x`; `x * 0` collapses to `0` and takes the
-// whole subtree with it; and a subtree whose leaves are all
-// literals is evaluated at build time.
+// The example also shows the peephole rules firing, and one that
+// deliberately does not. `x + 0` and `x * 1` collapse to `x`, and a
+// subtree whose leaves are all literals is evaluated at build time.
+// `x * 0` and `x - x` are *not* collapsed: the rule needs the other
+// operand to be known to be finite, because `0 * inf` is a NaN and
+// `inf - inf` is a NaN, and a simplifier that turns a loud error
+// into a quiet wrong number is worse than one that does nothing.
 
 ///|
 fn main raise @moongrad.ADError {

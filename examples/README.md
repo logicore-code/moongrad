@@ -21,8 +21,8 @@ moon run examples/minibatch       --target native
 
 | Example | What it shows | Headline output |
 |---|---|---|
-| `tensor_basics/` | shapes, broadcasting, matrix products, reductions | a `(2,1) + (3,)` broadcast to `(2,3)` |
-| `gradcheck/` | six functions, analytic gradient vs central difference | the two columns agree exactly |
+| `tensor_basics/` | shapes, broadcasting, matrix products, reductions | a `(2,3) + (3,)` broadcast to `(2,3)` |
+| `gradcheck/` | six functions, analytic gradient vs central difference | they agree to the finite difference's own error |
 | `reuse/` | one compiled gradient, evaluated at four different inputs | the gradient follows the input across a ReLU's kink |
 | `tensor_hessian/` | the Hessian of a tensor objective | matches the closed form and a finite difference; one Newton step lands on the minimiser |
 | `nn_classifier/` | a two-layer network trained by gradient descent | loss 0.92 → 0.0003, eight predictions right |
