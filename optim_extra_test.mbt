@@ -30,7 +30,7 @@ test "rmsprop_converges_on_a_quadratic" {
   let start_loss = quad_loss(params[0].data[0])
   for i = 0; i < 300; i = i + 1 {
     let g = [one_param(params[0].data[0])]
-    st.step(params, g, i + 1)
+    ignore(st.step(params, g, i + 1))
   }
   let loss = quad_loss(params[0].data[0])
   check(
@@ -57,7 +57,7 @@ test "adagrad_converges_on_a_quadratic" {
   let start_loss = quad_loss(params[0].data[0])
   for i = 0; i < 300; i = i + 1 {
     let g = [one_param(params[0].data[0])]
-    st.step(params, g, i + 1)
+    ignore(st.step(params, g, i + 1))
   }
   let loss = quad_loss(params[0].data[0])
   check(
@@ -79,11 +79,11 @@ test "nesterov_updates_by_the_expected_formula" {
     @moongrad.ExtraOptimizer::Nesterov(0.1, 0.9),
     [[1]],
   )
-  st.step(params, [one_param(1.0)], 1)
+  ignore(st.step(params, [one_param(1.0)], 1))
   assert_close(params[0].data[0], 1.81, 1.0e-12, "Nesterov after one step")
   // The velocity carries over: it is now mu*1 + 1 = 1.9, so the
   // second step is 0.1*(1 + 0.9*1.9) = 0.271 and 1.81 becomes 1.539.
-  st.step(params, [one_param(1.0)], 2)
+  ignore(st.step(params, [one_param(1.0)], 2))
   assert_close(params[0].data[0], 1.539, 1.0e-12, "Nesterov after two steps")
 }
 
@@ -99,7 +99,7 @@ test "adamw_decays_the_parameter_even_with_a_zero_gradient" {
     @moongrad.ExtraOptimizer::AdamW(0.1, 0.5, 1.0e-8),
     [[1]],
   )
-  st.step(params, [one_param(0.0)], 1)
+  ignore(st.step(params, [one_param(0.0)], 1))
   assert_close(params[0].data[0], 0.95, 1.0e-12, "AdamW with a zero gradient")
 }
 
@@ -130,7 +130,7 @@ test "adamw_and_the_coupled_form_give_different_results" {
     @moongrad.ExtraOptimizer::AdamW(0.1, 0.5, 1.0e-8),
     [[1]],
   )
-  st.step(params, [one_param(0.0)], 1)
+  ignore(st.step(params, [one_param(0.0)], 1))
   assert_close(
     params[0].data[0],
     0.95,
@@ -258,7 +258,7 @@ test "the_optimiser_state_sizes_a_parameter_by_its_elements" {
   )
   let p = [shaped([2, 3], [1.0, 1.0, 1.0, 1.0, 1.0, 1.0])]
   let g = [shaped([2, 3], [1.0, 1.0, 1.0, 1.0, 1.0, 1.0])]
-  state.step(p, g, 1)
+  ignore(state.step(p, g, 1))
   // The update is the same for every entry, so they all move
   // together; the point is that the sixth entry did not run past the
   // end of the state.
@@ -277,7 +277,7 @@ test "two_parameters_do_not_share_a_moment_slot" {
   let p1 = shaped([2], [1.0, 1.0])
   let g0 = shaped([2, 3], [0.0, 0.0, 0.0, 0.0, 0.0, 0.5])
   let g1 = shaped([2], [1.0, 1.0])
-  state.step([p0, p1], [g0, g1], 1)
+  ignore(state.step([p0, p1], [g0, g1], 1))
   // The second parameter sees a gradient of one and nothing else,
   // so it takes the first step's full move.
   assert_close(p1.data[0], 0.9, 1.0e-6, "the second parameter")
@@ -294,7 +294,7 @@ test "the_first_adamw_step_is_not_a_nan" {
   )
   let p = [shaped([1], [1.0])]
   let g = [shaped([1], [1.0])]
-  state.step(p, g, 0)
+  ignore(state.step(p, g, 0))
   check(p[0].data[0] == p[0].data[0], "the parameter should not be a NaN")
 }
 
@@ -327,7 +327,7 @@ test "the_optimiser_stops_at_the_end_of_its_state" {
   )
   let p = [shaped([1], [1.0]), shaped([1], [1.0])]
   let g = [shaped([1], [1.0]), shaped([1], [1.0])]
-  state.step(p, g, 1)
+  ignore(state.step(p, g, 1))
   assert_close(p[0].data[0], 0.9, 1.0e-12, "the first parameter")
 }
 

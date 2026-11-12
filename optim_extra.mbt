@@ -76,6 +76,12 @@ pub(all) struct ExtraOptState {
   v : Array[Double]
   /// The flat offset of each parameter's first element.
   layout : Array[Int32]
+  /// The number of elements each parameter has.
+  ///
+  /// The offsets alone do not say where a parameter's slots end, and
+  /// a parameter whose element count does not match would write past
+  /// the state — or, worse, write into the next parameter's slots.
+  sizes : Array[Int32]
 }
 
 ///|
@@ -94,6 +100,7 @@ pub fn ExtraOptState::new(
   let v : Array[Double] = []
   let layout : Array[Int32] = []
   let mut total = 0
+  let sizes : Array[Int32] = []
   for i = 0; i < shapes.length(); i = i + 1 {
     layout.push(total)
     // The size of a tensor is the product of its shape, not the sum:
@@ -101,15 +108,20 @@ pub fn ExtraOptState::new(
     // would have two parameters share a moment slot.
     let mut count = 1
     for d in shapes[i] {
+      if d < 0 {
+        count = 0
+        break
+      }
       count = count * d
     }
+    sizes.push(count)
     total = total + count
   }
   for i = 0; i < total; i = i + 1 {
     m.push(0.0)
     v.push(0.0)
   }
-  { kind, m, v, layout, }
+  { kind, m, v, layout, sizes, }
 }
 
 ///|
@@ -119,12 +131,18 @@ pub fn ExtraOptState::new(
 /// sees the updated values in place. `step_index` counts the steps
 /// taken so far, and is what the bias correction in Adam and AdamW
 /// needs.
+///
+/// Returns `false` when a parameter does not match the state it was
+/// built for — the wrong number of elements, or a gradient of a
+/// different length. Such a parameter is left alone: applying half
+/// an update is worse than applying none, and writing past the state
+/// is worse than either.
 pub fn ExtraOptState::step(
   self : ExtraOptState,
   params : Array[Tensor],
   grads : Array[Tensor],
   step_index : Int32,
-) -> Unit {
+) -> Bool {
   let mut n = if params.length() < grads.length() {
     params.length()
   } else {
@@ -135,9 +153,37 @@ pub fn ExtraOptState::step(
   if n > self.layout.length() {
     n = self.layout.length()
   }
+  // A parameter that does not fit the state is skipped, and the step
+  // reports that it did not happen. Without this the update would
+  // either run past the moment arrays or write into the next
+  // parameter's slots, and the second of those is silent.
+  let mut complete = true
+  for i = 0; i < n; i = i + 1 {
+    if i >= self.sizes.length() {
+      complete = false
+      break
+    }
+    if params[i].data.length() != self.sizes[i] ||
+      grads[i].data.length() != self.sizes[i] {
+      complete = false
+    }
+  }
+  if !complete {
+    return false
+  }
   match self.kind {
-    RmsProp(lr, decay) => {
+    RmsProp(lr, raw_decay) => {
       let eps = 1.0e-8
+      // A decay outside [0, 1) is not a decay: one makes the running
+      // average grow without bound, and the other leaves it at zero
+      // for ever, which turns the update into a full-size step.
+      let decay = if raw_decay < 0.0 {
+        0.0
+      } else if raw_decay >= 1.0 {
+        0.999999999
+      } else {
+        raw_decay
+      }
       for i = 0; i < n; i = i + 1 {
         let p = params[i]
         let g = grads[i]
@@ -149,6 +195,12 @@ pub fn ExtraOptState::step(
         for j = 0; j < k; j = j + 1 {
           let idx = self.layout[i] + j
           let gv = g.data[j]
+          if !is_finite(gv) {
+            // A gradient that is not finite would put a not-finite
+            // value into the running average, and every later step
+            // would be not-finite too, with no way back.
+            continue
+          }
           // The running average of the squared gradient is not bias
           // corrected, so the first step is
           // lr*g/sqrt((1-decay)*g^2) = lr*sign(g)/sqrt(1-decay) —
@@ -160,7 +212,10 @@ pub fn ExtraOptState::step(
         params[i] = p
       }
     }
-    Adagrad(lr, eps) =>
+    Adagrad(lr, raw_eps) => {
+      // A zero epsilon leaves the denominator at zero for a zero
+      // gradient, and the update is then zero over zero.
+      let eps = if raw_eps > 0.0 { raw_eps } else { 1.0e-16 }
       for i = 0; i < n; i = i + 1 {
         let p = params[i]
         let g = grads[i]
@@ -181,6 +236,7 @@ pub fn ExtraOptState::step(
         }
         params[i] = p
       }
+    }
     Nesterov(lr, mu) =>
       for i = 0; i < n; i = i + 1 {
         let p = params[i]
@@ -201,9 +257,11 @@ pub fn ExtraOptState::step(
         }
         params[i] = p
       }
-    AdamW(lr, weight_decay, eps) => {
+    AdamW(lr, weight_decay, raw_eps) => {
       let b1 = 0.9
       let b2 = 0.999
+      // A zero epsilon would divide by zero on the first step.
+      let eps = if raw_eps > 0.0 { raw_eps } else { 1.0e-16 }
       // The step index is one-based, so the first update is step 1.
       // A caller that passes 0 gets the first step's correction
       // rather than a division by zero, which would turn every
@@ -240,6 +298,7 @@ pub fn ExtraOptState::step(
       }
     }
   }
+  true
 }
 
 // ---------------------------------------------------------------------------
@@ -362,6 +421,10 @@ pub extend LrSchedule with Eq::{equal, not_equal}
 /// first update and the schedule is still at its starting value
 /// there.
 pub fn LrSchedule::at(self : LrSchedule, step : Int32) -> Double {
+  // A negative step is not a step. The integer division below would
+  // round towards zero, so a negative step would count fewer
+  // boundaries than it crossed and the rate would grow.
+  let step = if step < 0 { 0 } else { step }
   match self {
     Constant(lr) => lr
     Step(lr, decay, step_size) => {
