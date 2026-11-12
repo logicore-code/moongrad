@@ -227,10 +227,10 @@ pub fn Graph::variable(self : Graph, i : Int32) -> Int32 raise ADError {
   // order the variables were first used in. A graph that uses its
   // variables out of order would otherwise hand one variable's
   // gradient to another.
-  while self.var_slots.length() < i {
+  while self.var_slots.length() <= i {
     self.var_slots.push(-1)
   }
-  self.var_slots.push(slot)
+  self.var_slots[i] = slot
   slot
 }
 
