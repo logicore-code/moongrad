@@ -276,7 +276,7 @@ pub fn Model::from_json(text : String) -> Model raise ModelError {
     }
     if count != data.length().to_double() {
       raise ModelError::ShapeMismatch(
-        "\{name}: the shape implies \{count.to_int()} elements but there are \{data.length()}",
+        "\{name}: the shape implies \{count} elements but there are \{data.length()}",
       )
     }
     let value = Tensor::zeros(shape)
