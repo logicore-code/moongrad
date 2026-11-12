@@ -317,7 +317,10 @@ pub fn conj_grad(
       r2.push(b[i] - ax[i])
     }
     let rsq_new = vec_dot(r2, r2)
-    if rsq_new.sqrt() < tol {
+    // The comparison is not strict: a tolerance of zero means an
+    // exact solution, and a residual that is exactly zero satisfies
+    // it.
+    if rsq_new.sqrt() <= tol {
       return Some(x)
     }
     let beta = rsq_new / rsq
@@ -837,7 +840,13 @@ pub fn symmetric_eigen_jacobi_report(
     }
   }
   residual = residual.sqrt()
-  let converged = residual <= 1.0e-12 * scale
+  // The sum of the squares overflows for a matrix with very large
+  // entries, and an infinite residual compares as "at most" an
+  // infinite scale, so the iteration would report a decomposition it
+  // never reached. A non-finite measure is a failure, not a success.
+  let converged = is_finite(residual) &&
+    is_finite(scale) &&
+    residual <= 1.0e-12 * scale
   // The eigenvalues are the diagonal of the rotated matrix. Sort them
   // into ascending order, carrying the eigenvectors along.
   let values : Array[Double] = []
@@ -978,9 +987,30 @@ pub fn spectral_norm_lower_bound(a : Matrix) -> Double {
     return 0.0
   }
   // b = a^T a, whose largest eigenvalue is the square of the spectral
-  // norm.
-  let at = a.transpose()
-  let b = match at.mul(a) {
+  // norm. The matrix is scaled first: the product overflows for a
+  // matrix with very large entries, and an infinite bound is not a
+  // bound at all.
+  let mut largest = 0.0
+  for i = 0; i < a.nrows(); i = i + 1 {
+    for j = 0; j < a.ncols(); j = j + 1 {
+      let v = a.get(i, j)
+      let m = if v < 0.0 { -v } else { v }
+      if m > largest {
+        largest = m
+      }
+    }
+  }
+  if largest == 0.0 {
+    return 0.0
+  }
+  let scaled = Matrix::zeros(a.nrows(), a.ncols())
+  for i = 0; i < a.nrows(); i = i + 1 {
+    for j = 0; j < a.ncols(); j = j + 1 {
+      scaled.set(i, j, a.get(i, j) / largest)
+    }
+  }
+  let at = scaled.transpose()
+  let b = match at.mul(scaled) {
     Some(m) => m
     None => return 0.0
   }
@@ -1024,7 +1054,9 @@ pub fn spectral_norm_lower_bound(a : Matrix) -> Double {
     }
     lambda = quotient
   }
-  best.sqrt()
+  // The iteration ran on the scaled matrix, so the estimate has to
+  // be scaled back.
+  largest * best.sqrt()
 }
 
 ///|
