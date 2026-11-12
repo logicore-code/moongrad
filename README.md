@@ -91,6 +91,22 @@ The second is that second-order support needs a second engine. Differentiating
 a gradient means differentiating numbers that were already collapsed, which
 loses the structure you would need.
 
+JAX is one step ahead of the tape: its `grad` is staged and produces a
+`jaxpr`, a program, so nesting `grad` gives a Hessian. Turning the gradient
+into a program is not a new idea. What this project tries is to make the same
+property hold in MoonBit — a graph that is the same shape as the forward
+graph, that the same compiler can differentiate again, in a library with no
+FFI and no runtime — and to write the backward rules out by hand so that the
+whole reverse pass can be read.
+
+Two other MoonBit projects are worth naming, because they are the ones this
+would be compared against. `Luna-Flow/autodiff` is a forward-mode
+implementation over dual numbers, and it says in its own documentation that
+reverse mode and higher-order derivatives are not part of the release.
+`riantr/snn_mbt`, a port of SpikingNeuralNetworks.jl, carries a tape-based
+backward pass. Neither offers a gradient that is a graph you can evaluate
+anywhere and differentiate again.
+
 Emitting a program avoids both. The backward sweep walks the graph backwards
 and, wherever a node has a nonzero adjoint, emits the arithmetic for
 `adjoint * local derivative` into the graph. The result is a program that can
