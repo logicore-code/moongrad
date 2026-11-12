@@ -62,6 +62,13 @@ jobs:
             moon run "examples/$ex" --target native
           done
 
+      - name: Smoke-test the convolutional example on the release target
+        # The other examples are small enough to run in a debug build.
+        # This one trains a network, and a debug build of the
+        # convolution takes minutes rather than seconds, so it is
+        # built in release. It is the same program.
+        run: moon run examples/cnn --target native --release
+
       - name: Benchmarks (release build)
         run: moon test --target native --release perf
 
