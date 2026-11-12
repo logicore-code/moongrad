@@ -1,9 +1,6 @@
 .DS_Store
 _build/
 target/
-target
 .mooncakes/
 .moonagent/
-*.ppm
-*.bmp
 pkg.generated.mbti

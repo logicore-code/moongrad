@@ -18,33 +18,33 @@ jobs:
           curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
 
-      - name: Report the toolchain version
-        # The build is reproducible only if the version is written
-        # down: the formatter canonicalises a few spellings between
-        # releases, so a different version can format the same source
-        # differently.
-        run: moon version
+      - name: Check the toolchain version
+        # The source uses `Int32` and `#derive(...)`, which arrived in
+        # 0.1.20261104. The versioned downloads are not served, so
+        # the toolchain cannot be pinned to that release; what can be
+        # done is to refuse to build with one that is too old.
+        run: |
+          version=$(moon version | grep -oE '0\.1\.[0-9]+' | head -1)
+          oldest=$(printf '%s\n' 0.1.20261104 "$version" | sort -V | head -1)
+          if [ "$oldest" != "0.1.20261104" ]; then
+            echo "::error::the toolchain is $version; the source needs 0.1.20261104 or newer"
+            exit 1
+          fi
+          echo "the toolchain is $version"
 
       - name: Cache the MoonBit core library
+        # Only the core library is cached. Caching the whole of
+        # ~/.moon would restore the toolchain as well, and the
+        # restore would then replace the one the install step
+        # just put there.
         uses: actions/cache@v4
         with:
-          path: ~/.moon
+          path: ~/.moon/lib/core
           key: moon-core-${{ runner.os }}-${{ hashFiles('**/moon.mod') }}
           restore-keys: moon-core-${{ runner.os }}-
 
       - name: Format check
-        # `moon fmt --check` compares the source against the
-        # formatter of the installed toolchain, and that formatter
-        # canonicalises a few spellings between releases — so a
-        # release newer than the one the source was formatted with can
-        # report a difference that has nothing to do with the code.
-        # The check is therefore reported rather than allowed to fail
-        # the build; the type check, the tests and the example smoke
-        # tests below are the gates that matter.
-        run: |
-          if ! moon fmt --check; then
-            echo "::warning::the formatting differs on this toolchain version; the source was formatted with the version reported above"
-          fi
+        run: moon fmt --check
 
       - name: Static type check
         run: moon check
@@ -65,8 +65,7 @@ jobs:
       - name: Benchmarks (release build)
         run: moon test --target native --release perf
 
-      - name: Confirm every target compiles
-        run: moon check --target all
-
-      - name: Build the library for the preferred target
-        run: moon build
+      - name: Build every target
+        # A type check does not link, so it would miss a target that
+        # compiles and then fails to build.
+        run: moon build --target all
