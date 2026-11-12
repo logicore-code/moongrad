@@ -13,8 +13,11 @@
 //
 // Three families of rule:
 //
-//   * annihilator — `x * 0 → 0`, `x * 0 → 0`, `x - x → 0`.
-//     Drops an entire subtree.
+//   * annihilator — `x * 0 → 0` and `x - x → 0`, but only when
+//     the other operand is a literal that is known to be finite.
+//     `0 * inf` is a NaN and `inf - inf` is a NaN, so a rule that
+//     folded those away would turn a loud error into a quiet wrong
+//     number.
 //   * identity    — `x + 0 → x`, `x * 1 → x`, `x / 1 → x`.
 //     Drops an operator, keeps the subtree.
 //   * fold        — both children are literals, so evaluate now.
@@ -210,7 +213,10 @@ pub fn Graph::simplify_pow(
     // its own node keeps the printed graph readable and lets the
     // simplifier recognise `x^2 - x^2` as zero without evaluating
     // either square.
-    self.stats.identities = self.stats.identities + 1
+    //
+    // Nothing is rewritten here — the node below is the same node —
+    // so this is not an identity and the statistics must not count
+    // it as one.
     return self.intern(Node::PowBy(2.0, base))
   }
   self.intern(Node::PowBy(exponent, base))
@@ -326,20 +332,6 @@ pub fn safe_pow(x : Double, c : Double) -> Double? {
     Some(v)
   } else {
     None
-  }
-}
-
-///|
-/// The logarithm of one plus a small number.
-///
-/// The standard library has no `log1p`, and the naive form loses
-/// the answer entirely for a small argument: `1 + u` rounds to one
-/// and its logarithm is zero, while the true value is very nearly u.
-fn log1p(u : Double) -> Double {
-  if u > 1.0e-4 {
-    @math.ln(1.0 + u)
-  } else {
-    u - u * u * 0.5 + u * u * u / 3.0
   }
 }
 

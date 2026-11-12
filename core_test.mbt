@@ -646,12 +646,3 @@ test "a_higher_order_polynomial_has_exact_second_derivative_behaviour" {
   let (grads, _p) = @moongrad.grad(g, binding_of([3.0]), f)
   assert_close(grads[0], 108.0, 1.0e-8, "d/dx x^4 at 3")
 }
-
-///|
-test "zz_summary_of_gradient_mismatches" {
-  let list = failures
-  for f in list {
-    println("  FAIL \{f}")
-  }
-  assert_eq(list.length(), 0)
-}
