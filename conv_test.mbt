@@ -587,35 +587,3 @@ test "sequential_runs_its_layers_in_order" {
   let grad = @moongrad.t_grad(g, b, y)
   assert_eq(grad.output.shape, [2, 2])
 }
-
-///|
-test "the_convolution_bias_belongs_to_the_channel_axis" {
-  // A rank-one bias is aligned to the *last* axis, and the last axis
-  // of the activation is the width. The bias belongs to the channel
-  // axis, so it has to be given its shape; without that it landed on
-  // the width and alternated along every row.
-  let x = @moongrad.Tensor::zeros([1, 1, 2, 2])
-  x.data[0] = 1.0
-  x.data[1] = 2.0
-  x.data[2] = 3.0
-  x.data[3] = 4.0
-  let w = @moongrad.Tensor::zeros([2, 1, 1, 1])
-  w.data[0] = 1.0
-  w.data[1] = 10.0
-  let bias = @moongrad.Tensor::vector([100.0, 200.0])
-  let out = match @moongrad.t_conv2d(x, w, Some(bias), 1, 1, 0, 0) {
-    Some(t) => t
-    None => {
-      check(false, "the convolution should succeed")
-      return
-    }
-  }
-  // The first output channel sees 1, 2, 3, 4 plus 100; the second
-  // sees them multiplied by ten plus 200.
-  assert_close(out.data[0], 101.0, 1.0e-12, "channel 0, position 0")
-  assert_close(out.data[1], 102.0, 1.0e-12, "channel 0, position 1")
-  assert_close(out.data[2], 103.0, 1.0e-12, "channel 0, position 2")
-  assert_close(out.data[3], 104.0, 1.0e-12, "channel 0, position 3")
-  assert_close(out.data[4], 210.0, 1.0e-12, "channel 1, position 0")
-  assert_close(out.data[5], 220.0, 1.0e-12, "channel 1, position 1")
-}

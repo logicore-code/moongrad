@@ -176,6 +176,15 @@ pub fn TGraph::variable(self : TGraph, slot : Int32) -> Int32 {
 }
 
 ///|
+/// How many input slots the graph declares.
+///
+/// A layer that claims a slot counts, so this is the number of
+/// values the binding has to supply.
+pub fn TGraph::input_count(self : TGraph) -> Int32 {
+  self.next_var_slot
+}
+
+///|
 /// Claim an input slot.
 ///
 /// A layer that needs an input of its own — a dropout mask, say —
@@ -183,6 +192,13 @@ pub fn TGraph::variable(self : TGraph, slot : Int32) -> Int32 {
 /// track of. The slot comes after every input declared so far, so
 /// declaring the caller's inputs first is enough to keep the two
 /// apart.
+///
+/// "Declared so far" is the whole of it: the graph cannot know which
+/// slots the caller intends to use later, so a caller that declares
+/// an input *after* a layer has claimed one would be writing over
+/// the layer's mask. The convention — inputs first, then the layers
+/// that read them — is what keeps them apart, and it is the order the
+/// examples and the trainers already use.
 pub fn TGraph::new_variable_slot(self : TGraph) -> Int32 {
   let slot = self.next_var_slot
   self.next_var_slot = slot + 1
@@ -959,6 +975,11 @@ pub(all) struct TGradGraph {
   /// Node in `graph` holding `d(target) / d(param_i)`, one per
   /// parameter slot.
   param_adj : Array[Int32]
+  /// The shape each parameter had when the gradient was compiled.
+  ///
+  /// The parameter shapes are baked into the program as surely as the
+  /// input shapes are, so they are checked too.
+  param_shapes : Array[Array[Int32]]
   /// The shape each input had when the gradient was compiled.
   ///
   /// The backward rules bake the operand shapes into the program,
@@ -1061,6 +1082,10 @@ pub fn compile_tensor_gradient(
   for i = 0; i < b.inputs.length(); i = i + 1 {
     input_shapes.push(b.inputs[i].shape.copy())
   }
+  let param_shapes : Array[Array[Int32]] = []
+  for i = 0; i < b.params.length(); i = i + 1 {
+    param_shapes.push(b.params[i].shape.copy())
+  }
   if target < 0 || target >= n {
     return {
       graph: h,
@@ -1068,6 +1093,7 @@ pub fn compile_tensor_gradient(
       input_adj,
       param_adj,
       input_shapes,
+      param_shapes,
       output: Tensor::zeros([]),
     }
   }
@@ -1086,6 +1112,7 @@ pub fn compile_tensor_gradient(
     input_adj,
     param_adj,
     input_shapes,
+    param_shapes,
     output: values[target],
   }
 }
@@ -1104,16 +1131,37 @@ pub fn TGradGraph::shapes_match(self : TGradGraph, b : TBinding) -> Bool {
   if b.inputs.length() < self.input_shapes.length() {
     return false
   }
+  if self.input_shapes.length() == 0 && b.inputs.length() > 0 {
+    // The program was compiled against a binding with no inputs, so
+    // it has no adjoints for any of them. Comparing the shapes would
+    // pass, because there are none to compare.
+    return false
+  }
   for i = 0; i < self.input_shapes.length(); i = i + 1 {
-    let want = self.input_shapes[i]
-    let got = b.inputs[i].shape
-    if want.length() != got.length() {
+    if !same_shape(self.input_shapes[i], b.inputs[i].shape) {
       return false
     }
-    for d = 0; d < want.length(); d = d + 1 {
-      if want[d] != got[d] {
-        return false
-      }
+  }
+  for i = 0; i < self.param_shapes.length(); i = i + 1 {
+    if i >= b.params.length() {
+      return false
+    }
+    if !same_shape(self.param_shapes[i], b.params[i].shape) {
+      return false
+    }
+  }
+  true
+}
+
+///|
+/// Whether two shapes are the same.
+fn same_shape(a : Array[Int32], b : Array[Int32]) -> Bool {
+  if a.length() != b.length() {
+    return false
+  }
+  for i = 0; i < a.length(); i = i + 1 {
+    if a[i] != b[i] {
+      return false
     }
   }
   true

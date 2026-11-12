@@ -189,7 +189,9 @@ pub fn Dropout::new(rate : Double, seed : Int32) -> Dropout {
 /// Apply the mask to a tensor.
 ///
 /// The mask becomes an input of the graph, so that it can be redrawn
-/// between steps without rebuilding the graph.
+/// between steps without rebuilding the graph. The mask takes an
+/// input slot from the graph, so the caller should declare its own
+/// inputs before the layer is applied.
 ///
 /// The mask's shape is given rather than read from the graph: the
 /// graph does not know the shape of a tensor until the first forward
