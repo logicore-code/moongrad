@@ -66,9 +66,34 @@ project follows Semantic Versioning: bump the
   variable**, for an array that was never read again.
 - The **softmax, the cross-entropy and the mean over an empty axis**
   read past the end of their buffers or divided by zero.
+- The **extra optimisers wrote past their own state** when a
+  parameter's element count did not match the shape the state was
+  built for, and two parameters shared a moment slot when the counts
+  were merely different. The step now refuses a parameter it cannot
+  update and says so.
+- A **zero epsilon** turned Adagrad's and AdamW's first step into a
+  NaN, a **decay of one** turned RMSProp's step into a full-size
+  step, and an **infinite gradient** poisoned the moment estimates
+  for ever.
+- The **dataset's batch and fold bounds overflowed** on a large
+  index, which read out of range or — worse — silently returned the
+  first batch instead of the one asked for.
+- The **Jacobi eigendecomposition reported a wrong answer as
+  converged** when the matrix was large enough for the sum of the
+  squares to overflow, and the **spectral-norm bound came back as
+  infinity**, which is above the truth it is supposed to be below.
+- The **model reader truncated a fractional dimension** and
+  **accepted a shape whose element count overflowed**; and a model
+  with **two parameters of the same name** was ambiguous, with one of
+  them unreachable by name.
+- The **module metadata** described a project that did not exist:
+  the version was still 0.2.0, the description quoted a test count
+  from three releases ago, and the header comment described an
+  interpreter for a Scheme-like subset — the header of the project's
+  other repository.
 
 ### Changed
-- The test suite grew from 339 cases to 363.
+- The test suite grew from 339 cases to 361.
 - `checkpoint.mbt` now says what it delivers. The classic segmented
   recomputation does not pay for a gradient program, because every
   gradient node refers back into the primal — so a dropped primal
