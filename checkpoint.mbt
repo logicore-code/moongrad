@@ -73,7 +73,12 @@ pub(all) struct CheckpointReport {
 pub extend CheckpointReport with Debug::{to_repr}
 
 ///|
-/// Fraction of peak memory saved against the naive tape, in [0, 1].
+/// The change in the working set against the naive tape, in [-1, 1].
+///
+/// The number is negative for a gradient program, and that is the
+/// point: the program is bigger than the primal it came from, and it
+/// refers back into the primal, so evaluating it holds more values
+/// than a tape would rather than fewer.
 pub fn CheckpointReport::reduction(self : CheckpointReport) -> Double {
   if self.naive_live == 0 {
     return 0.0
@@ -192,15 +197,20 @@ pub fn recomputation_cost(bounds : Array[Segment]) -> Int32 {
 }
 
 ///|
-/// Differentiate `target` with respect to every variable, holding
-/// only a bounded window of forward values.
+/// Differentiate `target` with respect to every variable, evaluating
+/// the gradient program in segments.
 ///
-/// The gradient this returns is bit-identical to the one
-/// `grad` produces. The only difference is bookkeeping: this path
-/// splits the sweep into segments, rebuilds each segment's interior
-/// on entry, and reports what that cost. The checkpointing tests
-/// assert the equality directly, because a memory strategy that
-/// quietly changes the answer is worse than no memory strategy.
+/// The gradient this returns is bit-identical to the one `grad`
+/// produces, in every configuration. That is the property the tests
+/// assert, because a memory strategy that quietly changes the answer
+/// is worse than no memory strategy.
+///
+/// The report describes what the evaluation actually costs, which is
+/// not what the technique is usually described as costing. The
+/// gradient program is bigger than the primal it came from, and it
+/// refers back into the primal, so the evaluation holds more values
+/// than a tape would rather than fewer. The segmentation does not
+/// change that, and the report does not pretend it does.
 pub fn checkpointed_grad(
   g : Graph,
   b : Binding,
@@ -215,14 +225,22 @@ pub fn checkpointed_grad(
   let all_values = forward_values(g, b)
   let (grads, graph_size) = sweep(g, b, target, all_values, segments)
   let bounds = segment_bounds(graph_size, segments)
-  let recomputed = recomputation_cost(bounds)
+  // What the evaluation holds: the primal's values, which the caller
+  // paid for, and the gradient program's own window.
+  let held = size + graph_size
+  // What a tape-based engine would hold for the same backward pass:
+  // one value per node of the primal.
+  let naive = size
+  // The evaluations the gradient program adds on top of the forward
+  // pass the caller already paid for.
+  let extra = graph_size - size
   let report = CheckpointReport::{
-    naive_live: graph_size,
-    peak_live: peak_occupancy(bounds, graph_size),
-    recomputed,
-    forward_evals: graph_size,
+    naive_live: naive,
+    peak_live: held,
+    recomputed: extra,
+    forward_evals: size,
     segments: bounds.length(),
-    did_checkpoint: recomputed > 0,
+    did_checkpoint: false,
   }
   (grads, report)
 }

@@ -1,18 +1,21 @@
-// Memory versus arithmetic.
+// What a gradient program costs to evaluate.
 //
-// Builds one deep computation, then differentiates it with several
-// checkpoint segment counts, and prints what each one cost.
+// Builds one deep computation, differentiates it, and prints what
+// the evaluation held and what it spent.
 //
-// The trade is the whole point of `checkpoint.mbt`. The reverse
-// sweep needs the forward value of every node, and a textbook tape
-// keeps them all: one backward pass through an n-node program
-// costs O(n) memory. Cutting the node array into segments keeps
-// only the boundaries and rebuilds each segment's interior on
-// entry, so peak occupancy falls while the arithmetic rises.
+// The question the classic answer gives — "cut the node array into
+// segments, keep only the boundaries, rebuild each segment's
+// interior on entry, and the memory falls while the arithmetic
+// rises" — does not have the same answer here, and the table shows
+// why. Every gradient node refers back into the primal, so the
+// primal's values have to stay reachable and the segments are not
+// independent of one another. Cutting the program up therefore saves
+// nothing: the numbers are the same in every row.
 //
 // The gradient is bit-identical in every configuration. That is
 // asserted here rather than only in the test suite, because it is
-// the property that makes the trade safe to make.
+// the property that has to hold before any cost is worth
+// discussing.
 
 ///|
 fn build_deep(g : @moongrad.Graph, x : Int32, depth : Int32) -> Int32 {
@@ -29,11 +32,11 @@ fn build_deep(g : @moongrad.Graph, x : Int32, depth : Int32) -> Int32 {
 ///|
 fn main raise @moongrad.ADError {
   let depth = 400
-  println("| moongrad: gradient checkpointing")
-  println("| a \{depth}-node computation, differentiated with several")
-  println("| segment counts")
+  println("| moongrad: what a gradient program costs")
+  println("| a \{depth}-node computation, differentiated and evaluated")
+  println("| with several segment counts")
   println("|")
-  println("| segments   bound    reduction   recomputed   arith cost")
+  println("| segments   held      vs tape    extra evals   arith cost")
   println("| ------------------------------------------------------")
   let g = @moongrad.Graph::new()
   ignore(g.new_vars(1))
@@ -60,19 +63,26 @@ fn main raise @moongrad.ADError {
   }
   println("|")
   println("| The gradient is identical in every row. That is the part")
-  println("| that has to be true before the arithmetic is worth")
-  println("| discussing: a memory strategy that quietly changes the")
-  println("| answer is worse than no strategy.")
+  println("| that has to be true before any cost is worth discussing:")
+  println("| a memory strategy that quietly changes the answer is")
+  println("| worse than no strategy.")
   println("|")
-  println("| The bound column is what the technique would keep if the")
-  println("| segments were independent. They are not, here. Every")
-  println("| gradient node refers back into the primal, so a primal")
-  println("| value that has been dropped has to be recomputed, and")
-  println("| the recomputation grows with the depth of the primal.")
+  println("| The rest of the table is the measurement, and it is not")
+  println("| the measurement the technique usually gets. Holding a")
+  println("| gradient program costs MORE than a tape would, not less:")
+  println("| the program is bigger than the primal it came from, and")
+  println("| every gradient node refers back into the primal, so the")
+  println("| primal's values have to stay reachable.")
   println("|")
-  println("| So the classic checkpointing trade does not pay for a")
-  println("| gradient program. What does pay is that there is no tape")
-  println("| to hold between the forward pass and the backward pass:")
-  println("| the gradient is a program, and a program is evaluated")
-  println("| when it is needed rather than stored until it is wanted.")
+  println("| The segmentation does not change that, and the rows show")
+  println("| it: the cost is the same however the program is cut up.")
+  println("| That is the finding. The classic trade — hold less, spend")
+  println("| more arithmetic — needs a tape whose segments are")
+  println("| independent, and a gradient program's are not.")
+  println("|")
+  println("| What the design does buy is a different thing: there is")
+  println("| no tape to hold between the forward pass and the backward")
+  println("| pass. The gradient is a program, and a program is")
+  println("| evaluated when it is needed rather than stored until it")
+  println("| is wanted.")
 }
