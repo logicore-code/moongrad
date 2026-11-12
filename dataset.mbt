@@ -151,11 +151,19 @@ pub fn TabularDataset::batch(
   if size <= 0 || index < 0 {
     return (x, y)
   }
-  let start = index * size
+  // The start is computed in a wider type: `index * size` overflows
+  // a 32-bit integer for a large batch, and a wrapped start would
+  // read the wrong rows — or none.
+  let start = index.to_int64() * size.to_int64()
+  let end = start + size.to_int64()
+  let rows = self.rows().to_int64()
+  if start >= rows {
+    return (x, y)
+  }
   let mut i = start
-  while i < start + size && i < self.rows() {
-    x.push(self.x[i])
-    y.push(self.y[i])
+  while i < end && i < rows {
+    x.push(self.x[i.to_int()])
+    y.push(self.y[i.to_int()])
     i = i + 1
   }
   (x, y)
@@ -176,16 +184,20 @@ pub fn TabularDataset::kfold(
   if k <= 0 {
     return folds
   }
-  let n = self.rows()
+  // The fold boundaries are computed in a wider type: `i * n`
+  // overflows a 32-bit integer for a large fold count, and a
+  // wrapped boundary would read out of range.
+  let n = self.rows().to_int64()
+  let kk = k.to_int64()
   for i = 0; i < k; i = i + 1 {
-    let start = i * n / k
-    let end = (i + 1) * n / k
+    let start = i.to_int64() * n / kk
+    let end = (i.to_int64() + 1) * n / kk
     let x : Array[Array[Double]] = []
     let y : Array[Double] = []
     let mut j = start
     while j < end {
-      x.push(self.x[j])
-      y.push(self.y[j])
+      x.push(self.x[j.to_int()])
+      y.push(self.y[j.to_int()])
       j = j + 1
     }
     folds.push({ x, y, })
