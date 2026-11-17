@@ -18,7 +18,7 @@
 // gradients. They agree.
 
 ///|
-fn main raise @moongrad.ADError {
+fn main {
   println("| moongrad: second-order optimisation")
   println("|")
   println("| f(w) = sum_i (w_i - c_i)^2, so the gradient is 2(w - c)")

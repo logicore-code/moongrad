@@ -22,11 +22,7 @@
 ///
 /// The target has to be a scalar. A tensor-valued objective has no
 /// single Hessian; it has one per output element.
-pub fn t_hessian(
-  g : TGraph,
-  b : TBinding,
-  target : Int32,
-) -> Matrix raise ADError {
+pub fn t_hessian(g : TGraph, b : TBinding, target : Int32) -> Matrix {
   let first = compile_tensor_gradient(g, b, target)
   let offsets = t_slot_offsets(b.inputs)
   let total = t_total_size(b.inputs)
@@ -80,9 +76,9 @@ fn t_second_sweep(
   first : TGradGraph,
   b : TBinding,
   element : Int32,
-) -> (Array[Tensor], Array[Tensor]) raise ADError {
+) -> (Array[Tensor], Array[Tensor]) {
   let second = compile_tensor_gradient(first.graph, b, element)
-  evaluate_tensor_gradient(second, b)
+  t_eval_tensor_gradient(second, b)
 }
 
 ///|
@@ -91,11 +87,7 @@ fn t_second_sweep(
 /// Same construction as `t_hessian`, with the parameters in place of
 /// the inputs. The flattened parameter space is the concatenation of
 /// every parameter slot's elements.
-pub fn t_param_hessian(
-  g : TGraph,
-  b : TBinding,
-  target : Int32,
-) -> Matrix raise ADError {
+pub fn t_param_hessian(g : TGraph, b : TBinding, target : Int32) -> Matrix {
   let first = compile_tensor_gradient(g, b, target)
   let offsets = t_slot_offsets(b.params)
   let total = t_total_size(b.params)
@@ -124,11 +116,7 @@ pub fn t_param_hessian(
 /// `d^2 f / d w_i d x_j`. It is the block a Gauss-Newton step needs,
 /// and it is the same construction as the other two: pick out one
 /// element of the gradient and sweep the gradient graph again.
-pub fn t_mixed_hessian(
-  g : TGraph,
-  b : TBinding,
-  target : Int32,
-) -> Matrix raise ADError {
+pub fn t_mixed_hessian(g : TGraph, b : TBinding, target : Int32) -> Matrix {
   let first = compile_tensor_gradient(g, b, target)
   let input_offsets = t_slot_offsets(b.inputs)
   let param_offsets = t_slot_offsets(b.params)

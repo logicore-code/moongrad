@@ -1344,6 +1344,20 @@ pub fn evaluate_tensor_gradient(
       shape_list(b.inputs.map(fn(t : Tensor) { t.shape })),
     )
   }
+  t_eval_tensor_gradient(grad, b)
+}
+
+///|
+/// Evaluate a compiled gradient without checking the shapes.
+///
+/// The callers that compile and evaluate against the same binding
+/// cannot get the shapes wrong, so they use this and stay free of the
+/// error handling; the one that can -- a caller holding a compiled
+/// program and a different binding -- uses the checked form.
+fn t_eval_tensor_gradient(
+  grad : TGradGraph,
+  b : TBinding,
+) -> (Array[Tensor], Array[Tensor]) {
   let values = t_forward(grad.graph, b)
   let input_grads : Array[Tensor] = []
   for i = 0; i < grad.input_adj.length(); i = i + 1 {
@@ -1383,9 +1397,9 @@ fn shape_list(shapes : Array[Array[Int32]]) -> String {
 /// This is the convenience form of `compile_tensor_gradient` followed
 /// by `evaluate_tensor_gradient`. The program underneath is the same
 /// one; this only collapses it to numbers.
-pub fn t_grad(g : TGraph, b : TBinding, target : Int32) -> TGrad raise ADError {
+pub fn t_grad(g : TGraph, b : TBinding, target : Int32) -> TGrad {
   let grad = compile_tensor_gradient(g, b, target)
-  let (input_grads, param_grads) = evaluate_tensor_gradient(grad, b)
+  let (input_grads, param_grads) = t_eval_tensor_gradient(grad, b)
   { input_grads, param_grads, output: grad.output, }
 }
 

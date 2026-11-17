@@ -381,7 +381,7 @@ pub fn dense_newton_step(
   b : TBinding,
   target : Int32,
   damping : Double,
-) -> Array[Double]? raise ADError {
+) -> Array[Double]? {
   let h = t_param_hessian(g, b, target)
   let first = compile_tensor_gradient(g, b, target)
   let gvals = t_forward(first.graph, b)

@@ -52,7 +52,7 @@ fn bracket(items : Array[String]) -> String {
 }
 
 ///|
-fn main raise @moongrad.ADError {
+fn main {
   println("| moongrad: the Hessian of a tensor objective")
   println("|")
   println("| f(x) = sum_i (x_i - c_i)^2")
