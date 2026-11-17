@@ -191,17 +191,16 @@ pub fn t_relu(a : Tensor) -> Tensor {
 }
 
 ///|
-/// `log(1 + e^x)`, evaluated as `max(x, 0) + log(1 + e^-|x|)` so it
-/// does not overflow for large `x`.
+/// `log(1 + e^x)`, evaluated as `max(x, 0) + log1p(e^-|x|)` so it
+/// does not overflow for large `x` and does not lose the answer for
+/// large negative `x`.
+///
+/// This is the one operator, and it is deliberately *one* operator:
+/// `t_unary(Softplus)` and the scalar engine's `apply_unary` compute
+/// the same function, and two forms of one function are two chances
+/// to disagree about what it is.
 pub fn t_softplus(a : Tensor) -> Tensor {
-  let out = Tensor::zeros(a.shape)
-  for i = 0; i < a.data.length(); i = i + 1 {
-    let x = a.data[i]
-    let mx = if x > 0.0 { x } else { 0.0 }
-    let ax = if x < 0.0 { -x } else { x }
-    out.data[i] = mx + @math.ln(1.0 + @math.exp(-ax))
-  }
-  out
+  t_unary(UnaryOp::Softplus, a)
 }
 
 ///|
@@ -307,6 +306,29 @@ pub fn log1p(u : Double) -> Double {
   } else {
     u - u * u * 0.5 + u * u * u / 3.0
   }
+}
+
+///|
+/// A mask that keeps each element with probability `1 - rate`.
+///
+/// The draws are deterministic: the same seed and the same call count
+/// give the same mask, and a different call count gives a different
+/// one. That is what makes a run with a given seed reproducible, and
+/// what makes a redrawn mask a different mask rather than the same
+/// one again.
+pub fn t_keep_mask(
+  rate : Double,
+  seed : Int32,
+  calls : Int32,
+  shape : Array[Int32],
+) -> Tensor {
+  let keep = 1.0 - rate
+  let rng = Lcg::new(seed + calls * 7919)
+  let mask = Tensor::zeros(shape)
+  for i = 0; i < mask.data.length(); i = i + 1 {
+    mask.data[i] = if rng.next_f64() < keep { 1.0 } else { 0.0 }
+  }
+  mask
 }
 
 ///|

@@ -45,7 +45,12 @@ pub(all) struct BatchTrainer {
   graph : TGraph
   binding : TBinding
   /// The gradient program, compiled once.
-  mut grad : TGradGraph
+  ///
+  /// It is compiled on the first step rather than when the trainer is
+  /// built, because the backward rules bake the operand shapes into
+  /// the program and the shapes come from the binding — which holds a
+  /// batch only once the trainer has filled it.
+  mut grad : TGradGraph?
   /// The host-side parameters, which the optimiser updates.
   params : Array[Tensor]
   /// The optimiser's state.
@@ -139,12 +144,13 @@ pub fn BatchTrainer::new(
   let trainer = {
     graph,
     binding,
-    // A placeholder: the real gradient is compiled below, once the
-    // binding holds a batch. The backward rules bake the operand
-    // shapes into the program, and the shapes come from the values
-    // at compile time — so compiling against an empty binding would
-    // bake in the wrong ones.
-    grad: compile_tensor_gradient(graph, binding, -1),
+    // The gradient is compiled on the first step: the backward rules
+    // bake the operand shapes into the program, and the shapes come
+    // from the binding, which holds a real batch only once the
+    // trainer has filled it. Compiling here would compile against a
+    // binding with no batch in it, and the program would be the
+    // gradient of a differently-shaped function.
+    grad: None,
     params,
     opt,
     loss_node,
@@ -164,14 +170,6 @@ pub fn BatchTrainer::new(
     drop_last,
   }
   trainer.shuffle(seed)
-  // The backward rules bake the operand shapes into the program, so
-  // the binding has to hold a real batch before the gradient is
-  // compiled. The fill is undone afterwards: it was there to give the
-  // compiler the right shapes, not to consume a batch.
-  let cursor = trainer.cursor
-  ignore(trainer.fill_batch())
-  trainer.cursor = cursor
-  trainer.grad = compile_tensor_gradient(graph, binding, loss_node)
   trainer
 }
 
@@ -206,6 +204,12 @@ pub fn BatchTrainer::shuffle(self : BatchTrainer, seed : Int32) -> Unit {
 /// built for. The binding is not written at all in that case, so a
 /// step that gets one is skipped rather than run on the previous
 /// batch's rows.
+///
+/// A row whose width is not the width of the dataset is a ragged
+/// dataset, and the batch is refused: the row is not consumed, the
+/// cursor stays where it was, and the binding is not written. The
+/// same row is refused again on the next step, because the data is
+/// wrong and not the run.
 pub fn BatchTrainer::fill_batch(self : BatchTrainer) -> Int32 {
   let n = self.order.length()
   let want = self.batch_size
@@ -228,14 +232,15 @@ pub fn BatchTrainer::fill_batch(self : BatchTrainer) -> Int32 {
       self.shuffle(self.seed + self.epoch)
     }
     let idx = self.order[cursor]
-    cursor = cursor + 1
     let row = self.features[idx]
     // Every row has to be the same width: the batch is one tensor,
     // and a row of a different width would land at the wrong
-    // offsets.
+    // offsets. The row is checked before the cursor moves past it, so
+    // a ragged dataset is refused rather than losing the sample.
     if row.length() != width {
       return 0
     }
+    cursor = cursor + 1
     for j = 0; j < row.length(); j = j + 1 {
       let at = taken * width + j
       self.batch_features[at] = row[j]
@@ -274,6 +279,11 @@ pub fn BatchTrainer::fill_batch(self : BatchTrainer) -> Int32 {
 /// program is re-evaluated against the same binding, and the
 /// optimiser updates the host-side parameter tensors.
 pub fn BatchTrainer::step(self : BatchTrainer) -> BatchStep {
+  // The graph's stochastic inputs — a dropout mask, say — are redrawn
+  // before every step, so that the layer is a dropout rather than a
+  // fixed random projection. The forward pass and the gradient
+  // program read the mask from the same slot, so they agree.
+  self.graph.refresh_stochastic(self.binding)
   let used = self.fill_batch()
   if used < self.batch_size {
     // The batch was short — the last one of the epoch, dropped on
@@ -281,17 +291,27 @@ pub fn BatchTrainer::step(self : BatchTrainer) -> BatchStep {
     // batch's rows, which is worse than not stepping at all.
     return { loss: 0.0, grad_norm: 0.0, samples: used, ok: false, }
   }
-  if !self.grad.shapes_match(self.binding) {
+  // The program is compiled on the first step, once the binding holds
+  // a batch and the shapes it has to be compiled for are known.
+  let grad = match self.grad {
+    Some(g) => g
+    None => {
+      let g = compile_tensor_gradient(self.graph, self.binding, self.loss_node)
+      self.grad = Some(g)
+      g
+    }
+  }
+  if !grad.shapes_match(self.binding) {
     // The batch changed shape, which the compiled program was not
     // compiled for. Saying so beats returning the gradient of a
     // different function.
     return { loss: 0.0, grad_norm: 0.0, samples: used, ok: false, }
   }
-  let values = t_forward(self.grad.graph, self.binding)
+  let values = t_forward(grad.graph, self.binding)
   let loss_value = values[self.loss_node].sum()
   let grads : Array[Tensor] = []
-  for i = 0; i < self.grad.param_adj.length(); i = i + 1 {
-    grads.push(values[self.grad.param_adj[i]])
+  for i = 0; i < grad.param_adj.length(); i = i + 1 {
+    grads.push(values[grad.param_adj[i]])
   }
   let gn = grad_norm_tensors(grads)
   self.step_count = self.step_count + 1

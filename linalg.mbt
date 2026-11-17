@@ -30,10 +30,12 @@
 /// The method applies a sequence of rotations that zero out one
 /// off-diagonal entry at a time. After enough sweeps the matrix is
 /// diagonal, and its diagonal is the eigenvalue vector.
-pub fn eigenvalues(a : Tensor) -> Array[Double] {
+pub fn eigenvalues(a : Tensor) -> Array[Double]? {
   let n = a.shape[0]
   if a.shape.length() != 2 || a.shape[1] != n {
-    return []
+    // A non-square matrix has no eigenvalues, and an empty list is a
+    // plausible-looking answer for one that does.
+    return None
   }
   let m = a.copy()
   // Six sweeps is ample: each sweep zeroes every off-diagonal
@@ -74,7 +76,7 @@ pub fn eigenvalues(a : Tensor) -> Array[Double] {
   for i = 0; i < n; i = i + 1 {
     out.push(m.mget(i, i))
   }
-  out
+  Some(out)
 }
 
 ///|
@@ -280,10 +282,12 @@ pub fn inverse(a : Tensor) -> Tensor? {
 ///
 /// The sign of the determinant flips with every row swap, so the
 /// pivoting has to be tracked rather than ignored.
-pub fn determinant(a : Tensor) -> Double {
+pub fn determinant(a : Tensor) -> Double? {
   let n = a.shape[0]
   if a.shape.length() != 2 || a.shape[1] != n {
-    return 0.0
+    // The determinant is only defined for a square matrix, and zero is
+    // a plausible-looking answer for a matrix that has none.
+    return None
   }
   let m = a.copy()
   let mut det = 1.0
@@ -298,7 +302,9 @@ pub fn determinant(a : Tensor) -> Double {
       }
     }
     if best_val < 1.0e-14 {
-      return 0.0
+      // A singular matrix has determinant zero, which is a value, not
+      // a failure.
+      return Some(0.0)
     }
     if best != col {
       for k = 0; k < n; k = k + 1 {
@@ -319,7 +325,7 @@ pub fn determinant(a : Tensor) -> Double {
       }
     }
   }
-  det
+  Some(det)
 }
 
 ///|
@@ -403,11 +409,11 @@ pub fn qr(a : Tensor) -> (Tensor, Tensor)? {
 /// resulting columns are the singular values. It is more accurate
 /// than the Golub-Kahan bidiagonalisation for small matrices and
 /// far shorter.
-pub fn singular_values(a : Tensor) -> Array[Double] {
+pub fn singular_values(a : Tensor) -> Array[Double]? {
   let m = a.shape[0]
   let n = a.shape[1]
   if a.shape.length() != 2 {
-    return []
+    return None
   }
   let u = a.copy()
   let v = Tensor::identity(n)
@@ -458,7 +464,7 @@ pub fn singular_values(a : Tensor) -> Array[Double] {
     }
     out.push(acc.sqrt())
   }
-  out
+  Some(out)
 }
 
 ///|

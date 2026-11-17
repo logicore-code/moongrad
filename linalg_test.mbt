@@ -9,6 +9,42 @@
 // are the statements a reviewer can verify by hand, and they catch
 // the class of bug where the code runs but is subtly wrong.
 
+
+///|
+/// The eigenvalues of a square matrix, or a failure the test reports.
+fn eigenvalues_of(m : @moongrad.Tensor) -> Array[Double] {
+  match @moongrad.eigenvalues(m) {
+    Some(x) => x
+    None => {
+      check(false, "the matrix should have eigenvalues")
+      []
+    }
+  }
+}
+
+///|
+/// The singular values of a matrix, or a failure the test reports.
+fn singular_values_of(m : @moongrad.Tensor) -> Array[Double] {
+  match @moongrad.singular_values(m) {
+    Some(x) => x
+    None => {
+      check(false, "the matrix should have singular values")
+      []
+    }
+  }
+}
+
+///|
+/// The determinant of a square matrix, or a failure the test reports.
+fn determinant_of(m : @moongrad.Tensor) -> Double {
+  match @moongrad.determinant(m) {
+    Some(x) => x
+    None => {
+      check(false, "the matrix should have a determinant")
+      0.0
+    }
+  }
+}
 ///|
 fn mat(rows : Array[Array[Double]]) -> @moongrad.Tensor {
   match @moongrad.Tensor::matrix(rows) {
@@ -32,7 +68,7 @@ fn close(a : Double, b : Double, tol : Double) -> Bool {
 ///|
 test "eigenvalues_of_a_diagonal_matrix_are_its_diagonal" {
   let m = mat([[3.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 2.0]])
-  let ev = @moongrad.eigenvalues(m)
+  let ev = eigenvalues_of(m)
   assert_eq(ev.length(), 3)
   let mut total = 0.0
   for e in ev {
@@ -46,7 +82,7 @@ test "eigenvalues_of_a_diagonal_matrix_are_its_diagonal" {
 ///|
 test "eigenvalues_of_a_symmetric_matrix_sum_to_the_trace" {
   let m = mat([[2.0, 1.0, 0.0], [1.0, 3.0, 1.0], [0.0, 1.0, 4.0]])
-  let ev = @moongrad.eigenvalues(m)
+  let ev = eigenvalues_of(m)
   let mut total = 0.0
   for e in ev {
     total = total + e
@@ -61,7 +97,7 @@ test "eigenvalues_of_a_symmetric_matrix_sum_to_the_trace" {
 test "eigenvalues_of_a_rotation_like_matrix" {
   // [[2, 1], [1, 2]] has eigenvalues 1 and 3.
   let m = mat([[2.0, 1.0], [1.0, 2.0]])
-  let ev = @moongrad.eigenvalues(m)
+  let ev = eigenvalues_of(m)
   let mut lo = ev[0]
   let mut hi = ev[1]
   if lo > hi {
@@ -77,7 +113,7 @@ test "eigenvalues_of_a_rotation_like_matrix" {
 test "eigenvalues_of_a_rank_one_matrix_are_n_and_zero" {
   // [[2, 2], [2, 2]] has eigenvalues 4 and 0.
   let m = mat([[2.0, 2.0], [2.0, 2.0]])
-  let ev = @moongrad.eigenvalues(m)
+  let ev = eigenvalues_of(m)
   let mut lo = ev[0]
   let mut hi = ev[1]
   if lo > hi {
@@ -225,8 +261,8 @@ test "determinant_of_a_known_matrix" {
   // The determinant of [[1, 2], [3, 4]] is -2.
   let m = mat([[1.0, 2.0], [3.0, 4.0]])
   check(
-    close(@moongrad.determinant(m), -2.0, 1.0e-9),
-    "the @moongrad.determinant should be -2, got \{@moongrad.determinant(m)}",
+    close(determinant_of(m), -2.0, 1.0e-9),
+    "the @moongrad.determinant should be -2, got \{determinant_of(m)}",
   )
 }
 
@@ -234,8 +270,8 @@ test "determinant_of_a_known_matrix" {
 test "determinant_of_a_triangular_matrix_is_the_product_of_the_diagonal" {
   let m = mat([[2.0, 3.0, 4.0], [0.0, 5.0, 6.0], [0.0, 0.0, 7.0]])
   check(
-    close(@moongrad.determinant(m), 70.0, 1.0e-9),
-    "the @moongrad.determinant should be 70, got \{@moongrad.determinant(m)}",
+    close(determinant_of(m), 70.0, 1.0e-9),
+    "the @moongrad.determinant should be 70, got \{determinant_of(m)}",
   )
 }
 
@@ -243,7 +279,7 @@ test "determinant_of_a_triangular_matrix_is_the_product_of_the_diagonal" {
 test "determinant_of_a_singular_matrix_is_zero" {
   let m = mat([[1.0, 2.0], [2.0, 4.0]])
   check(
-    close(@moongrad.determinant(m), 0.0, 1.0e-9),
+    close(determinant_of(m), 0.0, 1.0e-9),
     "a singular matrix has @moongrad.determinant zero",
   )
 }
@@ -306,7 +342,7 @@ test "qr_produces_orthonormal_columns" {
 ///|
 test "singular_values_of_a_diagonal_matrix_are_its_diagonal" {
   let m = mat([[3.0, 0.0], [0.0, 2.0]])
-  let sv = @moongrad.singular_values(m)
+  let sv = singular_values_of(m)
   let mut lo = sv[0]
   let mut hi = sv[1]
   if lo > hi {
@@ -322,7 +358,7 @@ test "singular_values_of_a_diagonal_matrix_are_its_diagonal" {
 test "singular_values_of_a_rank_one_matrix_include_a_zero" {
   // [[1, 2], [2, 4]] has rank one, so one singular value is zero.
   let m = mat([[1.0, 2.0], [2.0, 4.0]])
-  let sv = @moongrad.singular_values(m)
+  let sv = singular_values_of(m)
   let mut smallest = sv[0]
   for v in sv {
     if v < smallest {

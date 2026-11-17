@@ -154,9 +154,11 @@ pub fn Embedding::write_back(self : Embedding, b : TBinding) -> Unit {
 /// The mask is an **input** to the graph rather than a constant in
 /// it, so it can be redrawn between steps without rebuilding the
 /// graph — which is what makes dropout different from a fixed
-/// random projection. The training loop calls `refresh` before each
-/// step; the forward pass and the gradient program then see the same
-/// mask, so the gradient matches the output it belongs to.
+/// random projection. The layer registers the mask with the graph
+/// when it is applied, and a trainer built on that graph redraws it
+/// before every step; the forward pass and the gradient program then
+/// see the same mask, so the gradient matches the output it belongs
+/// to.
 ///
 /// The generator is deterministic, so a training run with a given
 /// seed is reproducible. Dropout is not differentiable in the usual
@@ -172,6 +174,10 @@ pub(all) struct Dropout {
   /// The mask's shape.
   mut shape : Array[Int32]
   /// The mask the layer is currently using.
+  ///
+  /// It holds a one for a kept unit and a zero for a dropped one. The
+  /// scaling by the keep probability is not in the mask: it is a
+  /// constant, and it belongs in the graph.
   mut mask : Tensor
   mut calls : Int32
 }
@@ -196,6 +202,10 @@ pub fn Dropout::new(rate : Double, seed : Int32) -> Dropout {
 /// The mask's shape is given rather than read from the graph: the
 /// graph does not know the shape of a tensor until the first forward
 /// pass, and the mask has to exist before that.
+///
+/// The units that are kept are scaled by one over the keep
+/// probability, which is a constant and belongs in the graph rather
+/// than in the mask: only the mask is random.
 pub fn Dropout::apply(
   self : Dropout,
   g : TGraph,
@@ -205,20 +215,25 @@ pub fn Dropout::apply(
   self.slot = g.new_variable_slot()
   self.shape = shape.copy()
   self.draw()
-  g.mul(x, g.variable(self.slot))
+  let keep = 1.0 - self.rate
+  let scaled = g.scale_tensor(x, Tensor::filled([1], 1.0 / keep))
+  // The mask is registered with the graph, so that a trainer built on
+  // this graph redraws it before every step.
+  g.add_stochastic({
+    slot: self.slot,
+    shape: self.shape.copy(),
+    seed: self.seed,
+    rate: self.rate,
+    calls: self.calls,
+  })
+  g.mul(scaled, g.variable(self.slot))
 }
 
 ///|
 /// Draw a mask and keep it.
 fn Dropout::draw(self : Dropout) -> Unit {
-  let keep = 1.0 - self.rate
-  let rng = Lcg::new(self.seed + self.calls * 7919)
+  self.mask = t_keep_mask(self.rate, self.seed, self.calls, self.shape)
   self.calls = self.calls + 1
-  let mask = Tensor::zeros(self.shape)
-  for i = 0; i < mask.data.length(); i = i + 1 {
-    mask.data[i] = if rng.next_f64() < keep { 1.0 / keep } else { 0.0 }
-  }
-  self.mask = mask
 }
 
 ///|
@@ -240,6 +255,11 @@ pub fn Dropout::bind(self : Dropout, b : TBinding) -> Unit {
 /// from one fixed mask for the whole run. The forward pass and the
 /// gradient program both read the mask from the same slot, so they
 /// always agree.
+///
+/// A trainer does this for the layer without being asked: the mask is
+/// registered with the graph when the layer is applied, and the
+/// trainer redraws the graph's stochastic inputs before every step.
+/// This is the same thing done by hand.
 pub fn Dropout::refresh(self : Dropout, b : TBinding) -> Unit {
   if self.slot < 0 {
     return

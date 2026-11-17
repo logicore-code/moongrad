@@ -234,7 +234,12 @@ fn evaluate_tensor_once() -> Unit {
   b.set_input(0, @moongrad.Tensor::zeros([tensor_rows, tensor_width]))
   b.set_input(1, @moongrad.Tensor::zeros([tensor_rows, tensor_width]))
   let compiled = @moongrad.compile_tensor_gradient(g, b, loss)
-  let _ = @moongrad.evaluate_tensor_gradient(compiled, b)
+  // The program is evaluated against the binding it was compiled for,
+  // so the shape check cannot fail; the catch is here because the
+  // benchmark's callback cannot raise.
+  let _ = try @moongrad.evaluate_tensor_gradient(compiled, b) catch {
+    _ => ([], [])
+  }
 }
 
 ///|

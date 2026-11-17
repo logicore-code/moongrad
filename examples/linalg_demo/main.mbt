@@ -31,7 +31,10 @@ fn main {
   println("| A = \{a.preview()}")
 
   // The eigenvalues of a symmetric matrix.
-  let ev = @moongrad.eigenvalues(a)
+  let ev = match @moongrad.eigenvalues(a) {
+    Some(x) => x
+    None => return
+  }
   let sorted = ev.copy()
   for i = 0; i < sorted.length(); i = i + 1 {
     for j = i + 1; j < sorted.length(); j = j + 1 {
@@ -77,7 +80,11 @@ fn main {
     Some(inv) => println("| A^-1 = \{inv.preview()}")
     None => println("| the matrix should be invertible")
   }
-  println("| det(A) = \{@moongrad.format_double(@moongrad.determinant(a))}")
+  let det = match @moongrad.determinant(a) {
+    Some(x) => x
+    None => return
+  }
+  println("| det(A) = \{@moongrad.format_double(det)}")
   println("|")
 
   // The QR decomposition of a tall matrix.
@@ -94,7 +101,10 @@ fn main {
 
   // The singular values, which for a rank-one matrix include a zero.
   let rank_one = mat([[1.0, 2.0], [2.0, 4.0]])
-  let sv = @moongrad.singular_values(rank_one)
+  let sv = match @moongrad.singular_values(rank_one) {
+    Some(x) => x
+    None => return
+  }
   println(
     "| singular values of [[1,2],[2,4]] = \{@moongrad.format_double(sv[0])}, \{@moongrad.format_double(sv[1])}",
   )

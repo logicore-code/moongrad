@@ -204,18 +204,42 @@ pub fn Tensor::at(self : Tensor, i : Int32) -> Double {
 /// The general `get` takes a multi-index array, which is the right
 /// shape for a tensor of any rank but reads badly in the linear
 /// algebra code, where every access is two-dimensional.
+///
+/// The contract is rank two and it is enforced. A tensor of another
+/// rank has no `(row, col)` — the flat offset of a row of a rank-3
+/// tensor is not `row * columns + col` — and neither has an index
+/// outside the tensor. Either way there is no element here, so the
+/// answer is not a number rather than a number read from somewhere
+/// else.
 pub fn Tensor::mget(self : Tensor, row : Int32, col : Int32) -> Double {
+  if self.shape.length() != 2 {
+    return 0.0 / 0.0
+  }
+  if row < 0 || row >= self.shape[0] || col < 0 || col >= self.shape[1] {
+    return 0.0 / 0.0
+  }
   self.data[row * self.shape[1] + col]
 }
 
 ///|
 /// Write the element at `(row, col)` of a rank-2 tensor.
+///
+/// The contract is the one `mget` has: the tensor is rank two and the
+/// index is inside it. A write that does not meet the contract is
+/// refused, and the tensor is left alone rather than having some other
+/// element overwritten.
 pub fn Tensor::mset(
   self : Tensor,
   row : Int32,
   col : Int32,
   v : Double,
 ) -> Unit {
+  if self.shape.length() != 2 {
+    return
+  }
+  if row < 0 || row >= self.shape[0] || col < 0 || col >= self.shape[1] {
+    return
+  }
   self.data[row * self.shape[1] + col] = v
 }
 
@@ -225,13 +249,23 @@ pub fn Tensor::mset(
 /// The result is a copy, not a view: the row's elements are gathered
 /// into a fresh array, so writing to it does not write through to
 /// the tensor it came from.
-pub fn Tensor::row(self : Tensor, i : Int32) -> Tensor {
-  let cols = if self.shape.length() >= 2 { self.shape[1] } else { 1 }
+///
+/// A vector has no rows, and asking for one is a mistake rather than
+/// a request for a one-element row, so it is refused — the same way
+/// `column` refuses a vector.
+pub fn Tensor::row(self : Tensor, i : Int32) -> Tensor? {
+  if self.shape.length() != 2 {
+    return None
+  }
+  let cols = self.shape[1]
+  if i < 0 || i >= self.shape[0] {
+    return None
+  }
   let data : Array[Double] = []
   for j = 0; j < cols; j = j + 1 {
     data.push(self.data[i * cols + j])
   }
-  { shape: [cols], data, }
+  Some({ shape: [cols], data, })
 }
 
 ///|
@@ -240,7 +274,10 @@ pub fn Tensor::row(self : Tensor, i : Int32) -> Tensor {
 /// A vector has no columns, and asking for one is a mistake rather
 /// than a request for an empty tensor, so it is refused.
 pub fn Tensor::column(self : Tensor, j : Int32) -> Tensor? {
-  if self.shape.length() < 2 {
+  if self.shape.length() != 2 {
+    return None
+  }
+  if j < 0 || j >= self.shape[1] {
     return None
   }
   let rows = self.shape[0]
@@ -422,7 +459,6 @@ pub fn broadcast_map(src : Array[Int32], dst : Array[Int32]) -> Array[Int32]? {
     Some(s) => s
     None => return None
   }
-  let dst_strides = Tensor::strides(aligned)
   let src_strides = Tensor::strides(src)
   // The source's axis 0 lines up with the destination's axis
   // `dst.length() - src.length()`.
@@ -460,7 +496,6 @@ pub fn broadcast_map(src : Array[Int32], dst : Array[Int32]) -> Array[Int32]? {
     }
     map.push(offset)
   }
-  ignore(dst_strides)
   Some(map)
 }
 

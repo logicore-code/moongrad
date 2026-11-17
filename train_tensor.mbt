@@ -61,8 +61,7 @@ pub(all) struct TensorTrainer {
   /// it has to be redrawn between steps for the layer to be a dropout
   /// rather than a fixed random projection. The callback is given
   /// the binding to write into.
-  mut refreshers : Array[(TBinding) -> Unit]
-  /// The node the loss is rooted at.
+  mut refreshers : Array[(TBinding) -> Unit]  /// The node the loss is rooted at.
   loss_node : Int32
   /// The loss at every step so far.
   history : Array[Double]
@@ -103,7 +102,7 @@ pub fn TensorTrainer::new(
     shapes.push(p.shape.copy())
   }
   let opt = TensorOptState::new(opt_kind, shapes)
-  {
+  let trainer = {
     graph,
     binding,
     grad: None,
@@ -114,15 +113,24 @@ pub fn TensorTrainer::new(
     history: [],
     step_count: 0,
   }
+  // The graph's stochastic inputs — a dropout mask, say — are redrawn
+  // before every step, so that the layer is a dropout rather than a
+  // fixed random projection. The refresher is registered here rather
+  // than left to the caller, because a layer that has one should not
+  // have to be wired into the trainer by hand.
+  trainer.add_refresher(fn(b) { graph.refresh_stochastic(b) })
+  trainer
 }
 
 ///|
 /// Register a callback that redraws a layer's stochastic inputs
 /// before every step.
 ///
-/// A dropout layer is one: its mask lives in an input slot, so
-/// `dropout.refresh` has to be called between steps for the layer to
-/// drop anything at all.
+/// A dropout layer is one: its mask lives in an input slot, so the
+/// mask has to be redrawn between steps for the layer to drop
+/// anything at all. The graph's own stochastic inputs are registered
+/// here when the trainer is built, so this is for the ones a caller
+/// has of its own.
 pub fn TensorTrainer::add_refresher(
   self : TensorTrainer,
   f : (TBinding) -> Unit,

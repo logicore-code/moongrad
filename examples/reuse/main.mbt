@@ -78,7 +78,7 @@ fn pad(s : String, width : Int32) -> String {
 }
 
 ///|
-fn main {
+fn main raise @moongrad.ADError {
   println("| moongrad: one gradient, many inputs")
   println("|")
   println("| f(x) = sum_i relu(x_i) * x_i, so df/dx_i is 2 x_i")

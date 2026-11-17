@@ -49,7 +49,7 @@ fn numeric_grad(f : Objective, x : Array[Double]) -> Array[Double] {
 fn compiled_grad(
   build : (@moongrad.TGraph, @moongrad.TBinding) -> Int32,
   x : Array[Double],
-) -> Array[Double] {
+) -> Array[Double] raise @moongrad.ADError {
   let g = @moongrad.TGraph::new()
   let b = @moongrad.TBinding::new()
   b.set_input(0, @moongrad.Tensor::vector(x))
@@ -65,7 +65,7 @@ fn compare(
   build : (@moongrad.TGraph, @moongrad.TBinding) -> Int32,
   objective : Objective,
   x : Array[Double],
-) -> Bool {
+) -> Bool raise @moongrad.ADError {
   let analytic = compiled_grad(build, x)
   let numeric = numeric_grad(objective, x)
   let mut worst = 0.0
@@ -75,9 +75,15 @@ fn compare(
       worst = d
     }
   }
-  let ok = worst < 1.0e-4
+  // The disagreement between an analytic gradient and a central
+  // difference is the difference's own error, around 1e-10 on these
+  // functions. The threshold is two orders of magnitude above that, so
+  // it would still catch a rule that is wrong in the fourth digit --
+  // and a threshold loose enough to accept one would not be worth
+  // having.
+  let ok = worst < 1.0e-6
   println(
-    "|   \{name}: max |analytic - numeric| = \{@moongrad.format_double(worst)}\{if ok { "" } else { "   <-- MISMATCH" }}",
+    "|   \{name}: max |analytic - numeric| = \{@moongrad.format_double_exact(worst)}\{if ok { "" } else { "   <-- MISMATCH" }}",
   )
   ok
 }
@@ -89,7 +95,7 @@ fn component(g : @moongrad.TGraph, i : Int32) -> Int32 {
 }
 
 ///|
-fn main {
+fn main raise @moongrad.ADError {
   println("| moongrad: gradient check against central differences")
   println("|")
   println("| Every row compares the compiled gradient with a finite")

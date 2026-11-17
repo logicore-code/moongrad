@@ -55,6 +55,9 @@ pub(all) enum TNode {
   /// A slice along one axis.
   Slice(Int32, Int32, Int32, Int32)
   /// Multiply by a constant tensor held in the pool.
+  ///
+  /// Unlike a plain product this does not broadcast the constant, so
+  /// the constant has to have the operand's shape.
   ScaleBy(Int32, Int32)
   /// Read one row of a parameter vector.
   GatherRow(Int32, Int32, Int32)
@@ -150,10 +153,46 @@ pub(all) struct TGraph {
   /// Hash-cons table. Maps a node to the slot that already holds it,
   /// so that two identical computations are one node.
   mut intern_table : @hashmap.HashMap[TNode, Int32]
+  /// The stochastic inputs of the graph, and the draws they are made
+  /// from.
+  ///
+  /// A dropout mask is an input of the graph rather than a constant
+  /// in it, so it has to be redrawn between steps for the layer to be
+  /// a dropout rather than a fixed random projection. The graph
+  /// records what has to be redrawn, and a trainer built on this graph
+  /// redraws it before every step.
+  mut stochastic : Array[TStochastic]
   /// What the simplifier did. Nothing is silent: a reader can see
   /// how many nodes sharing and folding saved.
   mut stats : Stats
 }
+
+///|
+/// A stochastic input of a graph: a mask that is redrawn between
+/// steps.
+///
+/// It is a record of plain values rather than a callback, so that a
+/// graph can hold one and still be printable.
+#derive(Debug)
+pub(all) struct TStochastic {
+  /// The input slot the value is read from.
+  slot : Int32
+  /// The shape of the value.
+  shape : Array[Int32]
+  /// The seed the draws come from.
+  seed : Int32
+  /// The rate of the layer that owns it: the value is kept with
+  /// probability `1 - rate`.
+  rate : Double
+  /// How many draws have been made.
+  ///
+  /// The count is part of the seed, so a redrawn mask is a different
+  /// mask rather than the same one again.
+  mut calls : Int32
+}
+
+///|
+pub extend TStochastic with Debug::{to_repr}
 
 ///|
 pub extend TGraph with Debug::{to_repr}
@@ -171,6 +210,7 @@ pub fn TGraph::new() -> TGraph {
     next_var_slot: 0,
     geo: [],
     intern_table: @hashmap.HashMap([]),
+    stochastic: [],
     stats: {
       nodes_built: 0,
       cse_hits: 0,
@@ -296,9 +336,6 @@ pub fn TGraph::matmul(self : TGraph, a : Int32, b : Int32) -> Int32 {
 }
 
 ///|
-/// Sum along an axis, dropping that axis.
-
-///|
 /// Mean along one axis, dropping the axis.
 pub fn TGraph::mean_axis(self : TGraph, child : Int32, axis : Int32) -> Int32 {
   self.nodes.push(TNode::Mean(child, axis))
@@ -398,6 +435,31 @@ pub fn TGraph::slice(
 }
 
 ///|
+/// Register a stochastic input of the graph.
+///
+/// The value in the slot is redrawn before every step of a training
+/// run, so that the layer that owns it is a random projection that
+/// changes rather than a fixed one.
+pub fn TGraph::add_stochastic(self : TGraph, s : TStochastic) -> Unit {
+  self.stochastic.push(s)
+}
+
+///|
+/// Redraw the stochastic inputs of the graph and write them into the
+/// binding.
+///
+/// The forward pass and the gradient program read the value from the
+/// same slot, so they always see the same mask.
+pub fn TGraph::refresh_stochastic(self : TGraph, b : TBinding) -> Unit {
+  for i = 0; i < self.stochastic.length(); i = i + 1 {
+    let s = self.stochastic[i]
+    let mask = t_keep_mask(s.rate, s.seed, s.calls, s.shape)
+    self.stochastic[i].calls = s.calls + 1
+    b.set_input(s.slot, mask)
+  }
+}
+
+///|
 /// Multiply a node by a constant tensor.
 pub fn TGraph::scale_tensor(self : TGraph, x : Int32, k : Tensor) -> Int32 {
   // The constant goes into the pool; the node refers to it by pool
@@ -422,13 +484,17 @@ pub fn TGraph::gather_row(
 
 ///|
 /// The shape of a node's value, as recorded by the last forward
-/// pass. Returns an empty shape for a node that has not been
-/// evaluated.
-pub fn TGraph::last_shape(self : TGraph, x : Int32) -> Array[Int32] {
+/// pass.
+///
+/// Returns `None` for a node that has not been evaluated. A node that
+/// has been evaluated and holds a scalar has an empty shape, which is
+/// a different answer: `Some([])` is a scalar, and `None` is a node
+/// nobody has looked at.
+pub fn TGraph::last_shape(self : TGraph, x : Int32) -> Array[Int32]? {
   if x >= 0 && x < self.shapes.length() {
-    self.shapes[x].copy()
+    Some(self.shapes[x].copy())
   } else {
-    []
+    None
   }
 }
 
@@ -564,12 +630,16 @@ pub fn TGraph::broadcast_to(
 ///|
 /// Move a node's value to `shape`.
 ///
-/// The direction follows the rank: a target with more axes means the
-/// value was broadcast up and has to be summed down, a target with
-/// fewer axes means it was summed away and has to be broadcast back.
-/// One node covers both because the two never mix in practice, and
-/// because the backward pass needs exactly the same adjustment in
-/// the opposite direction.
+/// The direction follows the rank: a target with more axes than the
+/// value means the value was summed away and has to be broadcast back
+/// up, and a target with fewer axes means the value was broadcast up
+/// and has to be summed back down.
+///
+/// The two are inverses of each other, and the backward rule of the
+/// node is whichever of the two the forward rule was not. The node
+/// refuses a target that neither direction can reach — a shape the
+/// value does not broadcast to and cannot be summed into — rather than
+/// returning a tensor of the wrong shape.
 pub fn TGraph::adjust(self : TGraph, x : Int32, shape : Array[Int32]) -> Int32 {
   self.nodes.push(TNode::Adjust(x, shape.copy()))
   self.nodes.length() - 1
@@ -877,7 +947,14 @@ fn t_eval_node(
           Tensor::zeros([])
         }
       }
-    TNode::ScaleBy(child, slot) => t_mul_or(values[child], g.pool[slot])
+    TNode::ScaleBy(child, slot) =>
+      match t_mul_or(values[child], g.pool[slot]) {
+        Some(t) => t
+        None => {
+          g.failed = true
+          Tensor::zeros([])
+        }
+      }
     TNode::PowBy(exponent, child) => t_pow(values[child], exponent)
     TNode::BroadcastTo(child, shape) =>
       match values[child].broadcast_to(shape) {
@@ -887,7 +964,14 @@ fn t_eval_node(
           Tensor::zeros([])
         }
       }
-    TNode::Adjust(child, shape) => t_sum_to_shape(values[child], shape)
+    TNode::Adjust(child, shape) =>
+      match t_adjust_to_shape(values[child], shape) {
+        Some(t) => t
+        None => {
+          g.failed = true
+          Tensor::zeros([])
+        }
+      }
     TNode::ExpandAxis(child, axis, shape) =>
       t_expand_axis(values[child], axis, shape)
     TNode::CropTo(child, shape, axis, start) =>
@@ -1248,7 +1332,18 @@ fn same_shape(a : Array[Int32], b : Array[Int32]) -> Bool {
 pub fn evaluate_tensor_gradient(
   grad : TGradGraph,
   b : TBinding,
-) -> (Array[Tensor], Array[Tensor]) {
+) -> (Array[Tensor], Array[Tensor]) raise ADError {
+  // The program was compiled for a particular set of input shapes.
+  // Evaluating it against others would not be a different program; it
+  // would be a *wrong* one, because the adjoint of a broadcast sum is
+  // summed back down over the axes that were broadcast. A caller who
+  // reuses a compiled gradient has to be stopped rather than trusted.
+  if !grad.shapes_match(b) {
+    raise ShapeMismatch(
+      shape_list(grad.input_shapes),
+      shape_list(b.inputs.map(fn(t : Tensor) { t.shape })),
+    )
+  }
   let values = t_forward(grad.graph, b)
   let input_grads : Array[Tensor] = []
   for i = 0; i < grad.input_adj.length(); i = i + 1 {
@@ -1262,13 +1357,33 @@ pub fn evaluate_tensor_gradient(
 }
 
 ///|
+/// A list of shapes, written the way a shape is written.
+fn shape_list(shapes : Array[Array[Int32]]) -> String {
+  let mut out = ""
+  for i = 0; i < shapes.length(); i = i + 1 {
+    if i > 0 {
+      out = out + ", "
+    }
+    out = out + "["
+    for j = 0; j < shapes[i].length(); j = j + 1 {
+      if j > 0 {
+        out = out + ","
+      }
+      out = out + shapes[i][j].to_string()
+    }
+    out = out + "]"
+  }
+  out
+}
+
+///|
 /// Differentiate `target` with respect to every input and every
 /// parameter, and return the numbers.
 ///
 /// This is the convenience form of `compile_tensor_gradient` followed
 /// by `evaluate_tensor_gradient`. The program underneath is the same
 /// one; this only collapses it to numbers.
-pub fn t_grad(g : TGraph, b : TBinding, target : Int32) -> TGrad {
+pub fn t_grad(g : TGraph, b : TBinding, target : Int32) -> TGrad raise ADError {
   let grad = compile_tensor_gradient(g, b, target)
   let (input_grads, param_grads) = evaluate_tensor_gradient(grad, b)
   { input_grads, param_grads, output: grad.output, }
@@ -1306,14 +1421,23 @@ pub fn t_is_zero(t : Tensor) -> Bool {
 ///
 /// The result has exactly the target's shape, which is what the
 /// caller needs to add it into the operand's adjoint.
-pub fn t_sum_to_shape(t : Tensor, target : Array[Int32]) -> Tensor {
+///
+/// A target with more axes than the tensor cannot be reached by
+/// summing, and axes that do not line up cannot be summed into, so
+/// both are refused rather than answered with a tensor of some other
+/// shape.
+pub fn t_sum_to_shape(t : Tensor, target : Array[Int32]) -> Tensor? {
+  if target.length() > t.shape.length() {
+    // A sum cannot create an axis the tensor does not have.
+    return None
+  }
   let extra = t.shape.length() - target.length()
   // Axes the target does not have are summed away entirely.
   let mut acc = t
   for d = extra - 1; d >= 0; d = d - 1 {
     match t_sum_axis(acc, d) {
       Some(x) => acc = x
-      None => ()
+      None => return None
     }
   }
   // Axes where the target has length one but the broadcast shape has
@@ -1322,11 +1446,33 @@ pub fn t_sum_to_shape(t : Tensor, target : Array[Int32]) -> Tensor {
     if d < target.length() && target[d] == 1 && acc.shape[d] != 1 {
       match t_sum_axis_keep(acc, d) {
         Some(x) => acc = x
-        None => ()
+        None => return None
       }
     }
   }
-  acc
+  if !same_shape(acc.shape, target) {
+    // The axes that are left do not line up with the target's, so
+    // this is not the tensor the caller asked for.
+    return None
+  }
+  Some(acc)
+}
+
+///|
+/// Move a tensor's value to `target`, in whichever direction the
+/// shapes allow.
+///
+/// A target with more axes than the value means the value was summed
+/// away and has to be broadcast back up; a target with fewer axes
+/// means the value was broadcast up and has to be summed back down.
+/// The two are inverses, and the backward rule of the node that uses
+/// this is whichever of them this was not.
+fn t_adjust_to_shape(t : Tensor, target : Array[Int32]) -> Tensor? {
+  if target.length() > t.shape.length() {
+    // The value was summed away, so it is broadcast back up.
+    return t.broadcast_to(target)
+  }
+  t_sum_to_shape(t, target)
 }
 
 ///|
@@ -1593,10 +1739,20 @@ fn t_push_adjoints(
       let contrib = h.adjust(gbar, values[child].shape)
       adj[child] = h.add(adj[child], contrib)
     }
-    TNode::Adjust(child, _shape) => {
-      // The inverse of a sum back down is a broadcast up.
-      let contrib = h.broadcast_to(gbar, values[child].shape)
-      adj[child] = h.add(adj[child], contrib)
+    TNode::Adjust(child, shape) => {
+      // The forward rule either summed the value down or broadcast it
+      // back up, and the backward rule is the other one of the two.
+      // Which of them it was follows from the ranks: a target with
+      // more axes than the value means the value was broadcast back
+      // up, so the gradient is summed down; a target with fewer means
+      // the value was summed down, so the gradient is broadcast up.
+      if shape.length() > values[child].shape.length() {
+        let contrib = h.adjust(gbar, values[child].shape)
+        adj[child] = h.add(adj[child], contrib)
+      } else {
+        let contrib = h.broadcast_to(gbar, values[child].shape)
+        adj[child] = h.add(adj[child], contrib)
+      }
     }
     TNode::ExpandAxis(child, axis, _shape) => {
       // The value was broadcast along the axis, so the gradient sums
@@ -1798,33 +1954,13 @@ fn t_push_conv_adjoints(
 }
 
 ///|
-/// Elementwise addition that keeps the broadcast shape when the
-/// shapes differ.
-pub fn t_add_or(a : Tensor, b : Tensor) -> Tensor {
-  if a.shape.length() == b.shape.length() {
-    let mut same = true
-    for i = 0; i < a.shape.length(); i = i + 1 {
-      if a.shape[i] != b.shape[i] {
-        same = false
-      }
-    }
-    if same {
-      return match a.add(b) {
-        Some(t) => t
-        None => a
-      }
-    }
-  }
-  match t_add(a, b) {
-    Some(t) => t
-    None => a
-  }
-}
-
-///|
 /// Elementwise product that keeps the broadcast shape when the
 /// shapes differ.
-pub fn t_mul_or(a : Tensor, b : Tensor) -> Tensor {
+///
+/// Returns `None` when the two shapes do not broadcast. There is no
+/// product to give then, and a tensor that stood in for one would be
+/// a number with no meaning behind it.
+pub fn t_mul_or(a : Tensor, b : Tensor) -> Tensor? {
   if a.shape.length() == b.shape.length() {
     let mut same = true
     for i = 0; i < a.shape.length(); i = i + 1 {
@@ -1833,20 +1969,18 @@ pub fn t_mul_or(a : Tensor, b : Tensor) -> Tensor {
       }
     }
     if same {
-      return match a.mul(b) {
-        Some(t) => t
-        None => a
-      }
+      return a.mul(b)
     }
   }
-  match t_mul(a, b) {
-    Some(t) => t
-    None => a
-  }
+  t_mul(a, b)
 }
 
 ///|
 /// `d/dx op(x)` elementwise, with the same shape as the operand.
+///
+/// The derivative comes from the scalar engine's table — the same one
+/// the reverse pass and the forward-mode cross-check consult — so the
+/// three cannot drift apart.
 pub fn t_unary_derivative(op : UnaryOp, x : Tensor) -> Tensor {
   let out = Tensor::zeros(x.shape)
   for i = 0; i < x.data.length(); i = i + 1 {
@@ -1857,48 +1991,56 @@ pub fn t_unary_derivative(op : UnaryOp, x : Tensor) -> Tensor {
 
 ///|
 /// `d/da (a op b)`, broadcast to `common`.
+///
+/// Returns `None` when the operands do not broadcast to `common`. The
+/// derivative of an expression that cannot be evaluated is not zero:
+/// it is nothing, and zero is a number that would be added into an
+/// adjoint as if it were right.
 pub fn t_binary_dleft(
   op : BinaryOp,
   a : Tensor,
   b : Tensor,
   common : Array[Int32],
-) -> Tensor {
-  let out = Tensor::zeros(common)
+) -> Tensor? {
   let av = match a.broadcast_to(common) {
     Some(t) => t
-    None => return out
+    None => return None
   }
   let bv = match b.broadcast_to(common) {
     Some(t) => t
-    None => return out
+    None => return None
   }
+  let out = Tensor::zeros(common)
   for i = 0; i < out.data.length(); i = i + 1 {
     out.data[i] = binary_dleft(op, av.data[i], bv.data[i])
   }
-  out
+  Some(out)
 }
 
 ///|
 /// `d/db (a op b)`, broadcast to `common`.
+///
+/// Returns `None` when the operands do not broadcast to `common`, for
+/// the same reason `t_binary_dleft` does.
 pub fn t_binary_dright(
   op : BinaryOp,
   a : Tensor,
   b : Tensor,
   common : Array[Int32],
-) -> Tensor {
-  let out = Tensor::zeros(common)
+) -> Tensor? {
   let av = match a.broadcast_to(common) {
     Some(t) => t
-    None => return out
+    None => return None
   }
   let bv = match b.broadcast_to(common) {
     Some(t) => t
-    None => return out
+    None => return None
   }
+  let out = Tensor::zeros(common)
   for i = 0; i < out.data.length(); i = i + 1 {
     out.data[i] = binary_dright(op, av.data[i], bv.data[i])
   }
-  out
+  Some(out)
 }
 
 ///|

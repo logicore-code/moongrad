@@ -196,7 +196,7 @@ fn accuracy(
 }
 
 ///|
-fn main {
+fn main raise @moongrad.ADError {
   println("| moongrad: a convolutional network, trained")
   println("|")
   println("| The task: a bright square in one of four corners of a")
