@@ -22,19 +22,74 @@ project follows Semantic Versioning: bump the
   tensor: only a scalar is an identity, because a zero of shape (2,3)
   added to a (2,2) operand is a shape error rather than the operand.
   The gradient program of a two-layer network drops from 64 nodes to
-  48, and every value in it is unchanged.
+  48, and every value in it is unchanged. Measured on the same machine
+  with the same build, evaluating the tensor gradient goes from
+  2 001 µs to 1 203 µs.
 - **Node sharing in the tensor graph**, the way the scalar graph has
   always done it: a hash-cons table keyed on the node itself, so two
   identical computations are one node.
+- **A compiled gradient refuses inputs of another shape.** The shapes
+  were recorded and never checked, so evaluating a program against
+  differently-shaped inputs returned the gradient of a different
+  function without a word. It raises `ShapeMismatch` now.
+- **`engine_agreement_test.mbt`**, which compares what the scalar and
+  the tensor engine compute for every operator they have in common.
+  The two engines are separate code and each carries its own
+  derivative rules; this is what keeps them honest.
 - **`CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`**, issue
   and pull-request templates, and a copyright line in the licence
   naming the holder.
+- **`docs/wasm.md`**, on running the library on the web.
+
+### Fixed
+- **The checkpoint module described a mechanism it did not
+  implement.** It said the backward sweep visited segments right to
+  left and rebuilt each segment's forward values on entry; it did
+  neither. The report now measures what the module actually does, and
+  says why the classical technique cannot work for a gradient program:
+  the backward sweep emits expressions that refer back into the
+  primal at arbitrary indices, so a segment cannot be re-derived on
+  its own.
+- **The scalar engine answered some questions with a number that
+  could not be told from a real answer.** `eval_constant` returned
+  zero for a slot that did not hold a literal; the forward-mode
+  oracle answered "the gradient is zero" for a malformed binding; the
+  loss reductions divided by a sample count that could be zero. All
+  of them refuse now.
+- **`bce_value` and the graph's binary cross-entropy disagreed** for a
+  large negative logit: one used the naive `log(1+e^-|z|)` and the
+  other the `log1p` form. One function computes both now.
+- **`determinant`, `eigenvalues` and `singular_values`** answered zero
+  and the empty list for a matrix that has none of those things.
+- **`Tensor::row`** handed back a one-element row for a vector, where
+  `Tensor::column` refuses.
+- **The dropout mask never changed during a training run**, because no
+  trainer called `refresh`. The trainers call it now.
+- **Only one of the four extra optimisers guarded against a
+  non-finite gradient.** All four do.
+- **The `Adjust` node's documentation promised two directions** and
+  implemented one. Both are implemented now.
+- **The documentation's numbers were wrong in several places**: the
+  two Newton steps agree to within one unit in the last place rather
+  than bit for bit; the test counts in the 0.1.0 and 0.2.0 entries had
+  been changed in later documentation-only commits to figures that
+  never matched the tree at the time; the benchmark's per-node figure
+  and its "8x4 network" label did not describe the measured code.
 
 ### Changed
 - CI now runs `moon check --deny-warn` and `moon test --deny-warn`.
   The zero-warning claim in the README is enforced rather than
-  asserted, and the workflow asks for read-only permissions.
-- The version in `moon.mod` follows the changelog.
+  asserted, and the workflow asks for read-only permissions. It also
+  runs two examples on the wasm target and builds a throwaway module
+  outside the repository that imports this one, so the instructions in
+  the README cannot go stale without the build noticing.
+- The version in `moon.mod` follows the changelog, and `.moonignore`
+  keeps the benchmark harness and this file out of the published
+  package.
+- `examples/gradcheck` now prints the disagreement in full rather than
+  rounded to four decimals, and its pass threshold is 1e-6 instead of
+  1e-4. The disagreement is around 1e-10, so the old threshold would
+  have accepted a gradient that was wrong in the fourth digit.
 
 ## [0.7.0] — 2026-11-12
 
@@ -334,6 +389,10 @@ project follows Semantic Versioning: bump the
   peak occupancy drops from O(n) to O(k + w) for k segments of
   width w, at the cost of re-evaluating every interior node once.
   The gradient is bit-identical in every configuration.
+  (The memory bound claimed here was retracted in 0.6.0: it does not
+  hold for a gradient program, and the module now measures what the
+  program actually costs instead of promising what the technique
+  usually buys.)
 - Second-order derivatives in `hessian.mbt`, together with a
   Cholesky solver, a damped Newton step, and a Jacobi eigenvalue
   routine.
@@ -350,7 +409,7 @@ project follows Semantic Versioning: bump the
   checked against finite differences, polynomial regression, XOR, a
   Hessian walkthrough, the checkpointing trade-off, and what the
   graph compiler saves.
-- 70 more unit tests: 81 to 151.
+- 62 more unit tests: 89 to 151.
 
 ### Fixed
 - The simplifier is literal-aware: `x - x` folds to zero instead of
@@ -394,7 +453,7 @@ The first release. The gradient compiler:
 - `error.mbt` — `ADError` as a suberror, so a failure comes back to
   the caller with its operands attached instead of taking the process
   down.
-- 46 unit tests covering the IR, the simplifier, both passes and
+- 89 unit tests covering the IR, the simplifier, both passes and
   the gradient compiler.
 
 Apache-2.0 licensed throughout.

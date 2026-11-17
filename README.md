@@ -35,11 +35,12 @@ pkgtype(kind: "executable")
 ## Try it
 
 ```bash
-moon test                                       # 373 unit tests
+moon test                                       # 416 unit tests
 moon run examples/reuse        --target native  # one gradient, evaluated at four inputs
 moon run examples/second_order --target native  # a Newton step, with and without the Hessian
 moon run examples/nn_classifier --target native # a network that trains
 moon run examples/cnn        --target native --release # a convolutional network, trained
+moon run examples/reuse       --target wasm             # the same gradient, in a WebAssembly sandbox
 ```
 
 `examples/reuse` is the one to start with: it compiles a gradient once and then
@@ -72,7 +73,9 @@ This is not a library that would read the same in any language.
   property.
 - **One source, four targets.** wasm, wasm-gc, js and native, built by the
   same command in CI. An autodiff engine is most useful compiled into a
-  browser sandbox, and that is not free elsewhere.
+  browser sandbox, and that is not free elsewhere. The wasm build is not
+  merely compiled in CI — two examples are *run* on it, and print the same
+  digits as they do natively. See [docs/wasm.md](docs/wasm.md).
 - **The builders read like arithmetic.** `g.add(g.mul(x, w), b)` rather
   than `build_node(op, children)`. This code is meant to be read.
 
@@ -99,13 +102,25 @@ graph, that the same compiler can differentiate again, in a library with no
 FFI and no runtime — and to write the backward rules out by hand so that the
 whole reverse pass can be read.
 
-Two other MoonBit projects are worth naming, because they are the ones this
-would be compared against. `Luna-Flow/autodiff` is a forward-mode
-implementation over dual numbers, and it says in its own documentation that
-reverse mode and higher-order derivatives are not part of the release.
-`riantr/snn_mbt`, a port of SpikingNeuralNetworks.jl, carries a tape-based
-backward pass. Neither offers a gradient that is a graph you can evaluate
-anywhere and differentiate again.
+Three other MoonBit projects are worth naming, because they are the ones this
+would be compared against.
+
+- `Luna-Flow/autodiff` is a forward-mode implementation over dual numbers,
+  and it says in its own documentation that reverse mode and higher-order
+  derivatives are not part of the release.
+- `riantr/snn_mbt`, a port of SpikingNeuralNetworks.jl, carries a tape-based
+  backward pass.
+- `lyjttio/moongrad` — a different project that happens to have the same
+  name, by a different author — is a PyTorch-shaped library: a dynamic
+  graph, a `backward()` method, and a gradient accumulated into a `grad`
+  array on each tensor. If what you want is that shape of API, that is the
+  one to look at.
+
+None of them offers a gradient that is a graph you can evaluate anywhere and
+differentiate again. In all three the gradient is the *result* of the
+backward pass — a number, produced at a point, valid there. Here it is a
+graph, and a graph can be evaluated anywhere, differentiated again, and
+handed to a second-order solver.
 
 Emitting a program avoids both. The backward sweep walks the graph backwards
 and, wherever a node has a nonzero adjoint, emits the arithmetic for
@@ -195,7 +210,8 @@ conjugate-gradient iteration can be run on the Hessian system with nothing
 dense in sight.
 
 That is Newton-CG. `examples/second_order` shows it against the dense route:
-both compute the same Newton step, and the two agree exactly.
+both compute the same Newton step, and the two agree to within one unit in the
+last place of it.
 
 ### Training
 
@@ -213,12 +229,12 @@ catches a wrong rule rather than merely a typo.
 `examples/gradcheck` runs that comparison for six functions covering
 polynomials, quotients, matrix products, broadcasting products, chains of
 nonlinearities, and logarithms. All six agree to within the finite
-difference's own error — about ten digits, and it is the finite difference
-that is the approximate one. The example prints the largest disagreement
-in full, because a disagreement of 8.4e-10 rounded to four decimals is a
-report of nothing.
+difference's own error: the largest disagreement is 3.5e-9, and it is the
+finite difference that is the approximate one. The example prints the
+disagreement in full, because 3.5e-9 rounded to four decimals is a report
+of nothing.
 
-The test suite (373 cases) additionally checks each local derivative rule
+The test suite (416 cases) additionally checks each local derivative rule
 against its closed form, and each layer against a hand-computed
 backpropagation.
 
@@ -230,7 +246,7 @@ checks the tensor Hessian against the closed form, against a finite difference
 of the gradient, and for symmetry.
 
 `examples/nn_classifier` trains a two-layer network on two clusters: the loss
-falls from 0.92 to 0.0003 over 360 steps and all eight predictions land on
+falls from 0.92 to 0.0003 over 400 steps and all eight predictions land on
 the right side.
 
 ## Examples
@@ -255,10 +271,40 @@ moon run examples/second_order  --target native   # Newton-CG, without forming t
 moon run examples/minibatch     --target native   # mini-batch training
 ```
 
+## Using it from another project
+
+The module's name is `logicore-code/moongrad`. Once it is published to the
+registry:
+
+```bash
+moon add logicore-code/moongrad@0.8.0
+```
+
+and the package that wants it imports it:
+
+```
+// moon.pkg
+import { "logicore-code/moongrad" }
+pkgtype(kind: "executable")
+```
+
+From a local checkout the same import works, with a workspace manifest
+telling the toolchain where the module lives:
+
+```bash
+moon work use /path/to/moongrad
+```
+
+The consuming module's `moon.mod` carries the import; the version in it is
+ignored for a workspace member and resolved from the local source instead.
+This is the shape an outside project uses, and it is checked in CI: the
+workflow builds a throwaway module that imports this one and runs the
+quick-start above verbatim.
+
 ## Building
 
 ```bash
-moon test          # 373 unit tests
+moon test          # 416 unit tests
 moon check         # 0 warnings, 0 errors
 moon fmt           # format
 moon build         # build for the preferred target (wasm)
@@ -318,8 +364,8 @@ back down — so a program is valid for the shapes it was compiled against. This
 is the same bargain every statically-shaped tensor library makes. Changing a
 shape means recompiling, which is one call. To keep that from turning into a
 silent wrong answer, a compiled gradient records the input shapes it was
-compiled for and checks them at evaluation: a mismatch is reported rather than
-returning the gradient of a different function.
+compiled for and checks them at evaluation: a mismatch raises `ShapeMismatch`
+rather than returning the gradient of a different function.
 
 **Intermediate tensors are not written in place.** In-place would save memory
 and would break re-evaluation: the first evaluation would dirty the buffers
@@ -327,9 +373,15 @@ and the second would read corrupted values. Re-evaluability is the point of
 the design, so the buffers stay and the memory question is answered by
 `checkpoint.mbt` instead.
 
-**Two engines, one derivative table.** The scalar engine is the rank-0 case of
-the tensor one. They share the tables in `simplify.mbt`, so a rule fixed in
-one is fixed in the other.
+**Two engines, and a test that they agree.** The scalar engine is the
+rank-0 case of the tensor one. They are separate code — the scalar
+backward sweep emits expressions in a scalar graph, the tensor one in a
+tensor graph — so each carries its own derivative rules. What keeps
+them honest is `engine_agreement_test.mbt`: for every operator the two
+have in common, it compares the gradient they compute at the same
+point, and a rule fixed in one and not the other fails there. The
+forward-mode engine is the third opinion, and it derives the derivative
+a third way, from dual numbers.
 
 **Two routes to a second-order step.** The dense Hessian is exact and simple
 when the parameter count is small. The matrix-free route — a
@@ -342,6 +394,7 @@ agree to the last bit.
 - `docs/architecture.md` — the three decisions that shape everything else
 - `docs/math.md` — the derivative rules the compiler emits, one operator at a time
 - `docs/benchmark.md` — measured numbers and their caveats
+- `docs/wasm.md` — running the library on the web, and what that costs
 
 ## License
 
