@@ -76,26 +76,62 @@ value it offers is that the function being differentiated is
 *user-supplied*, not MoonBit code the compiler could have optimised
 directly.
 
-## What would make it faster
+## What the gradient program costs, and what was done about it
 
-In rough order of expected payoff:
+The gradient program is larger than the primal it came from, and the
+difference is worth a number rather than an adjective.
 
-1. **Simplify the gradient program.** The peephole pass runs on the
-   primal but not on the gradient arithmetic emitted above it, and that
-   arithmetic is where the node count doubles. Running the simplifier
-   over the gradient program should remove a good fraction of it.
-2. **Fuse the two scans.** The primal and the gradient live in one
-   graph, so a single left-to-right pass could produce the forward
-   values and the gradient values together, instead of evaluating the
-   primal once to compile and again to run.
-3. **Reuse the buffers.** Every node of the gradient program
-   allocates a tensor, and a graph of any size allocates a lot of
-   them. A pool keyed by node slot would remove most of that
-   pressure, and it is safe: the program is evaluated in node order,
-   so a slot's value is always written before it is read. It is not
-   done here because the pool has to be threaded through the
-   evaluator's inner loop, which is the part of the library that has
-   to stay simple enough to be obviously right.
+For a two-layer network — a 2×2 input, one hidden layer, one output
+layer — the primal is 12 nodes and the gradient program is **48**. Before
+the tensor engine grew a simplifier it was **64**.
+
+The gap is the backward sweep. It expands every local derivative rule
+into arithmetic, and that arithmetic is where the nodes go: the adjoint
+of a sum is broadcast back up and scaled, the adjoint of a product is
+the other factor times the incoming gradient, and each of those is a
+node or two. Written out naively, the same subexpression appears once
+per path that reaches it.
+
+Three things came out of that, and the third is why the number is 48
+rather than 64:
+
+1. **The simplifier runs on the gradient arithmetic.** It is the same
+   peephole pass the scalar engine has always used — `x + 0` is `x`,
+   `x * 1` is `x`, two literals are folded — and the question "is this
+   literal the identity of this operator" is asked by one function in
+   `simplify.mbt` that both engines call. The tensor side's addition is
+   that a literal has to be a *scalar* to count: a zero of shape (2,3)
+   added to a (2,2) operand is a shape error, not the operand.
+2. **Nodes are shared.** The tensor graph hash-conses its nodes the way
+   the scalar graph always has, so a subexpression that appears twice is
+   computed once.
+3. **The adjoint accumulator is not a node.** The zero every adjoint
+   starts from is a constant, so the first `add` into an adjoint is
+   recognised as `0 + x` and dropped, and only the second and later
+   contributions cost anything.
+
+Two further ideas were considered and not taken, and the reasons are
+worth writing down:
+
+- **Fusing the two scans.** The primal and the gradient live in one
+  graph, so in principle a single left-to-right pass could produce the
+  forward values and the gradient values together. It already does: the
+  gradient program contains the primal's nodes, and evaluating it once
+  produces both. What the backward sweep needs from the primal is its
+  *shapes*, and it needs them at compile time, which is why the
+  compiler evaluates the primal once before it starts. Fusing would
+  mean deriving the shapes from the graph's structure instead of from
+  an evaluation, which is a second description of every operator's
+  output shape to keep in step with the first.
+- **Pooling the buffers.** Every node of the gradient program
+  allocates a tensor, and a graph of any size allocates a lot of them.
+  A pool keyed by node slot would remove most of that pressure. It is
+  not safe as stated, though: the evaluator keeps *every* node's value
+  in one array, because the gradient nodes refer back into the primal,
+  so a slot's value is still live when a later node is evaluated. The
+  pool would have to be reference-counted, and the evaluator's inner
+  loop is the part of the library that has to stay simple enough to be
+  obviously right.
 
 ## Caveats
 

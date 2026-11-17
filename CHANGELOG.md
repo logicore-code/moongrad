@@ -7,6 +7,35 @@ project follows Semantic Versioning: bump the
 - `MINOR` part on new functionality in a backward-compatible way
 - `PATCH` part on backward-compatible bug fixes
 
+## [0.8.0] — 2026-11-17
+
+### Added
+- **A peephole simplifier for the tensor graph.** The scalar engine has
+  always simplified as it builds; the tensor engine did not, and the
+  backward sweep is where that showed: it expands every local
+  derivative rule into arithmetic, so the gradient program of a small
+  network came out five times the size of the primal, with the same
+  subexpression written out again and again. The rules are the scalar
+  engine's — `binary_left_identity` and `binary_right_identity` in
+  `simplify.mbt` answer for both engines, so the two tables cannot
+  drift apart. What differs on this side is that the literal is a
+  tensor: only a scalar is an identity, because a zero of shape (2,3)
+  added to a (2,2) operand is a shape error rather than the operand.
+  The gradient program of a two-layer network drops from 64 nodes to
+  48, and every value in it is unchanged.
+- **Node sharing in the tensor graph**, the way the scalar graph has
+  always done it: a hash-cons table keyed on the node itself, so two
+  identical computations are one node.
+- **`CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`**, issue
+  and pull-request templates, and a copyright line in the licence
+  naming the holder.
+
+### Changed
+- CI now runs `moon check --deny-warn` and `moon test --deny-warn`.
+  The zero-warning claim in the README is enforced rather than
+  asserted, and the workflow asks for read-only permissions.
+- The version in `moon.mod` follows the changelog.
+
 ## [0.7.0] — 2026-11-12
 
 ### Added
