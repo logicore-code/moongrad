@@ -9,7 +9,6 @@
 // are the statements a reviewer can verify by hand, and they catch
 // the class of bug where the code runs but is subtly wrong.
 
-
 ///|
 /// The eigenvalues of a square matrix, or a failure the test reports.
 fn eigenvalues_of(m : @moongrad.Tensor) -> Array[Double] {
@@ -45,6 +44,7 @@ fn determinant_of(m : @moongrad.Tensor) -> Double {
     }
   }
 }
+
 ///|
 fn mat(rows : Array[Array[Double]]) -> @moongrad.Tensor {
   match @moongrad.Tensor::matrix(rows) {

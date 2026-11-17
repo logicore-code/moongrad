@@ -102,10 +102,7 @@ test "the_two_engines_agree_on_the_unary_operators" {
       point,
     )
     assert_close(
-      tensor,
-      scalar,
-      1.0e-12,
-      "the \\{name} gradient should be the same in both engines",
+      tensor, scalar, 1.0e-12, "the \\{name} gradient should be the same in both engines",
     )
   }
 }
@@ -137,10 +134,7 @@ test "the_two_engines_agree_on_the_binary_operators" {
       point,
     )
     assert_close(
-      tensor,
-      scalar,
-      1.0e-12,
-      "the \\{name} gradient should be the same in both engines",
+      tensor, scalar, 1.0e-12, "the \\{name} gradient should be the same in both engines",
     )
   }
 }

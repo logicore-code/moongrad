@@ -61,7 +61,8 @@ pub(all) struct TensorTrainer {
   /// it has to be redrawn between steps for the layer to be a dropout
   /// rather than a fixed random projection. The callback is given
   /// the binding to write into.
-  mut refreshers : Array[(TBinding) -> Unit]  /// The node the loss is rooted at.
+  /// The node the loss is rooted at.
+  mut refreshers : Array[(TBinding) -> Unit]
   loss_node : Int32
   /// The loss at every step so far.
   history : Array[Double]

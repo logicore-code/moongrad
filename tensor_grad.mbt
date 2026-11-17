@@ -1739,7 +1739,7 @@ fn t_push_adjoints(
       let contrib = h.adjust(gbar, values[child].shape)
       adj[child] = h.add(adj[child], contrib)
     }
-    TNode::Adjust(child, shape) => {
+    TNode::Adjust(child, shape) =>
       // The forward rule either summed the value down or broadcast it
       // back up, and the backward rule is the other one of the two.
       // Which of them it was follows from the ranks: a target with
@@ -1753,7 +1753,6 @@ fn t_push_adjoints(
         let contrib = h.broadcast_to(gbar, values[child].shape)
         adj[child] = h.add(adj[child], contrib)
       }
-    }
     TNode::ExpandAxis(child, axis, _shape) => {
       // The value was broadcast along the axis, so the gradient sums
       // over it.
