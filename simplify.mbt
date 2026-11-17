@@ -59,17 +59,13 @@ pub fn Graph::simplify_binary(
   // symmetric, so it only fires when the *right* operand is the
   // identity; `0 - b` is `-b`, which is a rewrite the caller has to
   // ask for.
-  let left_is_id = match (op, lv) {
-    (BinaryOp::Add, Some(v)) => v == 0.0
-    (BinaryOp::Mul, Some(v)) => v == 1.0
-    _ => false
+  let left_is_id = match lv {
+    Some(v) => binary_left_identity(op, v)
+    None => false
   }
-  let right_is_id = match (op, rv) {
-    (BinaryOp::Add, Some(v)) => v == 0.0
-    (BinaryOp::Sub, Some(v)) => v == 0.0
-    (BinaryOp::Mul, Some(v)) => v == 1.0
-    (BinaryOp::Div, Some(v)) => v == 1.0
-    _ => false
+  let right_is_id = match rv {
+    Some(v) => binary_right_identity(op, v)
+    None => false
   }
   if left_is_id {
     self.stats.identities = self.stats.identities + 1
@@ -454,5 +450,42 @@ pub fn absf(a : Double) -> Double {
     -a
   } else {
     a
+  }
+}
+
+///|
+/// Whether a literal `v` is the identity of `op` on the left.
+///
+/// `0 + x` is `x` and `1 * x` is `x`, but `0 - x` is `-x` and
+/// `1 / x` is not `x`, so the two sides are asked separately.
+///
+/// The tensor engine asks the same question, and gets the same
+/// answer from here, which is the point: one table, two engines.
+///
+/// One caveat, and it is the only inexactness in these rules.
+/// IEEE-754 says `x + (+0)` is `+0` when `x` is `-0`, so rewriting
+/// `x + 0` to `x` changes the sign of a zero. No other value is
+/// affected, and the rule removes a node from the adjoint of every
+/// branch, so the trade is worth making — but it is a trade, and it
+/// is written down rather than left to be discovered.
+pub fn binary_left_identity(op : BinaryOp, v : Double) -> Bool {
+  match op {
+    BinaryOp::Add => v == 0.0
+    BinaryOp::Mul => v == 1.0
+    BinaryOp::Sub => false
+    BinaryOp::Div => false
+  }
+}
+
+///|
+/// Whether a literal `v` is the identity of `op` on the right.
+///
+/// See `binary_left_identity` for the `-0` caveat.
+pub fn binary_right_identity(op : BinaryOp, v : Double) -> Bool {
+  match op {
+    BinaryOp::Add => v == 0.0
+    BinaryOp::Sub => v == 0.0
+    BinaryOp::Mul => v == 1.0
+    BinaryOp::Div => v == 1.0
   }
 }

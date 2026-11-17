@@ -26,6 +26,7 @@
 ///|
 /// A node of a tensor computation.
 #derive(Debug)
+#derive(Hash, Eq)
 pub(all) enum TNode {
   /// A constant, held in the graph's constant pool.
   Const(Int32)
@@ -104,7 +105,13 @@ pub(all) enum TNode {
 }
 
 ///|
+pub extend TNode with Hash::{hash, hash_combine}
+
+///|
 pub extend TNode with Debug::{to_repr}
+
+///|
+pub extend TNode with Eq::{equal, not_equal}
 
 ///|
 /// A tensor computation under construction.
@@ -140,6 +147,12 @@ pub(all) struct TGraph {
   ///   im2col       [out_h, out_w, in_ch, kh, kw, sh, sw]
   ///   col2im       [batch, height, width, out_h, out_w, in_ch, kh, kw, sh, sw]
   mut geo : Array[Array[Int32]]
+  /// Hash-cons table. Maps a node to the slot that already holds it,
+  /// so that two identical computations are one node.
+  mut intern_table : @hashmap.HashMap[TNode, Int32]
+  /// What the simplifier did. Nothing is silent: a reader can see
+  /// how many nodes sharing and folding saved.
+  mut stats : Stats
 }
 
 ///|
@@ -157,6 +170,15 @@ pub fn TGraph::new() -> TGraph {
     param_count: 0,
     next_var_slot: 0,
     geo: [],
+    intern_table: @hashmap.HashMap([]),
+    stats: {
+      nodes_built: 0,
+      cse_hits: 0,
+      identities: 0,
+      folds: 0,
+      annihilated: 0,
+      requests: 0,
+    },
   }
 }
 
@@ -252,8 +274,7 @@ pub fn TGraph::new_param_slot(self : TGraph) -> Int32 {
 ///|
 /// An elementwise unary operator.
 pub fn TGraph::unary(self : TGraph, op : UnaryOp, child : Int32) -> Int32 {
-  self.nodes.push(TNode::Unary(op, child))
-  self.nodes.length() - 1
+  self.simplify_unary(op, child)
 }
 
 ///|
@@ -264,8 +285,7 @@ pub fn TGraph::binary(
   a : Int32,
   b : Int32,
 ) -> Int32 {
-  self.nodes.push(TNode::Binary(op, a, b))
-  self.nodes.length() - 1
+  self.simplify_binary(op, a, b)
 }
 
 ///|
