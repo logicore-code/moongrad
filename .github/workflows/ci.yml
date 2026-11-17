@@ -26,6 +26,12 @@ jobs:
         # 0.1.20261104. The versioned downloads are not served, so
         # the toolchain cannot be pinned to that release; what can be
         # done is to refuse to build with one that is too old.
+        #
+        # The version is also written out, because the core library
+        # has to match the compiler exactly: a toolchain generates
+        # code against the core it was built with, and a core from a
+        # different release will not compile against it.
+        id: toolchain
         run: |
           version=$(moon version | grep -oE '0\.1\.[0-9]+' | head -1)
           oldest=$(printf '%s\n' 0.1.20261104 "$version" | sort -V | head -1)
@@ -34,17 +40,27 @@ jobs:
             exit 1
           fi
           echo "the toolchain is $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Cache the MoonBit core library
         # Only the core library is cached. Caching the whole of
         # ~/.moon would restore the toolchain as well, and the
         # restore would then replace the one the install step
         # just put there.
+        #
+        # The key carries the toolchain version, and the restore
+        # prefix carries it too. The core library is not
+        # interchangeable between releases: the compiler generates
+        # code against the core it was built with, so a core from an
+        # older release produces errors like "this function has no
+        # parameter with label capacity~" in generated code that is
+        # not the project's fault. A cache that outlives the
+        # toolchain is worse than no cache.
         uses: actions/cache@v4
         with:
           path: ~/.moon/lib/core
-          key: moon-core-${{ runner.os }}-${{ hashFiles('**/moon.mod') }}
-          restore-keys: moon-core-${{ runner.os }}-
+          key: moon-core-${{ runner.os }}-${{ steps.toolchain.outputs.version }}
+          restore-keys: moon-core-${{ runner.os }}-${{ steps.toolchain.outputs.version }}-
 
       - name: Format check
         run: moon fmt --check
