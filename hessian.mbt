@@ -73,8 +73,12 @@ pub fn total_params(g : Graph) -> Int32 {
 }
 
 ///|
-/// Gauss-Newton step: solve `H delta = -g` for `delta` and return
-/// `x + delta`.
+/// Gauss-Newton step: solve `H y = g` for `y` and return `x - y`.
+///
+/// This is the Newton step written with the sign on the solution
+/// rather than on the right-hand side, and it is the same step as
+/// solving `H delta = -g` for `delta` and returning `x + delta`:
+/// one negation fewer to get wrong.
 ///
 /// `H` is expected to be symmetric positive definite, or close
 /// enough; `damping` adds `damping * I` before factorising, which

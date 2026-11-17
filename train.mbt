@@ -122,8 +122,9 @@ pub(all) struct Trainer {
   data : Dataset
   /// Which loss to use.
   loss_kind : LossKind
-  /// Optimiser configuration.
-  mut opt_kind : Optimizer
+  /// Optimiser state. The configuration lives in the state, which is
+  /// the thing that is actually stepped, so there is no second copy
+  /// of it here to fall out of step with the first.
   mut opt_state : OptimizerState
   /// The flat parameter array the optimiser steps.
   flat : Array[Double]
@@ -189,6 +190,12 @@ pub fn Trainer::new(
 ) -> Trainer raise ADError {
   let g = Graph::new()
   let n_samples = data.samples.length()
+  // A trainer with no samples has no objective: the loss would be a
+  // division by zero, and the error would surface as a domain error
+  // in the forward pass rather than as the report it is.
+  if n_samples == 0 {
+    raise DomainError("a trainer needs at least one sample")
+  }
   // One variable per (sample, feature).
   ignore(g.new_vars(n_samples * data.n_in))
   let net = MLP::new(g, sizes, acts, seed)
@@ -223,7 +230,6 @@ pub fn Trainer::new(
     net,
     data,
     loss_kind,
-    opt_kind,
     opt_state,
     flat,
     grad_graph: compiled.graph,
@@ -257,20 +263,30 @@ pub fn bce_one(g : Graph, z : Int32, y : Double) -> Int32 {
 /// so the caller can perturb a sample and watch the gradient respond;
 /// `trainer_binding` fills them from the dataset, and a caller who
 /// wants to look at a single sample can overwrite the slots.
+///
+/// The graph is what says how many variables the forward pass will
+/// read, so the binding is checked against it: a dataset with more
+/// features than the graph declares would otherwise be bound to slots
+/// the graph never reads, and the missing values would only surface
+/// much later as an unbound variable.
 pub fn trainer_binding(
   g : Graph,
   data : Dataset,
   flat : Array[Double],
   net : MLP,
-) -> Binding {
+) -> Binding raise ADError {
   let b = Binding::new()
   let n = data.samples.length() * data.n_in
+  if g.var_count < n {
+    raise DomainError(
+      "the graph declares \{g.var_count} variables, but the dataset needs \{n}",
+    )
+  }
   for s = 0; s < data.samples.length(); s = s + 1 {
     for f = 0; f < data.n_in; f = f + 1 {
       b.set_var(s * data.n_in + f, data.samples[s].x[f])
     }
   }
-  ignore(n)
   let params = net.params()
   let mut offset = 0
   for p in params {
@@ -282,7 +298,6 @@ pub fn trainer_binding(
     b.set_param(p.slot, slice)
     offset = offset + k
   }
-  ignore(g)
   b
 }
 
@@ -302,12 +317,12 @@ pub fn Trainer::train_step(
   // 2. Re-evaluate the compiled gradient. The graph structure has
   //    not changed, so recompiling would produce the same program
   //    and measure the same coefficients again.
-  // Parameter gradients: a partial evaluation of the accumulated
-  // adjoint circuit, refreshed against the current binding. The
-  // primal values have to travel with it — the partial evaluator
-  // reads gradient-graph slots below `primal_size` straight out of
-  // them rather than re-evaluating the primal.
-  let prog = self.program(values)
+  //    The parameter gradients are a partial evaluation of the
+  //    accumulated adjoint circuit, refreshed against the current
+  //    binding: the gradient graph is evaluated at the same binding
+  //    as the primal, so the weights the gradient refers to are the
+  //    weights that were just differentiated.
+  let prog = self.program()
   let param_grads = flat_param_gradients(prog, b)
   let gn = grad_norm(param_grads)
   // 3. Update the flat parameter array. The override, when present,
@@ -326,7 +341,7 @@ pub fn Trainer::train_step(
     plain.step(self.flat, param_grads)
   } else {
     match self.opt_state.kind {
-      Optimizer::Adam(_) | Optimizer::AdamWithSteps(_, _) =>
+      Optimizer::Adam(_) =>
         self.opt_state.step_adam(self.flat, param_grads, self.step_count)
       _ => self.opt_state.step(self.flat, param_grads)
     }
@@ -370,13 +385,14 @@ pub fn Trainer::sync_params(self : Trainer) -> Unit {
 /// The compiled program, reconstructed from the trainer's fields so
 /// the gradient API stays the single source of truth rather than
 /// having a second, drifting copy of the parameter layout here.
-pub fn Trainer::program(self : Trainer, values : Array[Double]) -> Program {
-  Program::{
-    primal: self.primal,
-    grad: self.compiled,
-    primal_values: values,
-    output: values[self.out],
-  }
+///
+/// The program carries the graph and the compiled gradient, and
+/// nothing else. The values it will be evaluated at are the caller's
+/// business: a program that also carried the values of the binding
+/// it was compiled against would look like it knew the answer before
+/// it had been asked.
+pub fn Trainer::program(self : Trainer) -> Program {
+  Program::{ primal: self.primal, grad: self.compiled, }
 }
 
 ///|

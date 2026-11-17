@@ -264,11 +264,18 @@ pub fn MLP::size(self : MLP) -> Int32 {
 /// Divided by the batch count rather than by `2 * batch`, so the
 /// reported number is the actual average squared error and can be
 /// compared against a variance.
+///
+/// An empty batch is refused: the average of no samples is not zero,
+/// it is undefined, and a loss of zero would look like a model that
+/// had learned something.
 pub fn mse_loss(
   g : Graph,
   pred : Array[Int32],
   target : Array[Double],
-) -> Int32 {
+) -> Int32 raise ADError {
+  if pred.length() == 0 {
+    raise DomainError("the mean of no samples is not defined")
+  }
   let mut acc = g.constant(0.0)
   for i = 0; i < pred.length(); i = i + 1 {
     let d = g.sub(pred[i], g.constant(target[i]))
@@ -287,11 +294,17 @@ pub fn mse_loss(
 /// confident correct prediction. This form has no such cliff: the
 /// softplus primitive is evaluated as `max(z,0) + log(1 + e^-|z|)`,
 /// which stays finite everywhere.
+///
+/// An empty batch is refused, for the same reason `mse_loss` refuses
+/// one.
 pub fn bce_loss(
   g : Graph,
   pred : Array[Int32],
   target : Array[Double],
-) -> Int32 {
+) -> Int32 raise ADError {
+  if pred.length() == 0 {
+    raise DomainError("the mean of no samples is not defined")
+  }
   let mut acc = g.constant(0.0)
   for i = 0; i < pred.length(); i = i + 1 {
     let y = target[i]
@@ -307,17 +320,30 @@ pub fn bce_loss(
 /// The numerically stable cross-entropy, evaluated on the host. Used
 /// for reporting, so the printed loss is the value the loss function
 /// means and not a quantity the graph had to be simplified into.
+///
+/// This is the graph's `bce_loss` term by term, through the same
+/// `softplus_value`, so the two cannot drift apart. The naive
+/// `ln(1 + e^-|z|)` loses the last digits of the log term for a large
+/// negative z — it returns a loss of exactly zero for a confidently
+/// correct prediction — and a report that disagrees with the
+/// objective is worse than no report at all.
 pub fn bce_value(z : Double, y : Double) -> Double {
-  // log(1 + e^-|z|) + max(z, 0) - z*y, with the log term guarded.
-  let log_term = @math.ln(1.0 + @math.exp(-absf(z)))
-  maxf(z, 0.0) + log_term - z * y
+  softplus_value(z) - z * y
 }
 
 ///|
 /// The same cross-entropy, averaged, on the host.
-pub fn bce_value_mean(pred : Array[Double], target : Array[Double]) -> Double {
+///
+/// This is the host-side mirror of `bce_loss`: the same terms,
+/// averaged the same way, so the number a training run prints is the
+/// number the optimiser minimises. An empty input is refused rather
+/// than reported as a loss of zero.
+pub fn bce_value_mean(
+  pred : Array[Double],
+  target : Array[Double],
+) -> Double raise ADError {
   if pred.length() == 0 {
-    return 0.0
+    raise DomainError("the mean of no samples is not defined")
   }
   let mut acc = 0.0
   for i = 0; i < pred.length(); i = i + 1 {

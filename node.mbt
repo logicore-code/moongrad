@@ -193,14 +193,3 @@ pub fn Node::children(self : Node) -> Array[Int32] {
     ReluDeriv(a) => [a]
   }
 }
-
-///|
-/// True when the node's value is known without evaluating any
-/// child. Only `Const` qualifies; leaves depend on the caller's
-/// binding, so the simplifier never folds them.
-pub fn Node::is_literal(self : Node) -> Bool {
-  match self {
-    Const(_) => true
-    _ => false
-  }
-}

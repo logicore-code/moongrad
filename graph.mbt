@@ -381,19 +381,17 @@ pub fn Graph::relu_deriv(self : Graph, x : Int32) -> Int32 {
 }
 
 ///|
-/// The literal stored in slot `id`, or `None`. Used by
-/// `derivative_expr` for operators whose derivative is not an
-/// ordinary smooth function of the operand — ReLU is the only one,
-/// and the discontinuity means the branch has to be decided at
-/// evaluation time rather than folded into a literal.
-pub fn Graph::eval_literal(self : Graph, id : Int32) -> Double {
-  match self.literal_of(id) {
-    Some(v) => v
-    None =>
-      // Not a literal. Reading the forward value would require a
-      // binding we do not have here, so fall back to the
-      // non-positive branch, which is the one that keeps a
-      // saturated unit from passing gradient through.
-      0.0
-  }
+/// The literal stored in slot `id`, or `None` when the slot holds
+/// something that has to be evaluated first — a variable, a parameter
+/// read, or an operation.
+///
+/// A slot that does not exist at all is also `None`: the caller
+/// turns the dangling reference into a proper error later, when the
+/// node is actually built.
+///
+/// There is no fallback value here. A slot that does not hold a
+/// literal has no number to return, and returning zero would hand
+/// the caller a number it could not tell from a real answer.
+pub fn Graph::eval_literal(self : Graph, id : Int32) -> Double? {
+  self.literal_of(id)
 }

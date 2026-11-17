@@ -24,6 +24,14 @@ pub suberror ADError {
   ParamIndexOutOfRange(Int32, Int32, Int32)
   /// Division by zero, or `log`/`sqrt` of a non-positive number.
   DomainError(String)
+  /// A compiled gradient was evaluated against inputs whose shapes
+  /// are not the ones it was compiled for.
+  ///
+  /// The gradient of a broadcast sum is summed back down over the
+  /// axes that were broadcast, so a program evaluated against
+  /// differently-shaped inputs would quietly compute the gradient of
+  /// a different function.
+  ShapeMismatch(String, String)
 }
 
 ///|
@@ -40,6 +48,8 @@ pub fn ADError::describe(self : ADError) -> String {
     ParamIndexOutOfRange(slot, idx, len) =>
       "parameter slot \{slot} has \{len} entries; index \{idx} is out of range"
     DomainError(what) => "domain error: \{what}"
+    ShapeMismatch(expected, got) =>
+      "the gradient was compiled for inputs of shape \{expected} and was evaluated against \{got}"
   }
 }
 
@@ -48,16 +58,10 @@ pub fn ADError::describe(self : ADError) -> String {
 /// the finite reals almost always indicate a diverged training run,
 /// and detecting it early is cheaper than debugging the divergence
 /// twenty epochs later.
+///
+/// This is the standard library's test; the name is kept because the
+/// library's own error convention talks about finite and non-finite
+/// values in these terms.
 pub fn is_finite(x : Double) -> Bool {
-  x == x && x != infinity_pos() && x != neg_infinity_pos()
-}
-
-///|
-fn infinity_pos() -> Double {
-  1.0 / 0.0
-}
-
-///|
-fn neg_infinity_pos() -> Double {
-  -1.0 / 0.0
+  x.is_finite()
 }

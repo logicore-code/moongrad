@@ -204,17 +204,10 @@ pub fn Graph::simplify_pow(
       None => ()
     }
   }
-  if exponent == 2.0 {
-    // `x^2` is the most common shape in a quadratic model; giving it
-    // its own node keeps the printed graph readable and lets the
-    // simplifier recognise `x^2 - x^2` as zero without evaluating
-    // either square.
-    //
-    // Nothing is rewritten here — the node below is the same node —
-    // so this is not an identity and the statistics must not count
-    // it as one.
-    return self.intern(Node::PowBy(2.0, base))
-  }
+  // Every exponent goes through the same node. `x^2` is the most
+  // common shape in a quadratic model, but it is not a shape of its
+  // own: a branch for it would only be a second spelling of the
+  // rule below, and the two could drift apart.
   self.intern(Node::PowBy(exponent, base))
 }
 
@@ -294,13 +287,7 @@ pub fn apply_unary(op : UnaryOp, x : Double) -> Double? {
     UnaryOp::Cos => Some(@math.cos(x))
     UnaryOp::Tanh => Some(@math.tanh(x))
     UnaryOp::Sigmoid => Some(1.0 / (1.0 + @math.exp(-x)))
-    UnaryOp::Softplus =>
-      // log(1 + e^x), evaluated as max(x,0) + log1p(e^-|x|) so it
-      // does not overflow for large x. The log1p matters: for a
-      // large negative x the sum rounds to one and the logarithm
-      // of it is zero, while the true value is a small number that
-      // still matters.
-      Some(maxf(x, 0.0) + log1p(@math.exp(-absf(x))))
+    UnaryOp::Softplus => Some(softplus_value(x))
     UnaryOp::Relu => Some(if x > 0.0 { x } else { 0.0 })
     UnaryOp::Silu => Some(x / (1.0 + @math.exp(-x)))
     UnaryOp::Gelu => {
@@ -310,6 +297,21 @@ pub fn apply_unary(op : UnaryOp, x : Double) -> Double? {
       Some(0.5 * x * (1.0 + @math.tanh(u)))
     }
   }
+}
+
+///|
+/// `log(1 + e^x)`, evaluated as `max(x, 0) + log1p(e^-|x|)` so it
+/// does not overflow for a large `x`.
+///
+/// The log1p matters: for a large negative `x` the sum rounds to one
+/// and the logarithm of it is zero, while the true value is a small
+/// number that still matters.
+///
+/// The graph's softplus node and the host-side cross-entropy report
+/// both come through here, so the number a training run prints is the
+/// number the optimiser minimises.
+pub fn softplus_value(x : Double) -> Double {
+  maxf(x, 0.0) + log1p(@math.exp(-absf(x)))
 }
 
 ///|

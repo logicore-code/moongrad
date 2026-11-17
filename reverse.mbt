@@ -72,15 +72,17 @@ pub extend GradGraph with Debug::{to_repr}
 
 ///|
 /// A primal graph paired with its compiled gradient.
+///
+/// The program holds the graph and nothing else. It used to also hold
+/// the primal values and the output as of the compile-time binding,
+/// but nothing read them, and they were a trap: a program re-evaluated
+/// at a different binding would have carried the value of the old one
+/// next to the new gradient. The value of a program is what it
+/// computes when it is evaluated, not what it computed once.
 #derive(Debug)
 pub(all) struct Program {
   primal : Graph
   grad : GradGraph
-  /// Value of every primal slot under the binding the gradient was
-  /// compiled against.
-  primal_values : Array[Double]
-  /// Value of the differentiated node.
-  output : Double
 }
 
 ///|
@@ -90,9 +92,12 @@ pub extend Program with Debug::{to_repr}
 /// Compile the gradient of `target` with respect to every variable
 /// and every parameter.
 ///
-/// The primal values must already be available; the backward rules
-/// need them to turn local derivatives into constants. Pass the
-/// output of `forward_values`.
+/// No primal values are needed here. The backward rules emit
+/// expressions rather than numbers, so the gradient is a function of
+/// the binding it is evaluated at, not of the one that happened to
+/// be current when it was compiled. A caller that has a binding
+/// evaluates the compiled program against it; a caller that does not
+/// can compile the gradient first and decide later.
 ///
 /// The returned graph is a fresh object, so mutating the primal
 /// afterwards cannot corrupt a gradient that has already been
@@ -212,7 +217,7 @@ fn push_adjoints(
       adj[a] = h.add(adj[a], h.mul(incoming, d))
     }
     Node::Binary(op, a, b) => {
-      let dleft = derivative_left(h, op, a, b)
+      let dleft = derivative_left(h, op, b)
       let dright = derivative_right(h, op, a, b)
       adj[a] = h.add(adj[a], h.mul(incoming, dleft))
       adj[b] = h.add(adj[b], h.mul(incoming, dright))
@@ -238,15 +243,14 @@ fn push_adjoints(
 /// value, which is what keeps the gradient re-evaluable at a
 /// different binding.
 ///
-/// ReLU is the exception and cannot be one. Its derivative is
-/// discontinuous — zero below the kink, one above — and the IR has
-/// no comparison to express "if the runtime value is positive". So
-/// ReLU reads the primal value and emits a literal 0 or 1. That is a
-/// genuine limitation rather than a shortcut, and it is the price
-/// of keeping the IR free of control flow: a ReLU's gradient is
-/// correct at the point it was compiled and has to be recompiled
-/// for another point. The tests pin the behaviour at both sides of
-/// the kink so the boundary is documented rather than accidental.
+/// ReLU is the exception, and it is handled by a node rather than by
+/// an expression. Its derivative is discontinuous — zero below the
+/// kink, one above — and the IR has no comparison to express "if the
+/// runtime value is positive". So ReLU emits a `ReluDeriv` node and
+/// the branch is taken where the gradient is evaluated, not where it
+/// was compiled. The gradient therefore stays a function of its
+/// input: a ReLU's gradient is correct wherever the program is
+/// evaluated, not only at the point it was compiled at.
 pub fn derivative_expr(h : Graph, op : UnaryOp, x : Int32) -> Int32 {
   let one = h.constant(1.0)
   match op {
@@ -298,8 +302,13 @@ pub fn derivative_expr(h : Graph, op : UnaryOp, x : Int32) -> Int32 {
 
 ///|
 /// Partial derivative of `a op b` with respect to `a`.
-pub fn derivative_left(h : Graph, op : BinaryOp, a : Int32, b : Int32) -> Int32 {
-  ignore(a)
+///
+/// The left operand is not a parameter, because none of the four
+/// operators needs it: `d(a+b)/da` and `d(a-b)/da` are one,
+/// `d(a*b)/da` is `b`, and `d(a/b)/da` is `1/b`. Carrying a value
+/// the rule does not use would only invite the reader to look for a
+/// dependence that is not there.
+pub fn derivative_left(h : Graph, op : BinaryOp, b : Int32) -> Int32 {
   match op {
     BinaryOp::Add => h.constant(1.0)
     BinaryOp::Sub => h.constant(1.0)
@@ -354,12 +363,19 @@ pub fn eval_adjoint(h : Graph, b : Binding, id : Int32) -> Double raise ADError 
 /// derivatives, and every one of those is wrapped in `Const` before
 /// being interned. The simplifier may then fold the product into a
 /// single literal, so this is the only shape an adjoint can have
-/// when it is still "just a number". Anything else would be a bug,
-/// and we surface it instead of silently reading a wrong slot.
-pub fn Graph::eval_constant(self : Graph, id : Int32) -> Double {
+/// when it is still "just a number".
+///
+/// A slot that holds anything else is a bug in the caller, and it is
+/// reported as one. The alternative would be a zero where the answer
+/// should be, and a zero is a number the caller cannot tell from a
+/// real one.
+pub fn Graph::eval_constant(self : Graph, id : Int32) -> Double raise ADError {
+  if id < 0 || id >= self.nodes.length() {
+    raise DanglingNode(id)
+  }
   match self.nodes[id] {
     Node::Const(v) => v
-    _ => 0.0
+    _ => raise DomainError("slot \{id} does not hold a literal")
   }
 }
 
@@ -385,14 +401,8 @@ pub fn grad(
   b : Binding,
   target : Int32,
 ) -> (Array[Double], Program) raise ADError {
-  let primal_values = forward_values(g, b)
   let compiled = compile_gradient(g, target)
-  let prog = Program::{
-    primal: g,
-    grad: compiled,
-    primal_values,
-    output: primal_values[target],
-  }
+  let prog = Program::{ primal: g, grad: compiled, }
   (evaluate_gradients(prog, b), prog)
 }
 

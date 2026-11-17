@@ -202,22 +202,42 @@ pub fn Dual::constant(v : Double) -> Dual {
 ///|
 /// Lift variable `slot` from a binding, with unit tangent when
 /// `direction` selects it.
-pub fn Dual::from_var(b : Binding, slot : Int32, direction : Int32) -> Dual {
-  let v = if slot >= 0 && slot < b.vars.length() { b.vars[slot] } else { 0.0 }
-  { value: v, tangent: if slot == direction { 1.0 } else { 0.0 }, }
+///
+/// A slot the binding does not have is an error, exactly as it is in
+/// the reverse pass. The forward-mode engine is the oracle the
+/// reverse pass is checked against, and an oracle that answers
+/// "zero" for a malformed binding agrees with the reverse pass on
+/// the one class of disagreement it exists to catch.
+pub fn Dual::from_var(
+  b : Binding,
+  slot : Int32,
+  direction : Int32,
+) -> Dual raise ADError {
+  if slot < 0 || slot >= b.vars.length() {
+    raise UnknownVar(slot)
+  }
+  { value: b.vars[slot], tangent: if slot == direction { 1.0 } else { 0.0 }, }
 }
 
 ///|
 /// Lift a parameter read with zero tangent. Parameters are handled by
 /// the reverse pass; forward mode is only used to cross-check
 /// gradients with respect to variables.
-pub fn Dual::from_param(b : Binding, slot : Int32, index : Int32) -> Dual {
+///
+/// The bounds are checked the way the reverse pass checks them, so a
+/// binding that does not hold the parameter is reported rather than
+/// read as a zero.
+pub fn Dual::from_param(
+  b : Binding,
+  slot : Int32,
+  index : Int32,
+) -> Dual raise ADError {
   if slot < 0 || slot >= b.params.length() {
-    return Dual::constant(0.0)
+    raise UnknownParam(slot)
   }
   let vec = b.params[slot]
   if index < 0 || index >= vec.length() {
-    return Dual::constant(0.0)
+    raise ParamIndexOutOfRange(slot, index, vec.length())
   }
   Dual::constant(vec[index])
 }
@@ -325,9 +345,19 @@ fn dual_of_node(
     Node::Unary(op, child) => Dual::unary(values[child], op)
     Node::Binary(op, a, c) => Dual::binary(op, values[a], values[c])
     Node::PowBy(exponent, base) => Dual::pow(values[base], exponent)
-    Node::ReluDeriv(child) =>
-      // The forward-mode tangent of a step function is zero almost
-      // everywhere.
-      Dual::constant(values[child].value * 0.0)
+    Node::ReluDeriv(child) => {
+      // The value is the step function itself: one where the operand
+      // is positive, zero everywhere else — the same answer the
+      // reverse-mode forward pass gives. The tangent is zero almost
+      // everywhere, because a step has no derivative away from the
+      // kink.
+      //
+      // The tangent is written as a plain zero rather than as
+      // `value * 0.0`, because that product is a NaN when the
+      // operand is an infinity — and an infinity is what a
+      // saturated activation produces.
+      let x = values[child].value
+      { value: if x > 0.0 { 1.0 } else { 0.0 }, tangent: 0.0, }
+    }
   }
 }

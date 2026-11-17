@@ -43,9 +43,6 @@ pub(all) enum Optimizer {
   Momentum(Double, Double)
   /// Adam with the given learning rate.
   Adam(Double)
-  /// Adam with an explicit step count, which it needs to correct
-  /// the bias in the moment estimates during the first few steps.
-  AdamWithSteps(Double, Int32)
 }
 
 ///|
@@ -84,14 +81,7 @@ pub fn OptimizerState::new(kind : Optimizer, count : Int32) -> OptimizerState {
     m.push(0.0)
     v.push(0.0)
   }
-  // Adam's bias correction needs to know how many updates have been
-  // applied. `AdamWithSteps` says so up front; plain `Adam` starts
-  // from nothing and counts as it goes.
-  let steps = match kind {
-    AdamWithSteps(_, t) => t
-    _ => 0
-  }
-  { kind, m, v, steps, }
+  { kind, m, v, steps: 0, }
 }
 
 ///|
@@ -101,7 +91,6 @@ pub fn Optimizer::lr(self : Optimizer) -> Double {
     Sgd(x) => x
     Momentum(x, _) => x
     Adam(x) => x
-    AdamWithSteps(x, _) => x
   }
 }
 
@@ -137,9 +126,9 @@ pub fn OptimizerState::step(
       }
     // The bias correction is applied with the step that is being
     // taken, so the first update is corrected by 1 - beta^1 rather
-    // than by 1 - beta^0.
+    // than by 1 - beta^0. Plain `Adam` gets the same correction as
+    // the caller-driven form: there is no "uncorrected" Adam here.
     Adam(lr) => apply_adam(st, params, grads, lr, n, st.steps)
-    AdamWithSteps(lr, _) => apply_adam(st, params, grads, lr, n, st.steps)
   }
 }
 
@@ -181,9 +170,13 @@ fn apply_adam(
 
 ///|
 /// Adam, with the bias correction wired to a step counter that the
-/// caller advances. This is the form `train.mbt` uses; the plain
-/// `Adam` variant exists for callers driving a single step at a
-/// time where the correction is negligible.
+/// caller advances.
+///
+/// This is the form `train.mbt` uses: the trainer knows how many
+/// updates it has applied and passes that count in. The state has a
+/// counter of its own, so `OptimizerState::step` reaches the same
+/// numbers without the caller keeping track — the two agree as long
+/// as the caller starts from a fresh state.
 pub fn OptimizerState::step_adam(
   st : OptimizerState,
   params : Array[Double],
