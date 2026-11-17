@@ -253,3 +253,38 @@ test "a_summed_axis_keeps_its_values_when_the_axis_is_longer_than_one" {
   assert_close(grads.input_grads[0].data[1], 2.0, 1.0e-12, "d/dx1")
   assert_close(grads.input_grads[0].data[2], 2.0, 1.0e-12, "d/dx2")
 }
+
+///|
+test "a_compiled_gradient_refuses_inputs_of_another_shape" {
+  // The program was compiled for one shape. Evaluating it against
+  // another would not be a different program, it would be a wrong
+  // one: the adjoint of a broadcast sum is summed back down over the
+  // axes that were broadcast, so the shapes decide what the gradient
+  // means.
+  let g = @moongrad.TGraph::new()
+  let x = g.variable(0)
+  let out = g.mul(x, x)
+  let b = tensor_binding([1.0, 2.0, 3.0])
+  let compiled = @moongrad.compile_tensor_gradient(g, b, out)
+  let other = tensor_binding([1.0, 2.0])
+  let failed = try {
+    let _ = @moongrad.evaluate_tensor_gradient(compiled, other)
+    false
+  } catch {
+    _ => true
+  }
+  check(failed, "a gradient compiled for three inputs should refuse two")
+}
+
+///|
+test "a_compiled_gradient_evaluates_at_the_shape_it_was_compiled_for" {
+  let g = @moongrad.TGraph::new()
+  let x = g.variable(0)
+  let out = g.mul(x, x)
+  let b = tensor_binding([1.0, 2.0, 3.0])
+  let compiled = @moongrad.compile_tensor_gradient(g, b, out)
+  let (grads, _) = @moongrad.evaluate_tensor_gradient(compiled, b)
+  assert_close(grads[0].data[0], 2.0, 1.0e-12, "d(x^2)/dx at 1")
+  assert_close(grads[0].data[1], 4.0, 1.0e-12, "d(x^2)/dx at 2")
+  assert_close(grads[0].data[2], 6.0, 1.0e-12, "d(x^2)/dx at 3")
+}

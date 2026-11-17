@@ -95,7 +95,13 @@ test "tensor_row_and_column_are_views" {
     @moongrad.Tensor::matrix([[1.0, 2.0], [3.0, 4.0]]),
     "the matrix should build",
   )
-  let r = t.row(1)
+  let r = match t.row(1) {
+    Some(x) => x
+    None => {
+      check(false, "the row should be there")
+      return
+    }
+  }
   assert_eq(r.data.length(), 2)
   assert_eq(r.data[0], 3.0)
   let c = match t.column(0) {
@@ -738,4 +744,53 @@ test "a_vector_has_no_column" {
   let t = @moongrad.Tensor::vector([1.0, 2.0, 3.0])
   let column = t.column(0)
   check(column is None, "a vector should have no column")
+}
+
+///|
+test "scaling_by_a_constant_multiplies_elementwise" {
+  // The README lists "scaling by a constant" among the operations the
+  // engine handles, so it is checked here.
+  let g = @moongrad.TGraph::new()
+  let x = g.input(0)
+  let k = match @moongrad.Tensor::matrix([[2.0, 3.0], [4.0, 5.0]]) {
+    Some(t) => t
+    None => return
+  }
+  let out = g.scale_tensor(x, k)
+  let b = @moongrad.TBinding::new()
+  b.set_input(
+    0,
+    match @moongrad.Tensor::matrix([[1.0, 1.0], [1.0, 1.0]]) {
+      Some(t) => t
+      None => return
+    },
+  )
+  let values = @moongrad.t_forward(g, b)
+  let scaled = values[out]
+  assert_close(scaled.data[0], 2.0, 1.0e-12, "the first entry")
+  assert_close(scaled.data[1], 3.0, 1.0e-12, "the second entry")
+  assert_close(scaled.data[2], 4.0, 1.0e-12, "the third entry")
+  assert_close(scaled.data[3], 5.0, 1.0e-12, "the fourth entry")
+}
+
+///|
+test "the_gradient_of_a_scaled_tensor_is_the_constant" {
+  let g = @moongrad.TGraph::new()
+  let x = g.input(0)
+  let k = match @moongrad.Tensor::matrix([[2.0, 3.0], [4.0, 5.0]]) {
+    Some(t) => t
+    None => return
+  }
+  let out = g.scale_tensor(x, k)
+  let b = @moongrad.TBinding::new()
+  b.set_input(
+    0,
+    match @moongrad.Tensor::matrix([[1.0, 1.0], [1.0, 1.0]]) {
+      Some(t) => t
+      None => return
+    },
+  )
+  let grads = @moongrad.t_grad(g, b, out)
+  assert_close(grads.input_grads[0].data[0], 2.0, 1.0e-12, "the first adjoint")
+  assert_close(grads.input_grads[0].data[3], 5.0, 1.0e-12, "the last adjoint")
 }
