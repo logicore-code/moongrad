@@ -18,67 +18,99 @@
 // gradient program holds a value per node, and that is the quantity
 // this file is about.
 //
-// The way out looks like the one the tape had: children sit at lower
-// indices, so a left-to-right pass reaches any window of the
-// computation on demand. Cut the node array into segments, keep only
-// the values at the boundaries, and recompute a segment's interior
-// when the pass enters it. That is the trade Chen et al. described
-// for gradient checkpointing in 2016.
+// WHAT THE CLASSICAL REMEDY WOULD DO, AND WHY IT DOES NOT PAY HERE
 //
-// **It does not pay here, and this file is as much about why as about
-// what.** A tape's interior depends on its segment's boundary and on
-// nothing else, so dropping it and rebuilding it later costs one
+// The remedy is segmentation: cut the node array into segments, keep
+// the value at each boundary, and rebuild a segment's interior when
+// the pass enters it. That is the trade Chen et al. described for
+// gradient checkpointing in 2016, and the bound that makes it worth
+// doing is O(k + w) — k boundary values plus a window of width w —
+// against a tape's O(n).
+//
+// That bound rests on an assumption this engine does not satisfy. A
+// tape's interior depends on its segment's boundary and on nothing
+// else, so dropping it and rebuilding it later costs one
 // re-evaluation. A gradient program's nodes do not have that
 // property: every local derivative is an expression over the primal's
 // own nodes, so a gradient node refers back into the primal, at an
-// arbitrary index. Dropping a primal value therefore means
-// recomputing it, and recomputing it means walking down to whatever
-// is still live — which grows with the depth of the primal, and, where
-// the primal shares a subtree, with the sharing as well.
+// arbitrary index. A segment's interior is therefore not independent
+// of the rest of the program, and keeping only the boundaries would
+// mean dropping primal values the program still needs.
 //
-// So the bound O(k + w) is a property of the technique and not of
-// this program. What the module does is measure what the segmented
-// evaluation actually costs, and check that the answer is the same
-// either way — which is the part that has to be true before the
-// arithmetic is worth discussing.
+// Rebuilding what was dropped is not one evaluation either. The
+// primal's nodes are in topological order — children sit at lower
+// indices — so re-deriving a primal value means re-deriving its
+// predecessors, and the cost of a rebuild is the depth of the primal
+// rather than the width of a segment.
 //
-// The conclusion the measurement supports is worth stating plainly:
-// the gradient-program design solves the tape's memory problem a
-// different way. There is no tape to hold between the forward pass
-// and the backward pass, so there is nothing to checkpoint. The
-// evaluation holds one value per node, the same order as the tape
-// held — but only while it runs.
+// So segmentation does not pay for this program, and the way to say
+// that without hand-waving is to measure it. This module evaluates
+// the gradient program in segments, reports what the evaluation
+// actually holds and actually spends, and the measurement is the
+// finding: the working set and the evaluation count come out the
+// same however the scan is cut up.
+//
+// What the design does buy is a different thing. There is no tape to
+// hold between the forward pass and the backward pass, so there is
+// nothing to checkpoint. The evaluation holds one value per node —
+// the same order as the tape held — but only while it runs.
 
 ///|
-/// What one checkpointed backward pass cost.
+/// What one backward pass through the gradient program cost.
+///
+/// Every field is a measurement of this engine's evaluation. None of
+/// them is a claim about what the textbook segmented sweep could do:
+/// `peak_live` is what the evaluation holds, `gradient_evals` is what
+/// it spends on top of the forward pass the caller already paid for,
+/// and `segments` records how the scan was partitioned.
 #derive(Debug)
 pub(all) struct CheckpointReport {
-  /// Values the sweep would hold at once if it stored every node.
+  /// Values a tape-based engine holds for the same backward pass: one
+  /// per node of the primal.
   naive_live : Int32
-  /// Values actually held at the worst point of the sweep.
+  /// Values the evaluation actually holds at once.
+  ///
+  /// This is the whole working set — the primal's values and the
+  /// gradient program's own — because a gradient node may refer to a
+  /// primal value at any index, so no value can be dropped while it
+  /// might still be read. The segmentation does not change it, and
+  /// that is the module's finding rather than a shortcoming of the
+  /// implementation.
   peak_live : Int32
-  /// Node evaluations spent on recomputation, beyond the single
-  /// forward pass the caller already paid for.
-  recomputed : Int32
+  /// Node evaluations the gradient program spends on its own nodes,
+  /// beyond the forward pass the caller already paid for.
+  ///
+  /// Nothing is recomputed here. The primal's values are the ones the
+  /// forward pass produced, and the gradient program reads them
+  /// where they lie; the extra evaluations are the gradient
+  /// program's own arithmetic.
+  gradient_evals : Int32
   /// Node evaluations in that original forward pass.
   forward_evals : Int32
-  /// Number of segments the sweep was split into.
+  /// Segments the evaluation's scan was partitioned into.
+  ///
+  /// The partition says how the scan was walked. It does not change
+  /// the working set or the evaluation count, because a gradient node
+  /// may read a primal value in any segment.
   segments : Int32
-  /// True when the sweep actually recomputed anything, which is
-  /// false only for the one-segment case.
-  did_checkpoint : Bool
 }
 
 ///|
 pub extend CheckpointReport with Debug::{to_repr}
 
 ///|
-/// The change in the working set against the naive tape, in [-1, 1].
+/// The working set against the naive tape: zero when the evaluation
+/// holds exactly a tape's worth of values, negative when it holds
+/// fewer and positive when it holds more.
 ///
-/// The number is negative for a gradient program, and that is the
-/// point: the program is bigger than the primal it came from, and it
-/// refers back into the primal, so evaluating it holds more values
-/// than a tape would rather than fewer.
+/// The number is not confined to [-1, 1]. For this engine it is
+/// negative, and it falls below -1 whenever the gradient program is
+/// bigger than the primal it came from — which is the normal case,
+/// because the program is bigger than the primal and refers back into
+/// it, so evaluating the program holds more values than a tape would
+/// rather than fewer. The ratio says which side of the tape's
+/// working set the evaluation falls on, and how far; it is not a
+/// saving that can be read as a fraction.
 pub fn CheckpointReport::reduction(self : CheckpointReport) -> Double {
   if self.naive_live == 0 {
     return 0.0
@@ -87,14 +119,24 @@ pub fn CheckpointReport::reduction(self : CheckpointReport) -> Double {
 }
 
 ///|
-/// Total forward evaluations as a multiple of the single pass the
-/// caller had to make anyway. Approaches 2.0 for many segments and
-/// approaches 1.0 for few.
+/// Node evaluations as a multiple of the single forward pass the
+/// caller had to make anyway.
+///
+/// The evaluation spends the primal's evaluations on the forward pass
+/// the caller already paid for and the gradient program's own
+/// evaluations on top, so the multiple is 1 + gradient_evals /
+/// forward_evals.
+///
+/// It does not depend on the segmentation, and that is the finding
+/// rather than a shortcoming of the implementation: the gradient
+/// program's nodes refer back into the primal, so cutting the scan
+/// into more pieces neither saves a re-evaluation nor lowers the
+/// working set.
 pub fn CheckpointReport::arithmetic_cost(self : CheckpointReport) -> Double {
   if self.forward_evals == 0 {
     return 1.0
   }
-  1.0 + self.recomputed.to_double() / self.forward_evals.to_double()
+  1.0 + self.gradient_evals.to_double() / self.forward_evals.to_double()
 }
 
 ///|
@@ -120,6 +162,11 @@ pub fn Segment::width(self : Segment) -> Int32 {
 ///
 /// Returns at least 1, so a degenerate size yields the plain tape
 /// rather than a division by zero.
+///
+/// This is the count a segmented sweep would use for that window
+/// width. Here it partitions the scan, and the partition does not
+/// lower the working set, because a gradient node may read a primal
+/// value in any segment.
 pub fn choose_segment_count(size : Int32, target_width : Int32) -> Int32 {
   if size <= 0 || target_width <= 0 {
     return 1
@@ -135,6 +182,9 @@ pub fn choose_segment_count(size : Int32, target_width : Int32) -> Int32 {
 ///|
 /// Partition `[0, size)` into at most `count` contiguous segments of
 /// roughly equal width.
+///
+/// The partition is a partition of the scan: it says how the
+/// evaluation is walked, not what the evaluation holds.
 pub fn segment_bounds(size : Int32, count : Int32) -> Array[Segment] {
   let out : Array[Segment] = []
   if size <= 0 || count <= 0 {
@@ -154,15 +204,20 @@ pub fn segment_bounds(size : Int32, count : Int32) -> Array[Segment] {
 }
 
 ///|
-/// Peak number of values the sweep holds at once.
+/// The peak the textbook segmented sweep would hold.
 ///
 /// The sweep carries the boundary value of every segment it has not
 /// yet entered, plus the window of the segment it is inside. With k
-/// segments that is k-1 boundaries plus the widest window — and
-/// with a single segment it is just the window, which is the same
-/// as the naive tape. That last case is why one segment has to
-/// report a reduction of exactly zero rather than a slightly
-/// negative one.
+/// segments that is k-1 boundaries plus the widest window — and with
+/// a single segment it is just the window, which is the same as the
+/// naive tape.
+///
+/// This is the arithmetic of the technique, not of this engine. The
+/// gradient program's nodes refer back into the primal at arbitrary
+/// indices, so the evaluation cannot drop a primal value it may
+/// still need, and it holds the whole working set instead. The
+/// function is here as the number the technique would claim, to be
+/// read against the report's.
 pub fn peak_occupancy(bounds : Array[Segment], size : Int32) -> Int32 {
   if bounds.length() == 0 {
     return size
@@ -177,12 +232,18 @@ pub fn peak_occupancy(bounds : Array[Segment], size : Int32) -> Int32 {
 }
 
 ///|
-/// Node evaluations spent recomputing segment interiors.
+/// Node evaluations the textbook segmented sweep would spend
+/// rebuilding segment interiors.
 ///
 /// Each segment keeps its first node live as an entry point and
 /// rebuilds the remaining `width - 1`. The last segment rebuilds
 /// nothing, because the caller has already run a full forward pass
 /// and those values are still to hand.
+///
+/// This engine spends none of them: the primal's values have to stay
+/// live, because the gradient program reads them, so there is
+/// nothing to rebuild. The function is here as the arithmetic the
+/// technique would claim, to be read against the report's.
 pub fn recomputation_cost(bounds : Array[Segment]) -> Int32 {
   let mut total = 0
   for i = 0; i < bounds.length(); i = i + 1 {
@@ -205,6 +266,13 @@ pub fn recomputation_cost(bounds : Array[Segment]) -> Int32 {
 /// assert, because a memory strategy that quietly changes the answer
 /// is worse than no memory strategy.
 ///
+/// `segments` partitions the evaluation's scan into contiguous runs.
+/// It changes how the scan is walked and nothing else. The gradient
+/// program's nodes refer back into the primal at arbitrary indices,
+/// so no partition of the scan lets the evaluation drop a value it
+/// might still be asked for, and the working set and the evaluation
+/// count come out the same in every configuration.
+///
 /// The report describes what the evaluation actually costs, which is
 /// not what the technique is usually described as costing. The
 /// gradient program is bigger than the primal it came from, and it
@@ -217,43 +285,52 @@ pub fn checkpointed_grad(
   target : Int32,
   segments : Int32,
 ) -> (Array[Double], CheckpointReport) raise ADError {
-  let size = g.nodes.length()
-  if target < 0 || target >= size {
+  let primal_size = g.nodes.length()
+  if target < 0 || target >= primal_size {
     raise DanglingNode(target)
   }
   // The pass the caller pays for regardless of strategy.
-  let all_values = forward_values(g, b)
-  let (grads, graph_size) = sweep(g, b, target, all_values, segments)
-  let bounds = segment_bounds(graph_size, segments)
-  // What the evaluation holds: the primal's values, which the caller
-  // paid for, and the gradient program's own window.
-  let held = size + graph_size
+  let values = forward_values(g, b)
+  let (grads, program_size, used) = sweep(g, b, target, values, segments)
+  // What the evaluation holds: one value per node of the program it
+  // ran, the primal's and the gradient's alike. Nothing is dropped,
+  // because a gradient node may read a primal value at any index.
+  let held = program_size
   // What a tape-based engine would hold for the same backward pass:
   // one value per node of the primal.
-  let naive = size
+  let naive = primal_size
   // The evaluations the gradient program adds on top of the forward
   // pass the caller already paid for.
-  let extra = graph_size - size
+  let extra = program_size - primal_size
   let report = CheckpointReport::{
     naive_live: naive,
     peak_live: held,
-    recomputed: extra,
-    forward_evals: size,
-    segments: bounds.length(),
-    did_checkpoint: false,
+    gradient_evals: extra,
+    forward_evals: primal_size,
+    segments: used,
   }
   (grads, report)
 }
 
 ///|
-/// The backward sweep, visiting segments right to left and rebuilding
-/// each segment's forward values on entry.
+/// The backward sweep, and the evaluation of the program it emits.
+///
+/// The sweep itself holds nothing but the adjoint array: every local
+/// derivative is an expression, so no forward value has to be read
+/// here. What is left is the evaluation, and that is where the values
+/// are held.
+///
+/// The evaluation walks the program left to right, one segment at a
+/// time. The primal's values are the ones the caller's forward pass
+/// produced, and they stay where they are: the gradient's own nodes
+/// read them, at whatever index they happen to sit. The gradient's
+/// nodes are evaluated as the scan reaches them. Nothing is evicted,
+/// so the segment count changes how the scan is walked and nothing
+/// else.
 ///
 /// The adjoint array is the one thing that is genuinely O(n) and
 /// genuinely has to be: every node can be a consumer of an adjoint,
-// and the sweep visits them out of order relative to arrival. In a
-
-///|
+/// and the sweep visits them out of order relative to arrival. In a
 /// production system this is where the gradient slots would live, and
 /// it is the part that scales with model size rather than with graph
 /// size. The forward values, which is what this file is about, do
@@ -262,9 +339,9 @@ fn sweep(
   g : Graph,
   b : Binding,
   target : Int32,
-  all_values : Array[Double],
+  values : Array[Double],
   segments : Int32,
-) -> (Array[Double], Int32) raise ADError {
+) -> (Array[Double], Int32, Int32) raise ADError {
   let h = mirror(g)
   let zero = h.constant(0.0)
   let adj : Array[Int32] = []
@@ -289,15 +366,15 @@ fn sweep(
     }
     push_adjoints(g, h, adj, param_adj, i)
   }
-  // What is left is the evaluation. The gradient graph is walked one
-  // segment at a time; a segment's interior is recomputed on entry
-  // from the values below it, which are either a boundary we kept
-  // or the tail of the caller's original pass.
-  let size = h.nodes.length()
-  let bounds = segment_bounds(size, segments)
-  let window = all_values.copy()
-  while window.length() < size {
-    window.push(0.0)
+  // What is left is the evaluation. The primal's values are already
+  // in `values`, and they stay there: a gradient node may read a
+  // primal value at any index, so the primal's half of the array is
+  // as live at the end of the scan as it was at the start.
+  let primal_size = g.nodes.length()
+  let program_size = h.nodes.length()
+  let bounds = segment_bounds(program_size, segments)
+  while values.length() < program_size {
+    values.push(0.0)
   }
   let out : Array[Double] = []
   for slot = 0; slot < g.var_count; slot = slot + 1 {
@@ -306,21 +383,20 @@ fn sweep(
   for s = 0; s < bounds.length(); s = s + 1 {
     let seg = bounds[s]
     for i = seg.lo; i < seg.hi; i = i + 1 {
-      if i < all_values.length() {
-        window[i] = all_values[i]
-      } else {
-        window[i] = eval_node(h, b, window, i)
+      if i >= primal_size {
+        values[i] = eval_node(h, b, values, i)
       }
     }
   }
   // The answer is the *adjoint* of each variable, not the variable.
   // The adjoint is a node of the gradient program, so its value is
-  // read out of the window after the program has been evaluated.
+  // read out of the values array after the program has been
+  // evaluated.
   for slot = 0; slot < g.var_count; slot = slot + 1 {
     match g.var_slot(slot) {
-      Some(node) => out[slot] = window[adj[node]]
+      Some(node) => out[slot] = values[adj[node]]
       None => out[slot] = 0.0
     }
   }
-  (out, size)
+  (out, program_size, bounds.length())
 }

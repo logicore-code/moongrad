@@ -2,17 +2,23 @@
 //
 // The memory strategy has to be invisible from the outside. Every
 // test here either asserts that the checkpointed gradient equals the
-// plain one, or asserts a property of the segmentation arithmetic.
+// plain one, or asserts a property of what the evaluation actually
+// costs.
 //
 // The equality assertions are the important ones. A checkpointing
 // implementation that quietly computes something slightly different
 // is worse than no checkpointing, because the symptom shows up as a
 // training run that converges to a marginally different minimum and
 // nobody knows why.
+//
+// The cost assertions pin what the report measures. The report is a
+// measurement of this engine's evaluation, not a promise about what
+// the textbook segmented sweep could do, and the difference between
+// those two things is the module's finding.
 
 ///|
 /// Build a moderately deep polynomial in one variable, which is the
-/// shape where segment recomputation actually has something to do.
+/// shape where a segmented scan has something to partition.
 fn deep_graph(g : @moongrad.Graph, x : Int32, depth : Int32) -> Int32 {
   // A contraction, not an expansion: repeated squaring would leave
   // the finite reals long before the interesting depths, and the
@@ -162,8 +168,64 @@ test "the_report_describes_the_gradient_program" {
   )
   assert_true(report.reduction() < 0.0)
   // The extra evaluations are the gradient program's own nodes.
-  assert_true(report.recomputed > 0)
+  assert_true(report.gradient_evals > 0)
   assert_true(report.arithmetic_cost() > 1.0)
+  // And the two halves of the report add up to the working set.
+  assert_eq(report.peak_live, report.naive_live + report.gradient_evals)
+}
+
+///|
+test "the_report_counts_the_gradient_program_s_own_nodes" {
+  // The gradient program's size is not an estimate: it is the
+  // compiled program's own node count, which the plain gradient
+  // exposes. The report's two halves have to agree with it.
+  let g = @moongrad.Graph::new()
+  ignore(g.new_vars(1))
+  let x = g.variable(0)
+  let f = deep_graph(g, x, 20)
+  let b = binding_of([0.5])
+  let (_grads, program) = @moongrad.grad(g, b, f)
+  let program_size = program.grad.graph.nodes.length()
+  let primal_size = program.grad.primal_size
+  let (_c, report) = @moongrad.checkpointed_grad(g, b, f, 4)
+  assert_eq(report.forward_evals, primal_size)
+  assert_eq(report.gradient_evals, program_size - primal_size)
+  assert_eq(report.peak_live, program_size)
+}
+
+///|
+test "the_working_set_is_the_whole_program_and_not_a_window" {
+  // The textbook technique would hold a window plus the segment
+  // boundaries, and rebuild the rest on entry. This engine cannot
+  // rebuild: a gradient node may read a primal value in any segment,
+  // and the primal's nodes are in topological order, so re-deriving
+  // one means re-deriving its predecessors.
+  //
+  // The working set is therefore the whole program, and that is what
+  // this test pins. It is the test that fails if the rebuild-on-entry
+  // mechanism is ever put back: the working set would drop below the
+  // program's size, and the assertions below would notice.
+  let g = @moongrad.Graph::new()
+  ignore(g.new_vars(1))
+  let x = g.variable(0)
+  let f = deep_graph(g, x, 12)
+  let b = binding_of([0.5])
+  let (_grads, program) = @moongrad.grad(g, b, f)
+  let program_size = program.grad.graph.nodes.length()
+  let (_c, report) = @moongrad.checkpointed_grad(g, b, f, 8)
+  assert_eq(report.peak_live, program_size)
+  assert_eq(report.peak_live, report.naive_live + report.gradient_evals)
+  // And the window the textbook technique would have used is smaller
+  // than the whole program. That gap is the whole difference between
+  // the technique's claim and what this program can do.
+  let windowed = @moongrad.peak_occupancy(
+    @moongrad.segment_bounds(program_size, 8),
+    program_size,
+  )
+  check(
+    windowed < program_size,
+    "the textbook window should be smaller than the whole program",
+  )
 }
 
 ///|
@@ -182,7 +244,7 @@ test "the_cost_does_not_depend_on_the_segmentation" {
   let (_b_, many) = @moongrad.checkpointed_grad(g, b, f, 16)
   assert_eq(one.arithmetic_cost(), many.arithmetic_cost())
   assert_eq(one.peak_live, many.peak_live)
-  assert_eq(one.recomputed, many.recomputed)
+  assert_eq(one.gradient_evals, many.gradient_evals)
 }
 
 ///|
@@ -204,39 +266,90 @@ test "the_gradient_is_the_same_in_every_configuration" {
 }
 
 ///|
-test "segmenting_trades_memory_for_arithmetic" {
-  // Fewer segments: more memory held, less arithmetic spent. More
-  // segments: less memory held, more arithmetic spent.
+test "segmenting_does_not_trade_memory_for_arithmetic" {
+  // The classic trade is: fewer segments, more memory held and less
+  // arithmetic spent; more segments, less memory held and more
+  // arithmetic spent. Neither half of it happens here, and the test
+  // says so rather than asserting a trade that cannot be made.
   //
-  // The memory is not monotone in the segment count: the working set
-  // is the segment boundaries plus the widest window, and the
-  // boundaries grow with the number of segments while the window
-  // shrinks. On a small graph the boundaries can win, so the
-  // assertion is that segmenting never holds *more* than the
-  // unsegmented pass, and that the arithmetic never gets cheaper.
+  // The working set is the whole program and the extra evaluations are
+  // the gradient program's own nodes, so neither moves when the scan
+  // is cut into more pieces.
   let g = @moongrad.Graph::new()
   ignore(g.new_vars(1))
   let x = g.variable(0)
   let f = deep_graph(g, x, 40)
   let b = binding_of([0.5])
   let (_one, single) = @moongrad.checkpointed_grad(g, b, f, 1)
-  let mut prev_cost = 0.0
-  for segments in [1, 2, 4, 8, 16] {
+  for segments in [1, 2, 4, 8, 16, 64] {
     let (_g, r) = @moongrad.checkpointed_grad(g, b, f, segments)
-    check(
-      r.peak_live <= single.peak_live,
-      "segmenting should not hold more than the unsegmented pass",
+    assert_eq(r.peak_live, single.peak_live)
+    assert_eq(r.gradient_evals, single.gradient_evals)
+    assert_close(
+      r.arithmetic_cost(),
+      single.arithmetic_cost(),
+      1.0e-12,
+      "arithmetic cost with \{segments} segments",
     )
-    check(
-      r.arithmetic_cost() >= prev_cost,
-      "arithmetic cost should not shrink as segments are added",
+    assert_close(
+      r.reduction(),
+      single.reduction(),
+      1.0e-12,
+      "reduction with \{segments} segments",
     )
-    prev_cost = r.arithmetic_cost()
   }
 }
 
 ///|
+test "the_reduction_is_the_working_set_against_the_tape" {
+  // The ratio is the working set the evaluation holds against the
+  // working set a tape would hold, and it is not confined to
+  // [-1, 1]: a gradient program is bigger than the primal it came
+  // from, so the evaluation holds more values than a tape would and
+  // the ratio falls below -1.
+  let g = @moongrad.Graph::new()
+  ignore(g.new_vars(1))
+  let x = g.variable(0)
+  let f = deep_graph(g, x, 30)
+  let b = binding_of([0.5])
+  let (_c, report) = @moongrad.checkpointed_grad(g, b, f, 4)
+  let expected = 1.0 -
+    report.peak_live.to_double() / report.naive_live.to_double()
+  assert_close(
+    report.reduction(),
+    expected,
+    1.0e-12,
+    "reduction against the working set",
+  )
+  assert_true(report.reduction() < -1.0)
+}
+
+///|
+test "the_arithmetic_cost_is_the_evaluation_against_the_forward_pass" {
+  // The evaluation spends the forward pass the caller already paid
+  // for and the gradient program's own evaluations on top.
+  let g = @moongrad.Graph::new()
+  ignore(g.new_vars(1))
+  let x = g.variable(0)
+  let f = deep_graph(g, x, 30)
+  let b = binding_of([0.5])
+  let (_c, report) = @moongrad.checkpointed_grad(g, b, f, 4)
+  let expected = 1.0 +
+    report.gradient_evals.to_double() / report.forward_evals.to_double()
+  assert_close(
+    report.arithmetic_cost(),
+    expected,
+    1.0e-12,
+    "arithmetic cost against the forward pass",
+  )
+}
+
+///|
 test "recomputation_cost_matches_the_segment_geometry" {
+  // This is the arithmetic the textbook technique would claim: the
+  // widths are 4, 4, 4, and every segment but the last rebuilds its
+  // interior. This engine spends none of it, and the report says so
+  // by reporting the gradient program's own nodes instead.
   let bounds = @moongrad.segment_bounds(12, 3)
   // widths 4, 4, 4. The last segment never recomputes.
   assert_eq(@moongrad.recomputation_cost(bounds), 3 + 3)
@@ -244,6 +357,9 @@ test "recomputation_cost_matches_the_segment_geometry" {
 
 ///|
 test "peak_occupancy_falls_as_segments_are_added" {
+  // Also the technique's arithmetic rather than this engine's: the
+  // window the textbook sweep would hold shrinks as the segments get
+  // narrower, which is exactly the promise this program cannot keep.
   let few = @moongrad.peak_occupancy(@moongrad.segment_bounds(100, 2), 100)
   let many = @moongrad.peak_occupancy(@moongrad.segment_bounds(100, 20), 100)
   check(few > many, "20 segments should hold less than 2: \{few} vs \{many}")

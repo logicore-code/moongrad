@@ -7,10 +7,11 @@
 // segments, keep only the boundaries, rebuild each segment's
 // interior on entry, and the memory falls while the arithmetic
 // rises" — does not have the same answer here, and the table shows
-// why. Every gradient node refers back into the primal, so the
-// primal's values have to stay reachable and the segments are not
-// independent of one another. Cutting the program up therefore saves
-// nothing: the numbers are the same in every row.
+// why. Every gradient node refers back into the primal, so a primal
+// value may be read by a node in any segment, and the primal's nodes
+// are in topological order: re-deriving one means re-deriving its
+// predecessors. Cutting the program up therefore saves nothing: the
+// numbers are the same in every row.
 //
 // The gradient is bit-identical in every configuration. That is
 // asserted here rather than only in the test suite, because it is
@@ -32,18 +33,20 @@ fn build_deep(g : @moongrad.Graph, x : Int32, depth : Int32) -> Int32 {
 ///|
 fn main raise @moongrad.ADError {
   let depth = 400
-  println("| moongrad: what a gradient program costs")
-  println("| a \{depth}-node computation, differentiated and evaluated")
-  println("| with several segment counts")
-  println("|")
-  println("| segments   held      vs tape    extra evals   arith cost")
-  println("| ------------------------------------------------------")
   let g = @moongrad.Graph::new()
   ignore(g.new_vars(1))
   let x = g.variable(0)
   let f = build_deep(g, x, depth)
   let b = @moongrad.Binding::new()
   b.set_var(0, 0.5)
+  println("| moongrad: what a gradient program costs")
+  println(
+    "| a \{depth}-level computation of \{g.nodes.length()} nodes, differentiated",
+  )
+  println("| and evaluated with several segment counts")
+  println("|")
+  println("| segments   held      vs tape    grad evals   arith cost")
+  println("| ------------------------------------------------------")
   // The reference answer: the plain, un-checkpointed gradient.
   let (reference, _p) = @moongrad.grad(g, b, f)
   for segments in [1, 2, 4, 8, 16, 32, 64] {
@@ -58,9 +61,13 @@ fn main raise @moongrad.ADError {
     }
     let flag = if same { "" } else { "  MISMATCH" }
     println(
-      "| \{@moongrad.format_double(segments.to_double())}        \{report.peak_live}      \{@moongrad.format_double(report.reduction())}      \{report.recomputed}        \{@moongrad.format_double(report.arithmetic_cost())}\{flag}",
+      "| \{@moongrad.format_double(report.segments.to_double())}        \{report.peak_live}      \{@moongrad.format_double(report.reduction())}      \{report.gradient_evals}        \{@moongrad.format_double(report.arithmetic_cost())}\{flag}",
     )
   }
+  println("|")
+  println("| The count is the partition actually used: the last row asks for")
+  println("| 64 and gets 63, because a segment that would come out empty is")
+  println("| not a segment.")
   println("|")
   println("| The gradient is identical in every row. That is the part")
   println("| that has to be true before any cost is worth discussing:")
@@ -74,11 +81,19 @@ fn main raise @moongrad.ADError {
   println("| every gradient node refers back into the primal, so the")
   println("| primal's values have to stay reachable.")
   println("|")
-  println("| The segmentation does not change that, and the rows show")
-  println("| it: the cost is the same however the program is cut up.")
-  println("| That is the finding. The classic trade — hold less, spend")
-  println("| more arithmetic — needs a tape whose segments are")
-  println("| independent, and a gradient program's are not.")
+  println("| The \"vs tape\" column is that comparison, and it is allowed")
+  println("| past -1 for exactly this reason: it says which side of the")
+  println("| tape's working set the evaluation falls on, not how much of")
+  println("| a saving there is.")
+  println("|")
+  println("| The segmentation does not change any of it, and the rows")
+  println("| show it: the working set and the arithmetic are the same")
+  println("| however the program is cut up. That is the finding. The")
+  println("| classic trade — hold less, spend more arithmetic — needs")
+  println("| a tape whose segments are independent, and a gradient")
+  println("| program's are not: a node may read a primal value in any")
+  println("| segment, and the primal's nodes are in topological order,")
+  println("| so re-deriving one means re-deriving its predecessors.")
   println("|")
   println("| What the design does buy is a different thing: there is")
   println("| no tape to hold between the forward pass and the backward")
