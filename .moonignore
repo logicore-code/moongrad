@@ -1,0 +1,9 @@
+# What goes into the published package.
+#
+# The library, its tests, the examples and the documentation all
+# belong there: a reader who installs the module should find the
+# tests that check it and the examples that show how to use it. The
+# benchmark harness and the competition's application form do not.
+
+perf/
+SUBMISSION.md
