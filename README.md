@@ -22,7 +22,7 @@ fn main {
   let f = g.add(g.mul(g.pow(x, 2.0), y), g.exp(x))
 
   let grads = @moongrad.t_grad(g, b, f)
-  println(Repr(grads.input_grads[0].data))   // [0.1937, 0.4899]
+  println(Repr(grads.input_grads[0].data))   // [0.1937527074704768, 0.48999999999999994]
 }
 ```
 
