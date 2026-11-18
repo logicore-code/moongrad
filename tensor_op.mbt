@@ -284,7 +284,7 @@ pub fn t_sum(a : Tensor) -> Double {
 
 ///|
 /// Mean of every element.
-pub fn t_mean(a : Tensor) -> Double {
+pub fn t_mean(a : Tensor) -> Double? {
   a.mean()
 }
 

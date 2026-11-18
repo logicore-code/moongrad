@@ -65,7 +65,14 @@ fn main {
     Some(t) => println("|   sum along axis 1 = \{t.preview()}")
     None => println("|   the reduction failed")
   }
-  println("|   mean of everything = \{@moongrad.format_double(a.mean())}")
+  let mean = match a.mean() {
+    Some(m) => m
+    None => {
+      println("|   mean of everything = undefined")
+      return
+    }
+  }
+  println("|   mean of everything = \{@moongrad.format_double(mean)}")
   println("|")
   // A rank-4 tensor, the shape a convolutional layer consumes.
   println("| a rank-4 tensor: (batch, channels, height, width)")

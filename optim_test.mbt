@@ -170,27 +170,38 @@ test "grad_norm_of_a_vector" {
 
 ///|
 test "grad_cosine_of_identical_vectors_is_one" {
-  let c = @moongrad.grad_cosine([1.0, 2.0, 3.0], [1.0, 2.0, 3.0])
+  let c = match @moongrad.grad_cosine([1.0, 2.0, 3.0], [1.0, 2.0, 3.0]) {
+    Some(v) => v
+    None => {
+      check(false, "the cosine should exist")
+      return
+    }
+  }
   assert_close(c, 1.0, 1.0e-12, "cosine of parallel vectors")
 }
 
 ///|
 test "grad_cosine_of_orthogonal_vectors_is_zero" {
-  assert_close(
-    @moongrad.grad_cosine([1.0, 0.0], [0.0, 1.0]),
-    0.0,
-    1.0e-12,
-    "orthogonal",
-  )
+  let c = match @moongrad.grad_cosine([1.0, 0.0], [0.0, 1.0]) {
+    Some(v) => v
+    None => {
+      check(false, "the cosine should exist")
+      return
+    }
+  }
+  assert_close(c, 0.0, 1.0e-12, "orthogonal")
 }
 
 ///|
-test "grad_cosine_of_a_dead_layer_is_zero" {
+test "grad_cosine_of_a_dead_layer_has_no_direction" {
   // A layer whose ReLUs have all died sends no gradient. The
   // cosine against a healthy layer is the cheapest way to notice
-  // that from the outside.
+  // that from the outside — but a dead layer has no direction at
+  // all, so the cosine is undefined rather than zero. Reporting zero
+  // would say the two gradients were orthogonal, which is a
+  // different claim.
   let c = @moongrad.grad_cosine([1.0, 2.0], [0.0, 0.0])
-  check(approx(c, 0.0, 1.0e-12), "a zero vector has no direction: \{c}")
+  check(c is None, "a zero vector has no direction")
 }
 
 ///|

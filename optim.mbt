@@ -214,7 +214,11 @@ pub fn grad_norm(grads : Array[Double]) -> Double {
 /// the cosine between consecutive gradients stays close to one, and a
 /// layer whose cosine collapses is a layer whose ReLUs have all
 /// died.
-pub fn grad_cosine(a : Array[Double], b : Array[Double]) -> Double {
+///
+/// `None` when either vector has no length: the angle between a zero
+/// vector and anything else is undefined, and reporting it as zero
+/// would say the two gradients were orthogonal.
+pub fn grad_cosine(a : Array[Double], b : Array[Double]) -> Double? {
   let n = if a.length() < b.length() { a.length() } else { b.length() }
   let mut dot = 0.0
   let mut na = 0.0
@@ -225,7 +229,7 @@ pub fn grad_cosine(a : Array[Double], b : Array[Double]) -> Double {
     nb = nb + b[i] * b[i]
   }
   if na == 0.0 || nb == 0.0 {
-    return 0.0
+    return None
   }
-  dot / (na.sqrt() * nb.sqrt())
+  Some(dot / (na.sqrt() * nb.sqrt()))
 }

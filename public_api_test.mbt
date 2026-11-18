@@ -82,7 +82,11 @@ test "the_host_side_elementwise_operators" {
 test "the_host_side_reductions" {
   let x = @moongrad.Tensor::vector([1.0, 2.0, 3.0, 4.0])
   assert_close(@moongrad.t_sum(x), 10.0, 1.0e-12, "the sum")
-  assert_close(@moongrad.t_mean(x), 2.5, 1.0e-12, "the mean")
+  let mean = match @moongrad.t_mean(x) {
+    Some(v) => v
+    None => return
+  }
+  assert_close(mean, 2.5, 1.0e-12, "the mean")
   let m = match @moongrad.t_matmul(two_by_two(), two_by_two()) {
     Some(t) => t
     None => return

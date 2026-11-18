@@ -208,11 +208,15 @@ pub fn Matrix::sum(self : Matrix) -> Double {
 
 ///|
 /// Mean of every entry.
-pub fn Matrix::mean(self : Matrix) -> Double {
+///
+/// `None` when the matrix has no entries: the mean of no numbers is
+/// not zero, it is undefined, and the loss functions in `nn.mbt` say
+/// so as well.
+pub fn Matrix::mean(self : Matrix) -> Double? {
   if self.data.length() == 0 {
-    return 0.0
+    return None
   }
-  self.sum() / self.data.length().to_double()
+  Some(self.sum() / self.data.length().to_double())
 }
 
 ///|

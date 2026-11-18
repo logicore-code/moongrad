@@ -575,11 +575,15 @@ pub fn Tensor::sum(self : Tensor) -> Double {
 
 ///|
 /// Mean of every entry.
-pub fn Tensor::mean(self : Tensor) -> Double {
+///
+/// `None` when the tensor has no entries: the mean of no numbers is
+/// not zero, it is undefined, and the loss functions in `nn.mbt` say
+/// so as well.
+pub fn Tensor::mean(self : Tensor) -> Double? {
   if self.data.length() == 0 {
-    return 0.0
+    return None
   }
-  self.sum() / self.data.length().to_double()
+  Some(self.sum() / self.data.length().to_double())
 }
 
 ///|
