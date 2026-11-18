@@ -341,3 +341,50 @@ test "a_gradient_too_large_to_square_is_scaled_rather_than_zeroed" {
   let after = g.data[0] * g.data[0] + g.data[1] * g.data[1]
   check(after <= 2.0, "the scaled gradient should have a bounded length")
 }
+
+///|
+test "every_extra_optimiser_skips_a_non_finite_gradient" {
+  // A gradient that is not finite would put a not-finite value into
+  // the optimiser's own state — the running average, the
+  // accumulator, the velocity or the moment estimates — and every
+  // later step would then be not-finite too, with no way back. Each
+  // of the four has to leave that one element alone and carry on
+  // with the rest of the parameter.
+  let kinds : Array[@moongrad.ExtraOptimizer] = [
+    @moongrad.ExtraOptimizer::RmsProp(0.01, 0.9),
+    @moongrad.ExtraOptimizer::Adagrad(0.01, 1.0e-8),
+    @moongrad.ExtraOptimizer::Nesterov(0.01, 0.9),
+    @moongrad.ExtraOptimizer::AdamW(0.01, 0.0, 1.0e-8),
+  ]
+  for kind in kinds {
+    let st = @moongrad.ExtraOptState::new(kind, [[2]])
+    let params = [@moongrad.Tensor::vector([1.0, 1.0])]
+    let grads = [@moongrad.Tensor::vector([0.5, @double.not_a_number])]
+    ignore(st.step(params, grads, 1))
+    // The finite element moved.
+    check(
+      params[0].data[0] < 1.0,
+      "the finite element should have been updated",
+    )
+    // The not-finite one did not, and it did not poison the other.
+    assert_eq(params[0].data[1], 1.0)
+  }
+}
+
+///|
+test "a_non_finite_gradient_does_not_poison_the_next_step" {
+  // The state has to survive the bad step: the next gradient is
+  // ordinary, and the parameter has to keep moving.
+  let st = @moongrad.ExtraOptState::new(
+    @moongrad.ExtraOptimizer::AdamW(0.01, 0.0, 1.0e-8),
+    [[1]],
+  )
+  let params = [@moongrad.Tensor::vector([1.0])]
+  ignore(st.step(params, [@moongrad.Tensor::vector([@double.not_a_number])], 1))
+  assert_eq(params[0].data[0], 1.0)
+  ignore(st.step(params, [@moongrad.Tensor::vector([0.5])], 2))
+  check(
+    params[0].data[0] < 1.0,
+    "the parameter should move again once the gradient is finite",
+  )
+}

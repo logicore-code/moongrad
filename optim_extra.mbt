@@ -227,6 +227,12 @@ pub fn ExtraOptState::step(
         for j = 0; j < k; j = j + 1 {
           let idx = self.layout[i] + j
           let gv = g.data[j]
+          if !is_finite(gv) {
+            // A gradient that is not finite would put a not-finite
+            // value into the accumulator, and every later step would
+            // be not-finite too, with no way back.
+            continue
+          }
           // The accumulator is a sum, not an average, so there is no
           // bias to correct. The first step is still a full one:
           // sqrt(v) is exactly |g| on the first step, so the update
@@ -249,6 +255,12 @@ pub fn ExtraOptState::step(
         for j = 0; j < k; j = j + 1 {
           let idx = self.layout[i] + j
           let gv = g.data[j]
+          if !is_finite(gv) {
+            // A gradient that is not finite would put a not-finite
+            // value into the velocity, and every later step would be
+            // not-finite too, with no way back.
+            continue
+          }
           // The velocity holds the gradient as it would be after one
           // more step, which is what makes this Nesterov's method
           // rather than plain momentum: the update looks ahead.
@@ -280,6 +292,12 @@ pub fn ExtraOptState::step(
         for j = 0; j < k; j = j + 1 {
           let idx = self.layout[i] + j
           let gv = g.data[j]
+          if !is_finite(gv) {
+            // A gradient that is not finite would put a not-finite
+            // value into both moment estimates, and every later step
+            // would be not-finite too, with no way back.
+            continue
+          }
           let pv = p.data[j]
           self.m[idx] = b1 * self.m[idx] + (1.0 - b1) * gv
           self.v[idx] = b2 * self.v[idx] + (1.0 - b2) * gv * gv
