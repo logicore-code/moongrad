@@ -35,7 +35,7 @@ pkgtype(kind: "executable")
 ## Try it
 
 ```bash
-moon test                                       # 434 unit tests
+moon test                                       # 433 unit tests
 moon run examples/reuse        --target native  # one gradient, evaluated at four inputs
 moon run examples/second_order --target native  # a Newton step, with and without the Hessian
 moon run examples/nn_classifier --target native # a network that trains
@@ -235,7 +235,7 @@ finite difference that is the approximate one. The example prints the
 disagreement in full, because 3.5e-9 rounded to four decimals is a report
 of nothing.
 
-The test suite (434 cases) additionally checks each local derivative rule
+The test suite (433 cases) additionally checks each local derivative rule
 against its closed form, and each layer against a hand-computed
 backpropagation.
 
@@ -305,7 +305,7 @@ quick-start above verbatim.
 ## Building
 
 ```bash
-moon test          # 434 unit tests
+moon test          # 433 unit tests
 moon check         # 0 warnings, 0 errors
 moon fmt           # format
 moon build         # build for the preferred target (wasm)
