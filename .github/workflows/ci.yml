@@ -122,7 +122,7 @@ jobs:
           pkgtype(kind: "executable")
           PKG
           cat > src/main.mbt <<'MBI'
-          fn main {
+          fn main raise @moongrad.ADError {
             let g = @moongrad.TGraph::new()
             let b = @moongrad.TBinding::new()
             b.set_input(0, @moongrad.Tensor::vector([0.7, -1.3]))

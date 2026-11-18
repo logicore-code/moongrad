@@ -7,8 +7,8 @@ current release line is the only one that receives fixes.
 
 | Version | Supported |
 |---|---|
-| 0.7.x | yes |
-| < 0.7 | no |
+| 0.8.x | yes |
+| < 0.8 | no |
 
 ## Reporting a vulnerability
 
@@ -29,12 +29,12 @@ credited in the changelog unless you would rather not be.
 
 ## Scope
 
-This library computes derivatives. It reads no files outside the two
-modules that do so deliberately (`model_io.mbt` for JSON,
-`dataset.mbt` for data), opens no network connections, has no FFI,
-and depends only on the MoonBit standard library. It does not run
-untrusted input in any privileged position, so the realistic classes
-of problem are memory-safety or arithmetic faults in the numerical
-code — a shape mismatch that is not refused, a division that produces
-a NaN where the caller believes it produced a number, or an
-out-of-bounds access.
+This library computes derivatives. It reads no files at all —
+`model_io.mbt` produces a JSON string and `dataset.mbt` produces
+arrays, and neither touches the filesystem — opens no network
+connections, has no FFI, and depends only on the MoonBit standard
+library. It does not run untrusted input in any privileged position,
+so the realistic classes of problem are memory-safety or arithmetic
+faults in the numerical code — a shape mismatch that is not refused, a
+division that produces a NaN where the caller believes it produced a
+number, or an out-of-bounds access.

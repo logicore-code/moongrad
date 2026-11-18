@@ -110,11 +110,12 @@ rather than 64:
 1. **The simplifier runs on the gradient arithmetic.** It is the same
    peephole pass the scalar engine has always used — `x + 0` is `x`,
    `x * 1` is `x`, two literals are folded — and the question "is this
-   literal the identity of this operator" is asked by one function in
+   literal the identity of this operator" is asked by two functions in
    `simplify.mbt` that both engines call. The tensor side's addition is
    that a literal has to be a *scalar* to count: a zero of shape (2,3)
    added to a (2,2) operand is a shape error, not the operand.
-2. **Nodes are shared.** The tensor graph hash-conses its nodes the way
+2. **Nodes are shared.** The tensor graph hash-conses the operators that
+   carry arithmetic — the unary and binary ones — the way
    the scalar graph always has, so a subexpression that appears twice is
    computed once.
 3. **The adjoint accumulator is not a node.** The zero every adjoint

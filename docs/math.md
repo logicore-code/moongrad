@@ -184,7 +184,7 @@ for each input slot s, for each element e of s:
 is an ordinary backward pass over an ordinary tensor graph. There is no
 second-order special case anywhere in the compiler.
 
-`param_hessian` and `mixed_hessian` are the same construction with the
+`t_param_hessian` and `t_mixed_hessian` are the same construction with the
 parameter space in place of the input space. The mixed block,
 `d²f/dw_i dx_j`, is the one a Gauss-Newton step needs.
 

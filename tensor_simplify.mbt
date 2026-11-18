@@ -78,9 +78,15 @@ fn t_tensor_literal(g : TGraph, id : Int32) -> Tensor? {
 ///|
 /// Whether every element of `t` is a finite number.
 ///
-/// A fold that produced an infinity or a NaN is not a fold: the
-/// operation would have raised a domain error at evaluation time, and
-/// doing it early would hide that.
+/// A fold that produced an infinity or a NaN is not a fold.
+///
+/// The reason is not that the fold would hide an error — the tensor
+/// engine does not raise on a division by zero, it produces an
+/// infinity and carries on — but that a non-finite constant is a
+/// value the caller cannot undo. A parameter that becomes infinite
+/// stays infinite; folding it in early would put it there before the
+/// caller had a chance to notice that the gradient was already
+/// diverged.
 fn t_all_finite(t : Tensor) -> Bool {
   for v in t.data {
     if v != v {

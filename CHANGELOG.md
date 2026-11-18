@@ -27,7 +27,10 @@ project follows Semantic Versioning: bump the
   2 001 µs to 1 203 µs.
 - **Node sharing in the tensor graph**, the way the scalar graph has
   always done it: a hash-cons table keyed on the node itself, so two
-  identical computations are one node.
+  identical computations are one node. It covers the operators that
+  carry arithmetic — the unary and binary ones — which is where the
+  repetition is; the rest of the operators are pushed as they are
+  built.
 - **A compiled gradient refuses inputs of another shape.** The shapes
   were recorded and never checked, so evaluating a program against
   differently-shaped inputs returned the gradient of a different
@@ -36,6 +39,9 @@ project follows Semantic Versioning: bump the
   the tensor engine compute for every operator they have in common.
   The two engines are separate code and each carries its own
   derivative rules; this is what keeps them honest.
+- **`public_api_test.mbt`**, which calls the public functions nothing
+  else in the repository calls. They were exported and documented and
+  had never been run.
 - **`CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`**, issue
   and pull-request templates, and a copyright line in the licence
   naming the holder.
@@ -76,6 +82,35 @@ project follows Semantic Versioning: bump the
   never matched the tree at the time; the benchmark's per-node figure
   and its "8x4 network" label did not describe the measured code.
 
+- **The Hessian-vector product path bypassed the shape check.** A
+  compiled product evaluated against a binding of another shape
+  returned the product of a different function, and a direction of the
+  wrong length returned a zero product. Both are refused now, and a
+  forward pass that could not be carried out is noticed.
+- **A gradient of a node that does not exist was a program of
+  zeros.** Answering "the gradient is zero" for something that was
+  never built is a wrong number with no way to tell it from a right
+  one; the target is refused now.
+- **A forward pass that failed was not noticed.** The evaluator
+  records the failure, and the compile and the evaluation both look
+  at it now. The batch trainer had not been checking it, so a failed
+  batch reported a loss of zero and carried on stepping.
+- **A one-shot product changed the binding it was given.** Compiling
+  a product gives the direction a slot of its own, and the slot
+  stayed in the binding afterwards — so the second call was over a
+  larger space than the first, and the direction it was handed was no
+  longer the right length. The width is put back now.
+- **The variants of `ADError` could not be built outside the package
+  that defines them.** A caller writing a layer on top of the
+  library had no way to raise an error the caller could catch.
+  `domain_error` and `shape_mismatch` are the two constructors that
+  make sense outside.
+- **The tensor mirror did not share its nodes with the primal**, so a
+  gradient node that happened to be the same computation as a primal
+  node was built a second time. The mirror registers the primal's
+  nodes without renumbering them, which is what keeps the backward
+  rules' indices pointing at the right values.
+
 ### Changed
 - CI now runs `moon check --deny-warn` and `moon test --deny-warn`.
   The zero-warning claim in the README is enforced rather than
@@ -88,8 +123,9 @@ project follows Semantic Versioning: bump the
   package.
 - `examples/gradcheck` now prints the disagreement in full rather than
   rounded to four decimals, and its pass threshold is 1e-6 instead of
-  1e-4. The disagreement is around 1e-10, so the old threshold would
-  have accepted a gradient that was wrong in the fourth digit.
+  1e-4. The disagreement runs from 1e-11 to 3.5e-9, so the old
+  threshold would have accepted a gradient that was wrong in the
+  fourth digit.
 
 ## [0.7.0] — 2026-11-12
 
@@ -404,7 +440,7 @@ project follows Semantic Versioning: bump the
   correction and the epsilon spelled out.
 - A training loop in `train.mbt` that compiles the graph and the
   gradient once and re-evaluates them every step.
-- A row-major matrix type in `tensor.mbt`.
+- A row-major matrix type in `matrix.mbt`.
 - Six runnable examples under `examples/`: a derivative table
   checked against finite differences, polynomial regression, XOR, a
   Hessian walkthrough, the checkpointing trade-off, and what the

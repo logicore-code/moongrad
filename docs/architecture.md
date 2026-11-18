@@ -10,12 +10,12 @@ A node is referred to everywhere else by its index into `Graph::nodes`:
 ```moonbit
 pub(all) enum Node {
   Const(Double)
-  Var(Int)
-  ParamGet(Int, Int)
-  Unary(UnaryOp, Int)
-  Binary(BinaryOp, Int, Int)
-  PowBy(Double, Int)
-  ReluDeriv(Int)
+  Var(Int32)
+  ParamGet(Int32, Int32)
+  Unary(UnaryOp, Int32)
+  Binary(BinaryOp, Int32, Int32)
+  PowBy(Double, Int32)
+  ReluDeriv(Int32)
 }
 ```
 
@@ -280,8 +280,13 @@ These are choices, with reasons, rather than gaps.
   size, so this costs nothing in practice.
 - **Two engines, and a test that they agree.** The scalar engine is the
   rank-0 case of the tensor one, not a prototype it grew out of. They
-  share the tables in `simplify.mbt`, which is what keeps a rule
-  fixed in one from being un-fixed in the other.
+  are separate code with separate backward sweeps, so what keeps a
+  rule fixed in one from being un-fixed in the other is
+  `engine_agreement_test.mbt`, which compares what the two compute
+  for every operator they have in common. What they do share is the
+  table that says which literal is the identity of which operator,
+  because the tensor engine's simplifier asks it the same question
+  the scalar one does.
 - **Two routes to a second-order step.** The dense Hessian is exact
   and simple when the parameter count is small. The matrix-free route
   — a Hessian-vector product plus conjugate gradient — is what

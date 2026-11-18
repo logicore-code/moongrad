@@ -34,7 +34,7 @@ moon run examples/cnn             --target native --release
 | `polyfit/`     | recovering a quadratic's coefficients from noisy data | `1.5 -> 1.4954`, `-0.8 -> -0.8019` |
 | `xor/`         | a linear model against a two-layer one | linear `0.25`, two-layer `0` |
 | `cse/`         | what the graph compiler saves | slots, folds, identities |
-| `second_order/` | the Hessian, a Hessian-vector product, Newton-CG | the dense and the matrix-free route give the same Newton step |
+| `second_order/` | the Hessian, a Hessian-vector product, Newton-CG | the dense and the matrix-free route give the same Newton step, to within one unit in the last place |
 | `minibatch/`   | mini-batch training on a synthetic dataset | the weight converges to the true one |
 | `cnn/`         | two convolutions, a softmax head, AdamW, mini-batches | 41,828 parameters; the loss falls from 26.7 to 0.003, and unseen images are labelled correctly |
 

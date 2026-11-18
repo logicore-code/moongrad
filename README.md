@@ -12,7 +12,7 @@ different input, or differentiate it again to get a Hessian.
 
 ```moonbit
 // main.mbt
-fn main {
+fn main raise @moongrad.ADError {
   let g = @moongrad.TGraph::new()
   let b = @moongrad.TBinding::new()
   b.set_input(0, @moongrad.Tensor::vector([0.7, -1.3]))
@@ -35,7 +35,7 @@ pkgtype(kind: "executable")
 ## Try it
 
 ```bash
-moon test                                       # 416 unit tests
+moon test                                       # 434 unit tests
 moon run examples/reuse        --target native  # one gradient, evaluated at four inputs
 moon run examples/second_order --target native  # a Newton step, with and without the Hessian
 moon run examples/nn_classifier --target native # a network that trains
@@ -149,6 +149,7 @@ That is the whole design, and it is what the rest of the library hangs off:
 | `matrix.mbt` | The matrix type the linear algebra and the Hessian are built on |
 | `tensor_op.mbt` | Elementwise arithmetic with broadcasting, matrix product, reductions, softmax, log-softmax, cross-entropy |
 | `tensor_grad.mbt` | The tensor gradient compiler: the backward sweep that emits a program |
+| `tensor_simplify.mbt` | The tensor graph's peephole simplifier and node sharing |
 | `tensor_shape.mbt` | Shape adjustments — cropping, padding, scattering a row back into a parameter |
 | `tensor_hessian.mbt` | The Hessian of a tensor objective, and the mixed parameter-input block |
 | `nn_tensor.mbt` | Dense layers, embeddings, dropout, sequential containers |
@@ -234,7 +235,7 @@ finite difference that is the approximate one. The example prints the
 disagreement in full, because 3.5e-9 rounded to four decimals is a report
 of nothing.
 
-The test suite (416 cases) additionally checks each local derivative rule
+The test suite (434 cases) additionally checks each local derivative rule
 against its closed form, and each layer against a hand-computed
 backpropagation.
 
@@ -304,7 +305,7 @@ quick-start above verbatim.
 ## Building
 
 ```bash
-moon test          # 416 unit tests
+moon test          # 434 unit tests
 moon check         # 0 warnings, 0 errors
 moon fmt           # format
 moon build         # build for the preferred target (wasm)

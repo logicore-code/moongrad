@@ -68,10 +68,11 @@ wasi.start(instance)
 
 The same file, served from the same place, runs in a browser tab with
 no server behind it. A model whose parameters are fitted on a server
-and shipped as a JSON file — `model_io.mbt` writes one, and the round
-trip is exact down to the sign of a zero — can be differentiated in
-the tab, with the gradient program compiled there rather than shipped
-alongside.
+and shipped as JSON — `model_io.mbt` turns a model into a JSON string
+and back, and the round trip is exact down to the sign of a zero —
+can be differentiated in the tab, with the gradient program compiled
+there rather than shipped alongside. Writing the string to a file is
+the caller's job; the library reads no files at all.
 
 ## What this does not buy you
 
