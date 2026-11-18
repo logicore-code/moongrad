@@ -278,13 +278,18 @@ pub fn BatchTrainer::fill_batch(self : BatchTrainer) -> Int32 {
 /// The forward pass runs on the current parameters, the gradient
 /// program is re-evaluated against the same binding, and the
 /// optimiser updates the host-side parameter tensors.
-pub fn BatchTrainer::step(self : BatchTrainer) -> BatchStep {
+pub fn BatchTrainer::step(self : BatchTrainer) -> BatchStep raise ADError {
   // The graph's stochastic inputs — a dropout mask, say — are redrawn
   // before every step, so that the layer is a dropout rather than a
   // fixed random projection. The forward pass and the gradient
   // program read the mask from the same slot, so they agree.
   self.graph.refresh_stochastic(self.binding)
   let used = self.fill_batch()
+  if self.batch_size <= 0 {
+    // A batch of nothing is not a step, and there is no gradient to
+    // compute for one.
+    return { loss: 0.0, grad_norm: 0.0, samples: used, ok: false, }
+  }
   if used < self.batch_size {
     // The batch was short — the last one of the epoch, dropped on
     // purpose. Running the step anyway would train on the previous
@@ -308,6 +313,13 @@ pub fn BatchTrainer::step(self : BatchTrainer) -> BatchStep {
     return { loss: 0.0, grad_norm: 0.0, samples: used, ok: false, }
   }
   let values = t_forward(grad.graph, self.binding)
+  if grad.graph.failed {
+    // The evaluation itself failed: a shape that does not fit, or a
+    // parameter that does not match the slot it was bound to. The
+    // tensor trainer checks this too; a batch trainer that did not
+    // would report a loss of zero and carry on stepping.
+    return { loss: 0.0, grad_norm: 0.0, samples: used, ok: false, }
+  }
   let loss_value = values[self.loss_node].sum()
   let grads : Array[Tensor] = []
   for i = 0; i < grad.param_adj.length(); i = i + 1 {
@@ -328,7 +340,10 @@ pub fn BatchTrainer::step(self : BatchTrainer) -> BatchStep {
 
 ///|
 /// Run whole epochs and return the final loss.
-pub fn BatchTrainer::fit(self : BatchTrainer, epochs : Int32) -> Double {
+pub fn BatchTrainer::fit(
+  self : BatchTrainer,
+  epochs : Int32,
+) -> Double raise ADError {
   let per_epoch = self.steps_per_epoch()
   let mut last = 0.0
   for e = 0; e < epochs; e = e + 1 {

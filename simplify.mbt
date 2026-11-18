@@ -465,11 +465,20 @@ pub fn absf(a : Double) -> Double {
 /// answer from here, which is the point: one table, two engines.
 ///
 /// One caveat, and it is the only inexactness in these rules.
-/// IEEE-754 says `x + (+0)` is `+0` when `x` is `-0`, so rewriting
-/// `x + 0` to `x` changes the sign of a zero. No other value is
-/// affected, and the rule removes a node from the adjoint of every
-/// branch, so the trade is worth making — but it is a trade, and it
-/// is written down rather than left to be discovered.
+/// IEEE-754 says the sum of two zeros of opposite signs is `+0`, so
+/// three of the rewrites change the sign of a zero: `x + (+0)` and
+/// `(+0) + x` give `+0` where the rewrite keeps `x`'s `-0`, and
+/// `x - (-0)` does the same. No other value is affected — `x * 1` and
+/// `x / 1` are exact for every input, zero of either sign included —
+/// and the rule removes a node from the adjoint of every branch, so
+/// the trade is worth making. It is a trade, and it is written down
+/// rather than left to be discovered.
+///
+/// The alternative would be to rewrite only when the rewrite is exact,
+/// which for `+` means accepting only `-0` as the literal. That is
+/// the less common zero, so in practice the rule would stop firing
+/// where it does the most good: on the zero every adjoint starts
+/// from.
 pub fn binary_left_identity(op : BinaryOp, v : Double) -> Bool {
   match op {
     BinaryOp::Add => v == 0.0

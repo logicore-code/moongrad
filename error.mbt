@@ -35,6 +35,29 @@ pub suberror ADError {
 }
 
 ///|
+/// A domain error, for a caller that needs to raise one.
+///
+/// The variants of a suberror are read-only outside the package that
+/// defines it, so a caller outside moongrad has no way to build an
+/// `ADError` of its own. That is not much of a problem while the
+/// library is the only thing raising them, and it is a real one as
+/// soon as somebody writes a layer on top: the error a layer raises
+/// has to be one the caller can catch and read.
+///
+/// The variants stay read-only. What is offered here is a way to
+/// build the two that make sense outside: a domain error and a
+/// shape mismatch.
+pub fn domain_error(what : String) -> ADError {
+  DomainError(what)
+}
+
+///|
+/// A shape mismatch, for a caller that needs to raise one.
+pub fn shape_mismatch(expected : String, got : String) -> ADError {
+  ShapeMismatch(expected, got)
+}
+
+///|
 pub extend ADError with Debug::{to_repr}
 
 ///|

@@ -52,7 +52,7 @@ fn scalar_grad(
 fn tensor_grad(
   build : (@moongrad.TGraph, Int32) -> Int32,
   v : Double,
-) -> Double {
+) -> Double raise @moongrad.ADError {
   let g = @moongrad.TGraph::new()
   let x = g.input(0)
   let y = build(g, x)

@@ -61,20 +61,22 @@ test "the_compiled_hessian_vector_product_serves_every_direction" {
   let g = cube_input_graph()
   let b = @moongrad.TBinding::new()
   b.set_input(0, @moongrad.Tensor::vector([1.5, -0.5]))
-  let hvp = match @moongrad.compile_param_hvp(g, b, 2, 7) {
+  // The one-shot product puts the binding back the way it found it,
+  // so the compiled one is built against a binding that is still the
+  // caller's own.
+  let first = @moongrad.t_input_hvp(g, b, 2, [1.0, 0.0])
+  let hvp = match @moongrad.compile_input_hvp(g, b, 2, 1) {
     Some(h) => h
     None => {
       check(false, "the product should compile")
       return
     }
   }
-  let first = @moongrad.t_input_hvp(g, b, 2, [1.0, 0.0])
   let compiled = hvp.apply(b, [1.0, 0.0])
-  // The compiled product is over the parameters, and this graph has
-  // none, so it is empty; what matters is that it evaluates without
-  // error and that the input-space product still agrees with the
-  // dense Hessian.
-  assert_eq(compiled.length(), 0)
+  // The compiled product is over the inputs, and it has to serve
+  // every direction: the program is compiled once and evaluated
+  // again for each one.
+  assert_eq(compiled.length(), 1)
   let dense = @moongrad.t_hessian(g, b, 2)
   assert_close(dense.get(0, 0), 9.0, 1.0e-9, "d2f/dx0^2")
   assert_close(dense.get(1, 1), -3.0, 1.0e-9, "d2f/dx1^2")
@@ -147,7 +149,11 @@ test "the_dense_newton_step_agrees_with_the_iterative_one" {
 ///|
 test "conjugate_gradient_solves_a_spd_system" {
   // The 4x4 system with A = [[4,1],[1,3]] on the diagonal blocks.
-  let op = fn(v : Array[Double]) -> Array[Double] {
+  let op = fn(v : Array[Double]) -> Array[Double] raise @moongrad.ADError {
+    if v.length() < 4 {
+      // The operator is only defined on four-dimensional vectors.
+      raise @moongrad.domain_error("the operator needs four entries")
+    }
     [
       4.0 * v[0] + v[1],
       v[0] + 3.0 * v[1],
@@ -181,7 +187,12 @@ test "conjugate_gradient_reports_an_indefinite_operator" {
   // The matrix [[-1,0],[0,1]] is indefinite, so the first curvature
   // p'Ap is negative and the iteration must notice rather than
   // return nonsense.
-  let op = fn(v : Array[Double]) -> Array[Double] { [-v[0], v[1]] }
+  let op = fn(v : Array[Double]) -> Array[Double] raise @moongrad.ADError {
+    if v.length() < 2 {
+      raise @moongrad.domain_error("the operator needs four entries")
+    }
+    [-v[0], v[1]]
+  }
   let result = @moongrad.cg_operator(op, [1.0, 1.0], [0.0, 0.0], 50, 1.0e-12)
   assert_true(result is None)
 }
@@ -215,4 +226,63 @@ test "the_product_refuses_to_take_over_an_input" {
   b.set_input(0, @moongrad.Tensor::vector([1.5, -0.5]))
   let refused = @moongrad.compile_input_hvp(g, b, loss, 0)
   check(refused is None, "the direction must not take over an input")
+}
+
+///|
+test "a_product_refuses_a_direction_of_the_wrong_length" {
+  // A short direction would be written into the slot and the forward
+  // pass would fail on it, and the failure would come back as a zero
+  // product rather than as an error.
+  let g = cube_input_graph()
+  let b = @moongrad.TBinding::new()
+  b.set_input(0, @moongrad.Tensor::vector([1.5, -0.5]))
+  let refused = try {
+    let _ = @moongrad.t_input_hvp(g, b, 2, [1.0])
+    false
+  } catch {
+    _ => true
+  }
+  check(refused, "a direction of the wrong length should be refused")
+}
+
+///|
+test "a_product_refuses_a_binding_of_another_shape" {
+  // The program was compiled for a two-element input. Evaluating it
+  // against a three-element one would be the product of a different
+  // function.
+  let g = cube_input_graph()
+  let b = @moongrad.TBinding::new()
+  b.set_input(0, @moongrad.Tensor::vector([1.5, -0.5]))
+  let hvp = match @moongrad.compile_input_hvp(g, b, 2, 1) {
+    Some(h) => h
+    None => {
+      check(false, "the product should compile")
+      return
+    }
+  }
+  b.set_input(0, @moongrad.Tensor::vector([1.5, -0.5, 0.25]))
+  let refused = try {
+    let _ = hvp.apply(b, [1.0, 0.0, 0.0])
+    false
+  } catch {
+    _ => true
+  }
+  check(refused, "a binding of another shape should be refused")
+}
+
+///|
+test "a_one_shot_product_leaves_the_binding_as_it_found_it" {
+  // Compiling a product gives the direction a slot of its own, which
+  // the binding has to have a value for. If the binding kept that
+  // slot, the second call would be over a larger space than the
+  // first, and the direction it was given would no longer be the
+  // right length.
+  let g = cube_input_graph()
+  let b = @moongrad.TBinding::new()
+  b.set_input(0, @moongrad.Tensor::vector([1.5, -0.5]))
+  let width = b.inputs.length()
+  let _ = @moongrad.t_input_hvp(g, b, 2, [1.0, 0.0])
+  assert_eq(b.inputs.length(), width)
+  let _ = @moongrad.t_input_hvp(g, b, 2, [0.0, 1.0])
+  assert_eq(b.inputs.length(), width)
 }

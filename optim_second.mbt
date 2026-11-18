@@ -85,6 +85,11 @@ fn flat_layout(slots : Array[Tensor]) -> (Array[Int32], Int32) {
 /// one of the primal's own input slots. The binding is given a slot
 /// of the right size so that the graph and the binding agree.
 ///
+/// The binding is modified in place, and the slot it was given stays
+/// in it afterwards. A caller who wants the binding back the way it
+/// was should compile against a binding of its own — the one-shot
+/// `t_input_hvp` and `t_param_hvp` do exactly that.
+///
 /// The product is over the parameters when `over_params` is true and
 /// over the inputs otherwise. Both are the same construction.
 pub fn compile_hvp(
@@ -93,7 +98,7 @@ pub fn compile_hvp(
   target : Int32,
   slot : Int32,
   over_params : Bool,
-) -> HvpProgram? {
+) -> HvpProgram? raise ADError {
   // The space is snapshotted before the direction slot is added: over
   // the inputs, the direction is itself an input, and it must not be
   // part of the space it is dotted with.
@@ -144,7 +149,7 @@ pub fn compile_param_hvp(
   b : TBinding,
   target : Int32,
   slot : Int32,
-) -> HvpProgram? {
+) -> HvpProgram? raise ADError {
   compile_hvp(g, b, target, slot, true)
 }
 
@@ -155,7 +160,7 @@ pub fn compile_input_hvp(
   b : TBinding,
   target : Int32,
   slot : Int32,
-) -> HvpProgram? {
+) -> HvpProgram? raise ADError {
   compile_hvp(g, b, target, slot, false)
 }
 
@@ -169,9 +174,29 @@ pub fn HvpProgram::apply(
   self : HvpProgram,
   b : TBinding,
   v : Array[Double],
-) -> Array[Tensor] {
+) -> Array[Tensor] raise ADError {
+  if v.length() != self.size {
+    // A direction of the wrong length would be written into the
+    // slot and the forward pass would fail on it, and the failure
+    // would come back as a zero product rather than as an error.
+    raise DomainError(
+      "the direction has \{v.length()} elements and the product is over \{self.size}",
+    )
+  }
   b.set_input(self.slot, Tensor::vector(v))
+  // The program was compiled for a particular set of shapes, and
+  // evaluating it against others would compute the product of a
+  // different function.
+  if !self.grad.shapes_match(b) {
+    raise ShapeMismatch(
+      shape_list(self.grad.input_shapes),
+      shape_list(b.inputs.map(fn(t : Tensor) { t.shape })),
+    )
+  }
   let values = t_forward(self.grad.graph, b)
+  if self.grad.graph.failed {
+    raise DomainError("the product could not be evaluated")
+  }
   let out : Array[Tensor] = []
   if self.over_params {
     for i = 0; i < self.grad.param_adj.length(); i = i + 1 {
@@ -194,12 +219,23 @@ pub fn t_input_hvp(
   b : TBinding,
   target : Int32,
   v : Array[Double],
-) -> Array[Tensor] {
-  let hvp = match compile_input_hvp(g, b, target, b.inputs.length()) {
+) -> Array[Tensor] raise ADError {
+  // Compiling the product gives the direction a slot of its own,
+  // which the binding has to have a value for. The slot is appended,
+  // so the binding's own width would grow by one on every call --
+  // and the second call would then be over a larger space than the
+  // first, which is not what a one-shot product should do. The width
+  // is put back afterwards.
+  let width = b.inputs.length()
+  let hvp = match compile_input_hvp(g, b, target, width) {
     Some(h) => h
-    None => return []
+    None => raise DomainError("the product could not be compiled")
   }
-  hvp.apply(b, v)
+  let out = hvp.apply(b, v)
+  while b.inputs.length() > width {
+    let _ = b.inputs.pop()
+  }
+  out
 }
 
 ///|
@@ -209,12 +245,17 @@ pub fn t_param_hvp(
   b : TBinding,
   target : Int32,
   v : Array[Double],
-) -> Array[Tensor] {
-  let hvp = match compile_param_hvp(g, b, target, b.inputs.length()) {
+) -> Array[Tensor] raise ADError {
+  let width = b.inputs.length()
+  let hvp = match compile_param_hvp(g, b, target, width) {
     Some(h) => h
-    None => return []
+    None => raise DomainError("the product could not be compiled")
   }
-  hvp.apply(b, v)
+  let out = hvp.apply(b, v)
+  while b.inputs.length() > width {
+    let _ = b.inputs.pop()
+  }
+  out
 }
 
 ///|
@@ -239,12 +280,12 @@ pub fn flatten_params(params : Array[Tensor]) -> Array[Double] {
 /// finds a non-positive curvature, which is the usual symptom of an
 /// indefinite operator.
 pub fn cg_operator(
-  op : (Array[Double]) -> Array[Double],
+  op : (Array[Double]) -> Array[Double] raise ADError,
   b : Array[Double],
   x0 : Array[Double],
   max_iter : Int32,
   tol : Double,
-) -> Array[Double]? {
+) -> Array[Double]? raise ADError {
   let n = b.length()
   let x = x0.copy()
   let mut r : Array[Double] = []
@@ -329,7 +370,7 @@ pub fn newton_cg_step(
   max_iter : Int32,
   tol : Double,
   slot : Int32,
-) -> Array[Double]? {
+) -> Array[Double]? raise ADError {
   let hvp = match compile_param_hvp(g, b, target, slot) {
     Some(h) => h
     None => return None
@@ -349,7 +390,7 @@ pub fn newton_cg_step(
   for x in grad_flat {
     rhs.push(-x)
   }
-  let op = fn(v : Array[Double]) -> Array[Double] {
+  let op = fn(v : Array[Double]) -> Array[Double] raise ADError {
     let blocks = hvp.apply(b, v)
     let out : Array[Double] = []
     for t in blocks {
@@ -381,7 +422,7 @@ pub fn dense_newton_step(
   b : TBinding,
   target : Int32,
   damping : Double,
-) -> Array[Double]? {
+) -> Array[Double]? raise ADError {
   let h = t_param_hessian(g, b, target)
   let first = compile_tensor_gradient(g, b, target)
   let gvals = t_forward(first.graph, b)

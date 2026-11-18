@@ -49,7 +49,7 @@ fn numeric_grad(f : Objective, x : Array[Double]) -> Array[Double] {
 fn compiled_grad(
   build : (@moongrad.TGraph, @moongrad.TBinding) -> Int32,
   x : Array[Double],
-) -> Array[Double] {
+) -> Array[Double] raise @moongrad.ADError {
   let g = @moongrad.TGraph::new()
   let b = @moongrad.TBinding::new()
   b.set_input(0, @moongrad.Tensor::vector(x))
@@ -65,7 +65,7 @@ fn compare(
   build : (@moongrad.TGraph, @moongrad.TBinding) -> Int32,
   objective : Objective,
   x : Array[Double],
-) -> Bool {
+) -> Bool raise @moongrad.ADError {
   let analytic = compiled_grad(build, x)
   let numeric = numeric_grad(objective, x)
   let mut worst = 0.0
@@ -95,7 +95,7 @@ fn component(g : @moongrad.TGraph, i : Int32) -> Int32 {
 }
 
 ///|
-fn main {
+fn main raise @moongrad.ADError {
   println("| moongrad: gradient check against central differences")
   println("|")
   println("| Every row compares the compiled gradient with a finite")

@@ -288,3 +288,73 @@ test "a_compiled_gradient_evaluates_at_the_shape_it_was_compiled_for" {
   assert_close(grads[0].data[1], 4.0, 1.0e-12, "d(x^2)/dx at 2")
   assert_close(grads[0].data[2], 6.0, 1.0e-12, "d(x^2)/dx at 3")
 }
+
+///|
+test "a_gradient_of_a_node_that_does_not_exist_is_refused" {
+  // A target that is not a node has no gradient. Answering with a
+  // program of zeros would say "the gradient is zero" for something
+  // that was never built.
+  let g = @moongrad.TGraph::new()
+  let x = g.variable(0)
+  ignore(g.mul(x, x))
+  let b = tensor_binding([1.0, 2.0])
+  let refused = try {
+    let _ = @moongrad.t_grad(g, b, 99)
+    false
+  } catch {
+    _ => true
+  }
+  check(refused, "a target that is not a node should be refused")
+}
+
+///|
+test "a_forward_pass_that_cannot_be_carried_out_is_refused" {
+  // Two columns cannot be broadcast against three, so the forward
+  // pass fails. A gradient compiled against it would be a gradient
+  // of nothing.
+  let g = @moongrad.TGraph::new()
+  let a = g.input(0)
+  let c = g.input(1)
+  let out = g.add(a, c)
+  let b = @moongrad.TBinding::new()
+  b.set_input(0, @moongrad.Tensor::vector([1.0, 2.0]))
+  b.set_input(
+    1,
+    match @moongrad.Tensor::matrix([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]) {
+      Some(t) => t
+      None => return
+    },
+  )
+  let refused = try {
+    let _ = @moongrad.t_grad(g, b, out)
+    false
+  } catch {
+    _ => true
+  }
+  check(refused, "a forward pass that failed should be refused")
+}
+
+///|
+test "a_compiled_gradient_refuses_a_binding_whose_parameters_moved" {
+  // The parameter's length is part of what the program was compiled
+  // for, exactly as the input's shape is.
+  let g = @moongrad.TGraph::new()
+  let x = g.variable(0)
+  let p = g.param(0)
+  let out = g.mul(x, g.param(1))
+  ignore(p)
+  let b = @moongrad.TBinding::new()
+  b.set_input(0, @moongrad.Tensor::vector([1.0, 2.0]))
+  b.set_param(0, @moongrad.Tensor::vector([1.0]))
+  b.set_param(1, @moongrad.Tensor::vector([1.0, 1.0]))
+  let compiled = @moongrad.compile_tensor_gradient(g, b, out)
+  // The parameter now has a different length.
+  b.set_param(1, @moongrad.Tensor::vector([1.0, 1.0, 1.0]))
+  let refused = try {
+    let _ = @moongrad.evaluate_tensor_gradient(compiled, b)
+    false
+  } catch {
+    _ => true
+  }
+  check(refused, "a parameter of another length should be refused")
+}

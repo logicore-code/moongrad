@@ -145,9 +145,20 @@ pub fn TensorTrainer::add_refresher(
 /// The forward pass runs on the current parameters, the gradient
 /// program is re-evaluated against the same binding, and the
 /// optimiser updates the host-side parameter tensors.
-pub fn TensorTrainer::step(self : TensorTrainer) -> TensorStep {
+pub fn TensorTrainer::step(self : TensorTrainer) -> TensorStep raise ADError {
   for f in self.refreshers {
     f(self.binding)
+  }
+  if self.graph.input_count() > 0 && self.binding.inputs.length() == 0 {
+    // The graph declares inputs and the binding has none, so the
+    // caller never set them. Training on that would move the
+    // parameters against a gradient of nothing.
+    //
+    // This is checked before the gradient is compiled, because a
+    // graph whose inputs are missing cannot even be evaluated: the
+    // shapes do not fit and the failure would come back as an error
+    // rather than as the report the caller is asking for.
+    return { loss: 0.0, grad_norm: 0.0, ok: false, }
   }
   if self.grad is None {
     // The graph's structure does not change during training, so
@@ -168,12 +179,6 @@ pub fn TensorTrainer::step(self : TensorTrainer) -> TensorStep {
     // for.
     grad = compile_tensor_gradient(self.graph, self.binding, self.loss_node)
     self.grad = Some(grad)
-  }
-  if self.graph.input_count() > 0 && self.binding.inputs.length() == 0 {
-    // The graph declares inputs and the binding has none, so the
-    // caller never set them. Training on that would move the
-    // parameters against a gradient of nothing.
-    return { loss: 0.0, grad_norm: 0.0, ok: false, }
   }
   // One evaluation of the gradient graph gives the primal's values
   // and the gradient's values together: the gradient program holds
@@ -205,7 +210,10 @@ pub fn TensorTrainer::step(self : TensorTrainer) -> TensorStep {
 
 ///|
 /// Run `steps` iterations and return the final loss.
-pub fn TensorTrainer::fit(self : TensorTrainer, steps : Int32) -> Double {
+pub fn TensorTrainer::fit(
+  self : TensorTrainer,
+  steps : Int32,
+) -> Double raise ADError {
   let mut last = 0.0
   for i = 0; i < steps; i = i + 1 {
     let report = self.step()

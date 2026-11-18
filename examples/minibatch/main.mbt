@@ -69,7 +69,7 @@ fn build(graph : @moongrad.TGraph) -> (Int32, Array[@moongrad.Tensor]) {
 }
 
 ///|
-fn main {
+fn main raise @moongrad.ADError {
   println("| moongrad: mini-batch training")
   println("|")
   println("| The label is 1.5*a - 0.75*b + 0.25, with a little noise.")

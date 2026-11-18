@@ -25,7 +25,14 @@
 /// passes, and the examples assert on them.
 #derive(Debug, Eq)
 pub(all) struct Stats {
-  /// Slots handed out. Equals the length of `Graph::nodes`.
+  /// Slots handed out by the builder.
+  ///
+  /// For the scalar graph this equals the length of `Graph::nodes`,
+  /// because every node goes through the interning table. The tensor
+  /// graph only interns the operators that carry arithmetic — the
+  /// unary and binary ones — so there its `nodes_built` is smaller
+  /// than the graph, and the difference is the nodes that were
+  /// pushed directly.
   mut nodes_built : Int32
   /// Times interning returned an existing slot. Each hit is a
   /// subexpression that would otherwise have been computed twice.
@@ -82,9 +89,17 @@ pub fn Stats::shared_away(self : Stats) -> Int32 {
 }
 
 ///|
-/// Total subexpressions that sharing removed. `cse_hits` plus
-/// `identities` plus `annihilated` plus `folds` is the number of
-/// node slots the naive builder would have needed.
+/// Total subexpressions that sharing removed.
+///
+/// `cse_hits` plus `identities` plus `annihilated` plus `folds` is
+/// the number of node slots the naive builder would have needed.
+///
+/// One qualification, because the tensor engine folds differently: a
+/// fold there replaces the operation with a *new* constant and leaves
+/// both operands where they were, so it saves no slot. The scalar
+/// engine folds the operands away with it. The number is therefore a
+/// good count for the scalar graph and an overcount for the tensor
+/// one.
 pub fn Stats::slots_saved(self : Stats) -> Int32 {
   self.cse_hits + self.identities + self.folds + self.annihilated
 }

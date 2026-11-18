@@ -119,11 +119,12 @@ pub extend TNode with Eq::{equal, not_equal}
 ///|
 /// A tensor computation under construction.
 ///
-/// Unlike the scalar engine this one does not hash-cons: a tensor
-/// node stands for a whole array, so sharing it would save very
-/// little, and the index map it would need makes the node
-/// unhashable. The scalar engine keeps its own graph for the cases
-/// where the sharing actually pays.
+/// This one hash-conses as well, though only the operators that
+/// carry arithmetic: a tensor node stands for a whole array, so
+/// sharing the rest of them would save very little, while the
+/// backward sweep writes the same arithmetic into the gradient over
+/// and over. The node carries a derived hash for the purpose; see
+/// `tensor_simplify.mbt`.
 #derive(Debug)
 pub(all) struct TGraph {
   mut nodes : Array[TNode]
@@ -1192,7 +1193,17 @@ pub fn t_mirror(g : TGraph) -> TGraph {
     h.geo.push(g.geo[i].copy())
   }
   for i = 0; i < g.nodes.length(); i = i + 1 {
-    h.nodes.push(g.nodes[i])
+    let node = g.nodes[i]
+    h.nodes.push(node)
+    // The mirror's intern table starts empty, so a gradient node that
+    // happens to be the same computation as a primal node would be
+    // built a second time instead of shared with it. The node is
+    // registered rather than interned, because interning would
+    // append it: the mirror's slot numbers have to be the primal's,
+    // since the backward rules index the primal's values by them.
+    if h.intern_table.get(node) == None {
+      h.intern_table.set(node, i)
+    }
   }
   h
 }
@@ -1214,8 +1225,15 @@ pub fn compile_tensor_gradient(
   g : TGraph,
   b : TBinding,
   target : Int32,
-) -> TGradGraph {
+) -> TGradGraph raise ADError {
   let values = t_forward(g, b)
+  if g.failed {
+    // The forward pass could not be carried out -- a broadcast that
+    // does not fit, a shape that is not there. The graph's values
+    // are zeros from that point on, so a gradient compiled against
+    // them would be a gradient of nothing.
+    raise DomainError("the forward pass could not be evaluated")
+  }
   let n = g.nodes.length()
   let h = t_mirror(g)
   // A shared zero, so that a node nobody contributed to can be
@@ -1242,15 +1260,11 @@ pub fn compile_tensor_gradient(
     param_shapes.push(b.params[i].shape.copy())
   }
   if target < 0 || target >= n {
-    return {
-      graph: h,
-      primal_size: n,
-      input_adj,
-      param_adj,
-      input_shapes,
-      param_shapes,
-      output: Tensor::zeros([]),
-    }
+    // A target that does not exist has no gradient, and a program of
+    // zeros would answer "the gradient is zero" for a node that was
+    // never built. That is a wrong number with no way to tell it from
+    // a right one.
+    raise DanglingNode(target)
   }
   // The adjoint of the differentiated node is a tensor of ones: every
   // element of the output contributes to the derivative.
@@ -1357,8 +1371,13 @@ pub fn evaluate_tensor_gradient(
 fn t_eval_tensor_gradient(
   grad : TGradGraph,
   b : TBinding,
-) -> (Array[Tensor], Array[Tensor]) {
+) -> (Array[Tensor], Array[Tensor]) raise ADError {
   let values = t_forward(grad.graph, b)
+  if grad.graph.failed {
+    // The same condition as at compile time, checked again because
+    // the binding may have moved since.
+    raise DomainError("the gradient could not be evaluated")
+  }
   let input_grads : Array[Tensor] = []
   for i = 0; i < grad.input_adj.length(); i = i + 1 {
     input_grads.push(values[grad.input_adj[i]])
@@ -1397,7 +1416,7 @@ fn shape_list(shapes : Array[Array[Int32]]) -> String {
 /// This is the convenience form of `compile_tensor_gradient` followed
 /// by `evaluate_tensor_gradient`. The program underneath is the same
 /// one; this only collapses it to numbers.
-pub fn t_grad(g : TGraph, b : TBinding, target : Int32) -> TGrad {
+pub fn t_grad(g : TGraph, b : TBinding, target : Int32) -> TGrad raise ADError {
   let grad = compile_tensor_gradient(g, b, target)
   let (input_grads, param_grads) = t_eval_tensor_gradient(grad, b)
   { input_grads, param_grads, output: grad.output, }
