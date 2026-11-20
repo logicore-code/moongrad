@@ -1291,7 +1291,9 @@ pub fn compile_tensor_gradient(
     // does not fit, a shape that is not there. The graph's values
     // are zeros from that point on, so a gradient compiled against
     // them would be a gradient of nothing.
-    raise DomainError("the forward pass could not be evaluated")
+    raise DomainError(
+      "the forward pass could not be evaluated: the binding has to hold the inputs the graph reads, because compiling needs their shapes",
+    )
   }
   let n = g.nodes.length()
   let h = t_mirror(g)

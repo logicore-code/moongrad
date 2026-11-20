@@ -31,5 +31,7 @@ fn main raise @moongrad.ADError {
   // program can be run again on different numbers.
   b.set_input(0, @moongrad.Tensor::vector([1.3]))
   let grads2 = @moongrad.t_grad(g, b, f)
-  println("| at x = 1.3 the same gradient program gives \{grads2.input_grads[0].data[0]}")
+  println(
+    "| at x = 1.3 the same gradient program gives \{grads2.input_grads[0].data[0]}",
+  )
 }
