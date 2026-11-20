@@ -388,3 +388,53 @@ test "a_non_finite_gradient_does_not_poison_the_next_step" {
     "the parameter should move again once the gradient is finite",
   )
 }
+
+///|
+test "a_schedule_replaces_the_optimiser_s_own_learning_rate" {
+  // A schedule that has not been set leaves the optimiser's rate
+  // alone; one that has been set decides the rate, and the two differ
+  // by one in the step index.
+  let st = @moongrad.ExtraOptState::new(
+    @moongrad.ExtraOptimizer::AdamW(0.1, 0.0, 1.0e-8),
+    [[1]],
+  )
+  let params = [@moongrad.Tensor::vector([1.0])]
+  let grads = [@moongrad.Tensor::vector([1.0])]
+  // Without a schedule the rate is the optimiser's own.
+  ignore(st.step(params, grads, 1))
+  let moved = params[0].data[0]
+  check(moved < 1.0, "the parameter should have moved")
+  // With a schedule the rate is the schedule's, not the
+  // optimiser's: a constant rate of zero leaves the parameter alone
+  // where the optimiser's own 0.1 would have moved it.
+  let st2 = @moongrad.ExtraOptState::new(
+    @moongrad.ExtraOptimizer::AdamW(0.1, 0.0, 1.0e-8),
+    [[1]],
+  )
+  st2.set_schedule(@moongrad.LrSchedule::Constant(0.0))
+  let params2 = [@moongrad.Tensor::vector([1.0])]
+  let grads2 = [@moongrad.Tensor::vector([1.0])]
+  ignore(st2.step(params2, grads2, 1))
+  check(
+    approx(params2[0].data[0], 1.0, 1.0e-9),
+    "a schedule of zero should leave the parameter alone",
+  )
+}
+
+///|
+test "a_schedule_can_be_replaced_mid_run" {
+  // The step index carries on, so a new schedule picks up where the
+  // old one left off rather than starting again.
+  let st = @moongrad.ExtraOptState::new(
+    @moongrad.ExtraOptimizer::Adagrad(0.0, 1.0e-8),
+    [[1]],
+  )
+  st.set_schedule(@moongrad.LrSchedule::Constant(0.0))
+  let params = [@moongrad.Tensor::vector([1.0])]
+  let grads = [@moongrad.Tensor::vector([1.0])]
+  ignore(st.step(params, grads, 1))
+  check(approx(params[0].data[0], 1.0, 1.0e-9), "a rate of zero moves nothing")
+  st.set_schedule(@moongrad.LrSchedule::Constant(1.0))
+  ignore(st.step(params, grads, 2))
+  check(params[0].data[0] < 1.0, "the new schedule should decide the next step")
+}

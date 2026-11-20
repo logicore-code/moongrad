@@ -82,10 +82,51 @@ pub(all) struct ExtraOptState {
   /// a parameter whose element count does not match would write past
   /// the state — or, worse, write into the next parameter's slots.
   sizes : Array[Int32]
+  /// A schedule for the learning rate, if one has been set.
+  ///
+  /// The optimiser carries a rate of its own, and a schedule replaces
+  /// it: the schedule knows the rate and the step, and the
+  /// optimiser's rate is the one the schedule was derived from.
+  mut schedule : LrSchedule?
 }
 
 ///|
 pub extend ExtraOptState with Debug::{to_repr}
+
+///|
+/// Set a schedule for the learning rate.
+///
+/// From the next step on, the schedule decides the rate and the
+/// optimiser's own rate is not used. The schedule's step zero is the
+/// first update, which is the convention `LrSchedule::at` uses.
+///
+/// A schedule can be replaced: a caller that wants a different curve
+/// mid-run sets another one, and the step index carries on, so the new
+/// schedule picks up where the old one left off.
+pub fn ExtraOptState::set_schedule(
+  self : ExtraOptState,
+  schedule : LrSchedule,
+) -> Unit {
+  self.schedule = Some(schedule)
+}
+
+///|
+/// The learning rate for this step.
+///
+/// The optimiser's own rate is the fallback; a schedule, if one has
+/// been set, replaces it. The two differ by one in the step index:
+/// `LrSchedule::at` counts the updates already taken, and the
+/// optimiser's step index counts the update being taken.
+fn ExtraOptState::effective_lr(
+  self : ExtraOptState,
+  fallback : Double,
+  step_index : Int32,
+) -> Double {
+  match self.schedule {
+    Some(schedule) => schedule.at(step_index - 1)
+    None => fallback
+  }
+}
 
 ///|
 /// Fresh state for the given parameter shapes.
@@ -121,7 +162,7 @@ pub fn ExtraOptState::new(
     m.push(0.0)
     v.push(0.0)
   }
-  { kind, m, v, layout, sizes, }
+  { kind, m, v, layout, sizes, schedule: None, }
 }
 
 ///|
@@ -173,6 +214,7 @@ pub fn ExtraOptState::step(
   }
   match self.kind {
     RmsProp(lr, raw_decay) => {
+      let lr = self.effective_lr(lr, step_index)
       let eps = 1.0e-8
       // A decay outside [0, 1) is not a decay: one makes the running
       // average grow without bound, and the other leaves it at zero
@@ -213,6 +255,7 @@ pub fn ExtraOptState::step(
       }
     }
     Adagrad(lr, raw_eps) => {
+      let lr = self.effective_lr(lr, step_index)
       // A zero epsilon leaves the denominator at zero for a zero
       // gradient, and the update is then zero over zero.
       let eps = if raw_eps > 0.0 { raw_eps } else { 1.0e-16 }
@@ -243,7 +286,8 @@ pub fn ExtraOptState::step(
         params[i] = p
       }
     }
-    Nesterov(lr, mu) =>
+    Nesterov(lr, mu) => {
+      let lr = self.effective_lr(lr, step_index)
       for i = 0; i < n; i = i + 1 {
         let p = params[i]
         let g = grads[i]
@@ -269,7 +313,9 @@ pub fn ExtraOptState::step(
         }
         params[i] = p
       }
+    }
     AdamW(lr, weight_decay, raw_eps) => {
+      let lr = self.effective_lr(lr, step_index)
       let b1 = 0.9
       let b2 = 0.999
       // A zero epsilon would divide by zero on the first step.
