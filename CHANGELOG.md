@@ -45,7 +45,32 @@ project follows Semantic Versioning: bump the
 - **`CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`**, issue
   and pull-request templates, and a copyright line in the licence
   naming the holder.
-- **`docs/wasm.md`**, on running the library on the web.
+- **`docs/wasm.md`**, on running the library on the web, and
+  `examples/browser`: a page that loads the WebAssembly module, runs
+  it, and shows what it printed. The module imports one function from
+  the WebAssembly system interface, and the shim that provides it is
+  the same file the workflow runs the module with, so the page is not
+  a claim that somebody might find wanting.
+- **`examples/recipe`**: a whole training recipe — convolution, batch
+  normalisation, GELU, dropout, AdamW, a cosine schedule, gradient
+  clipping, mini-batches, and inference with the normalisation's
+  running averages. The loss falls from 3.7 to 0.007 and the model
+  labels the images correctly.
+- **A gather and a scatter for the tensor graph.** The form and the
+  README had both listed a gather among the tensor operations, and
+  there was no such thing: the tensor graph had `gather_row`, which
+  reads one row of a parameter slot, and nothing else. `gather_rows`
+  takes the rows of a tensor by index along the first axis, and
+  `scatter_rows` puts them back. The two are inverses of each other,
+  which is what makes them differentiable. The index is a node of its
+  own, so the same compiled program can gather different rows at
+  different bindings.
+- **A learning-rate schedule the optimiser actually uses.** The form
+  and the README both list four schedules, and `LrSchedule` could
+  compute all four, and nothing consumed the result: the optimisers
+  carry a rate of their own, fixed when they are built, so a schedule
+  could be computed and then had nowhere to go.
+- **`Graph::stats`**, so that the simplifier's counts can be read.
 - **A gather and a scatter for the tensor graph.** The form and the
   README had both listed a gather among the tensor operations, and
   there was no such thing: the tensor graph had `gather_row`, which
@@ -120,6 +145,14 @@ project follows Semantic Versioning: bump the
   node was built a second time. The mirror registers the primal's
   nodes without renumbering them, which is what keeps the backward
   rules' indices pointing at the right values.
+
+- **The constant folder folded the hyperbolic tangent of minus one to
+  minus one.** It is minus 0.7615941559557649. The tensor engine
+  folded it correctly, so the two engines disagreed about the value of
+  a constant, and nothing in the suite noticed.
+- **`Graph::stats` had no accessor.** The simplifier counts what it
+  did, and the counts were only worth having if a caller could read
+  them.
 
 ### Changed
 - CI now runs `moon check --deny-warn` and `moon test --deny-warn`.

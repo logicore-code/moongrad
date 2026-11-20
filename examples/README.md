@@ -1,6 +1,6 @@
 # Examples
 
-Fifteen executable packages, each demonstrating one slice of the engine.
+Seventeen executable packages, each demonstrating one slice of the engine.
 
 ```bash
 moon run examples/tensor_basics  --target native
@@ -18,6 +18,7 @@ moon run examples/cse             --target native
 moon run examples/second_order    --target native
 moon run examples/minibatch       --target native
 moon run examples/cnn             --target native --release
+moon run examples/recipe          --target native --release
 ```
 
 | Example | What it shows | Headline output |
@@ -37,6 +38,7 @@ moon run examples/cnn             --target native --release
 | `second_order/` | the Hessian, a Hessian-vector product, Newton-CG | the dense and the matrix-free route give the same Newton step, to within one unit in the last place |
 | `minibatch/`   | mini-batch training on a synthetic dataset | the weight converges to the true one |
 | `cnn/`         | two convolutions, a softmax head, AdamW, mini-batches | 41,828 parameters; the loss falls from 26.7 to 0.003, and unseen images are labelled correctly |
+| `recipe/`      | a whole training recipe: convolution, batch normalisation, GELU, dropout, AdamW, a cosine schedule, gradient clipping, and inference with the running averages | the loss falls from 3.7 to 0.007, and the model labels the training images correctly |
 
 ## Why `gradcheck` matters
 
