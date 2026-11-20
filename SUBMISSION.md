@@ -77,7 +77,7 @@ ReluDeriv(x)  =  1  if x > 0
 示例打印的是完整偏差而不是四舍五入后的零。归一化层、mini-batch 训练、Hessian-向量积各自另有针对闭式解或有限
 差分的对照测试。
 
-463 个单元测试，`moon check` 零 warning 零 error，wasm / wasm-gc / js / native
+465 个单元测试，`moon check` 零 warning 零 error，wasm / wasm-gc / js / native
 四个目标同一份源码编译通过。
 
 ## 3. 项目方向与通用性
@@ -287,7 +287,7 @@ moongrad 的反向扫**发射表达式到同一张图里**，梯度因此是一�
 - 依赖：仅 MoonBit 标准库（`math`、`hashmap`、`json`、`double`），
   无任何第三方 crate，无 FFI；
 - CI：GitHub Actions 覆盖 `moon fmt --check`、`moon check`（零 warning）、
-  `moon test`（463 个用例）、全部十七个示例的冒烟运行、发布基准，以及
+  `moon test`（465 个用例）、全部十七个示例的冒烟运行、发布基准，以及
   `moon build --target all` 的**四目标完整构建**（只做类型检查不链接，会漏掉
   "能过类型检查却链接失败"的目标，所以 CI 走的是 build）；
 - 提交历史：一百一十余次原子提交，每次提交对应一个可独立验证的变更

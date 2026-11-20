@@ -62,6 +62,23 @@ fn softmax_loss_graph() -> (@moongrad.TGraph, Int32) {
 }
 
 ///|
+/// A binding with one input of the given shape.
+fn matrix_binding(
+  shape : Array[Int32],
+  values : Array[Double],
+) -> @moongrad.TBinding {
+  let b = @moongrad.TBinding::new()
+  b.set_input(
+    0,
+    match @moongrad.Tensor::from_data(shape, values) {
+      Some(t) => t
+      None => @moongrad.Tensor::zeros(shape)
+    },
+  )
+  b
+}
+
+///|
 test "the_softmax_matches_the_plain_formula" {
   let g = @moongrad.TGraph::new()
   let x = g.variable(0)
@@ -357,6 +374,83 @@ test "the_log_softmax_gradient_is_the_jacobian_it_claims" {
       1.0 - 3.0 * probs.data[i],
       1.0e-12,
       "the log-softmax jacobian",
+    )
+  }
+}
+
+///|
+test "the_graph_softmax_matches_the_host_one" {
+  // The graph's softmax and the host's are separate code: one builds
+  // a node, the other computes a value. The graph's had no test of
+  // its own.
+  let g = @moongrad.TGraph::new()
+  let x = g.input(0)
+  let s = g.softmax(x, 1)
+  let b = @moongrad.TBinding::new()
+  b.set_input(
+    0,
+    match @moongrad.Tensor::from_data([2, 3], [1.0, 2.0, 3.0, -1.0, 0.5, 1.5]) {
+      Some(t) => t
+      None => return
+    },
+  )
+  let values = @moongrad.t_forward(g, b)
+  let host = match @moongrad.t_softmax_axis(values[x], 1) {
+    Some(t) => t
+    None => return
+  }
+  for i = 0; i < host.data.length(); i = i + 1 {
+    assert_close(
+      values[s].data[i],
+      host.data[i],
+      1.0e-12,
+      "the graph softmax and the host softmax",
+    )
+  }
+}
+
+///|
+test "the_graph_softmax_gradient_matches_a_finite_difference" {
+  let g = @moongrad.TGraph::new()
+  let x = g.input(0)
+  let s = g.softmax(x, 1)
+  // The sum of the softmax is one, so the loss is the sum of a
+  // weighted softmax rather than the softmax itself: the derivative of
+  // the sum is zero and would tell us nothing.
+  let w = g.constant(
+    match @moongrad.Tensor::from_data([2, 3], [1.0, 2.0, 3.0, 0.5, 1.0, 1.5]) {
+      Some(t) => t
+      None => return
+    },
+  )
+  // The loss is a scalar: the rows are summed first, so that the
+  // sum is over the whole batch rather than over one column of it.
+  let per_row = g.sum_axis(g.mul(s, w), 1)
+  let loss = g.sum_axis(per_row, 0)
+  let vals = [1.0, 2.0, 3.0, -1.0, 0.5, 1.5]
+  let b = @moongrad.TBinding::new()
+  b.set_input(
+    0,
+    match @moongrad.Tensor::from_data([2, 3], vals) {
+      Some(t) => t
+      None => return
+    },
+  )
+  let grads = @moongrad.t_grad(g, b, loss)
+  let h = 1.0e-6
+  for i = 0; i < 6; i = i + 1 {
+    let up = vals.copy()
+    let down = vals.copy()
+    up[i] = up[i] + h
+    down[i] = down[i] - h
+    let vu = @moongrad.t_forward(g, matrix_binding([2, 3], up))
+    let vd = @moongrad.t_forward(g, matrix_binding([2, 3], down))
+    let numeric = (vu[loss].data[0] - vd[loss].data[0]) / (2.0 * h)
+    assert_close(
+      grads.input_grads[0].data[i],
+      numeric,
+      1.0e-5,
+      "the softmax gradient",
     )
   }
 }
