@@ -46,6 +46,16 @@ project follows Semantic Versioning: bump the
   and pull-request templates, and a copyright line in the licence
   naming the holder.
 - **`docs/wasm.md`**, on running the library on the web.
+- **A gather and a scatter for the tensor graph.** The form and the
+  README had both listed a gather among the tensor operations, and
+  there was no such thing: the tensor graph had `gather_row`, which
+  reads one row of a parameter slot, and nothing else. There is now
+  `gather_rows`, which takes the rows of a tensor by index along the
+  first axis, and `scatter_rows`, which puts them back. The two are
+  inverses of each other, which is what makes them differentiable:
+  the gradient of a gather is a scatter, and the gradient of a scatter
+  is a gather. The index is a node of its own, so the same compiled
+  program can gather different rows at different bindings.
 
 ### Fixed
 - **The checkpoint module described a mechanism it did not

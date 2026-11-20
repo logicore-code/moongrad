@@ -150,6 +150,7 @@ That is the whole design, and it is what the rest of the library hangs off:
 | `tensor_op.mbt` | Elementwise arithmetic with broadcasting, matrix product, reductions, softmax, log-softmax, cross-entropy |
 | `tensor_grad.mbt` | The tensor gradient compiler: the backward sweep that emits a program |
 | `tensor_simplify.mbt` | The tensor graph's peephole simplifier and node sharing |
+| `tensor_gather.mbt` | Gathering rows by index, and the scatter that puts them back |
 | `tensor_shape.mbt` | Shape adjustments — cropping, padding, scattering a row back into a parameter |
 | `tensor_hessian.mbt` | The Hessian of a tensor objective, and the mixed parameter-input block |
 | `nn_tensor.mbt` | Dense layers, embeddings, dropout, sequential containers |

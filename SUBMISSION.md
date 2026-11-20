@@ -48,6 +48,7 @@ ReluDeriv(x)  =  1  if x > 0
 | `tensor_op.mbt` | 带广播的逐元素运算、矩阵乘、轴向归约、softmax、log-softmax、交叉熵（图内的 softmax 与 log-softmax 在 `tensor_grad.mbt`） |
 | `tensor_grad.mbt` | 张量级梯度编译器：发射梯度程序的反向扫描 |
 | `tensor_simplify.mbt` | 张量图的窥孔化简与节点共享 |
+| `tensor_gather.mbt` | 按索引取行，以及把它们放回去的散射 |
 | `tensor_shape.mbt` | 形状调整节点：裁剪、填充、把一行散射回参数 |
 | `tensor_hessian.mbt` | 张量目标的 Hessian、参数 Hessian、参数-输入混合块 |
 | `nn_tensor.mbt` | 全连接层、Embedding、Dropout、Sequential |

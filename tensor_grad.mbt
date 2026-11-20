@@ -61,6 +61,16 @@ pub(all) enum TNode {
   ScaleBy(Int32, Int32)
   /// Read one row of a parameter vector.
   GatherRow(Int32, Int32, Int32)
+  /// Take rows of a tensor by index, along the first axis.
+  ///
+  /// The index is a node of its own, so it can be an input and can
+  /// change between evaluations of the same program.
+  GatherRows(Int32, Int32)
+  /// Put rows back where they came from, along the first axis.
+  ///
+  /// The two are inverses of each other: the gradient of a gather is
+  /// a scatter, and the gradient of a scatter is a gather.
+  ScatterRows(Int32, Int32, Array[Int32])
   /// `base ^ exponent`, with the exponent carried inline.
   PowBy(Double, Int32)
   /// A 2-D convolution. The operands are the input and the weight;
@@ -480,6 +490,39 @@ pub fn TGraph::gather_row(
   dim : Int32,
 ) -> Int32 {
   self.nodes.push(TNode::GatherRow(param_slot, index, dim))
+  self.nodes.length() - 1
+}
+
+///|
+/// Take rows of a tensor by index, along the first axis.
+///
+/// `index` is a node, so it can be an input: the same program can
+/// gather different rows at different bindings. The result has the
+/// shape of the source with its first axis replaced by the length of
+/// the index.
+///
+/// A row that is out of range is refused rather than skipped: a
+/// gather that quietly dropped rows would change the size of the
+/// result, and the caller would not know which rows it had lost.
+pub fn TGraph::gather_rows(self : TGraph, x : Int32, index : Int32) -> Int32 {
+  self.nodes.push(TNode::GatherRows(x, index))
+  self.nodes.length() - 1
+}
+
+///|
+/// Put rows back where they came from, along the first axis.
+///
+/// Rows that several indices point at are summed, which is what
+/// makes this the gradient of a gather. `shape` is the shape of the
+/// tensor the rows came from; it is recorded here because the rows
+/// themselves do not carry it.
+pub fn TGraph::scatter_rows(
+  self : TGraph,
+  x : Int32,
+  index : Int32,
+  shape : Array[Int32],
+) -> Int32 {
+  self.nodes.push(TNode::ScatterRows(x, index, shape.copy()))
   self.nodes.length() - 1
 }
 
@@ -985,6 +1028,22 @@ fn t_eval_node(
       }
     TNode::ScatterRow(child, shape, index, dim) =>
       match t_scatter_row(values[child], shape, index, dim) {
+        Some(t) => t
+        None => {
+          g.failed = true
+          Tensor::zeros([])
+        }
+      }
+    TNode::GatherRows(child, index) =>
+      match t_gather_rows(values[child], values[index]) {
+        Some(t) => t
+        None => {
+          g.failed = true
+          Tensor::zeros([])
+        }
+      }
+    TNode::ScatterRows(child, index, shape) =>
+      match t_scatter_rows(values[child], values[index], shape) {
         Some(t) => t
         None => {
           g.failed = true
@@ -1871,6 +1930,20 @@ fn t_push_adjoints(
       // The gradient picks out the row that was written.
       let row = h.slice(gbar, 0, index, 1)
       let contrib = h.reshape(row, [dim])
+      adj[child] = h.add(adj[child], contrib)
+    }
+    TNode::GatherRows(child, index) => {
+      // Every gathered row contributes its gradient to the row it came
+      // from, and several indices may point at the same row, so the
+      // contributions are summed rather than assigned.
+      let contrib = h.scatter_rows(gbar, index, values[child].shape)
+      adj[child] = h.add(adj[child], contrib)
+    }
+    TNode::ScatterRows(child, index, _shape) => {
+      // The gradient of a scatter is the gather that reads the same
+      // rows: the row that was written receives the gradient of the
+      // row that was scattered.
+      let contrib = h.gather_rows(gbar, index)
       adj[child] = h.add(adj[child], contrib)
     }
     TNode::Select(child, index) => {
