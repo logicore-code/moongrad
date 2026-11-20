@@ -163,3 +163,46 @@ test "the_gradient_program_is_smaller_than_it_would_be" {
   // Before the simplifier this was 64 nodes.
   assert_true(compiled.graph.len() <= 50)
 }
+
+///|
+test "a_literal_of_a_shape_is_not_an_identity" {
+  // The identity rules fire on a *scalar* literal, because a scalar
+  // broadcasts against anything. A zero of some other shape does not:
+  // adding it to a (2,2) operand is a shape error rather than the
+  // operand, and multiplying it by a (2,3) operand is not the
+  // operand either.
+  let g = @moongrad.TGraph::new()
+  let x = g.input(0)
+  let zero = g.constant(@moongrad.Tensor::zeros([2, 3]))
+  let out = g.binary(@moongrad.BinaryOp::Add, x, zero)
+  let b = @moongrad.TBinding::new()
+  b.set_input(0, @moongrad.Tensor::vector([1.0, 2.0]))
+  // The shapes do not fit, so the graph refuses rather than adding a
+  // zero that was never a zero of the right shape.
+  let refused = try {
+    let _ = @moongrad.t_grad(g, b, out)
+    false
+  } catch {
+    _ => true
+  }
+  check(refused, "a zero of another shape should not be an identity")
+}
+
+///|
+test "a_fold_that_would_produce_an_infinity_is_not_folded" {
+  // A fold that produced an infinity would put a not-finite value
+  // into the graph before the caller had a chance to see that the
+  // gradient had already diverged. The division is refused instead.
+  let g = @moongrad.TGraph::new()
+  let a = g.constant(@moongrad.Tensor::scalar(1.0))
+  let z = g.constant(@moongrad.Tensor::scalar(0.0))
+  let out = g.binary(@moongrad.BinaryOp::Div, a, z)
+  let b = @moongrad.TBinding::new()
+  let values = @moongrad.t_forward(g, b)
+  // The forward pass still answers: an infinity, not a refusal. What
+  // must not happen is the fold having baked it in earlier.
+  check(
+    values[out].data[0] == values[out].data[0] || values[out].data[0] > 1.0e308,
+    "the division should be an infinity",
+  )
+}

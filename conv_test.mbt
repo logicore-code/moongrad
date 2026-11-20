@@ -587,3 +587,130 @@ test "sequential_runs_its_layers_in_order" {
   let grad = @moongrad.t_grad(g, b, y)
   assert_eq(grad.output.shape, [2, 2])
 }
+
+///|
+/// A tensor of the given shape with every entry equal to `v`.
+fn filled(shape : Array[Int32], v : Double) -> @moongrad.Tensor {
+  @moongrad.Tensor::filled(shape, v)
+}
+
+///|
+test "the_graph_level_convolution_adds_its_bias" {
+  // The graph-level convolution is a different path from the host
+  // one: it reads the kernel from a parameter slot and adds the bias
+  // as a broadcast. A one-line change to that broadcast would break
+  // the whole layer, and the host-side tests would not notice.
+  let g = @moongrad.TGraph::new()
+  let conv = @moongrad.Conv2d::new(g, 1, 2, 3, 3, 1, 1, 0, 0, 5)
+  let x = g.input(0)
+  let out = conv.apply(g, x)
+  let b = @moongrad.TBinding::new()
+  // A kernel of ones, so every output pixel is the sum of nine ones
+  // plus the bias of its channel.
+  b.set_param(0, filled([2, 1, 3, 3], 1.0))
+  // A different bias for each channel, so that a bias broadcast
+  // along the wrong axis would give both channels the same one.
+  b.set_param(
+    1,
+    match @moongrad.Tensor::from_data([2], [10.0, 20.0]) {
+      Some(t) => t
+      None => return
+    },
+  )
+  b.set_input(0, filled([1, 1, 4, 4], 1.0))
+  let values = @moongrad.t_forward(g, b)
+  // The output is [batch, channels, height, width]. A three by three
+  // kernel over a four by four image gives a two by two output, so
+  // the first channel's four pixels come first and the second
+  // channel's four follow them.
+  assert_eq(values[out].data[0], 19.0)
+  assert_eq(values[out].data[4], 29.0)
+}
+
+///|
+test "the_graph_level_convolution_honours_an_asymmetric_stride" {
+  // Every convolution test elsewhere uses a stride that is the same
+  // in both directions, so a patch that walked the rows with the
+  // wrong stride would look right.
+  let g = @moongrad.TGraph::new()
+  let conv = @moongrad.Conv2d::new(g, 1, 1, 3, 3, 2, 1, 0, 0, 5)
+  let x = g.input(0)
+  let out = conv.apply(g, x)
+  let b = @moongrad.TBinding::new()
+  b.set_param(0, filled([1, 1, 3, 3], 1.0))
+  b.set_param(1, filled([1], 0.0))
+  // Five rows and four columns, a stride of two down and one
+  // across, and a three by three kernel: the output is two by two.
+  let input = match
+    @moongrad.Tensor::from_data([1, 1, 5, 4], [
+      0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0,
+      15.0, 16.0, 17.0, 18.0, 19.0,
+    ]) {
+    Some(t) => t
+    None => return
+  }
+  b.set_input(0, input)
+  let values = @moongrad.t_forward(g, b)
+  // The first patch starts at the top left and covers the first
+  // three rows and columns: (0+1+2) + (4+5+6) + (8+9+10) = 45.
+  assert_eq(values[out].data[0], 45.0)
+  // The next one down starts two rows down, because the stride down
+  // is two: (8+9+10) + (12+13+14) + (16+17+18) = 117. A patch
+  // that walked the rows with the stride across would have started
+  // at row one instead and given 81.
+  assert_eq(values[out].data[2], 117.0)
+}
+
+///|
+test "the_graph_level_convolution_agrees_with_the_host_one" {
+  // The same convolution, built both ways.
+  let g = @moongrad.TGraph::new()
+  let conv = @moongrad.Conv2d::new(g, 1, 2, 3, 3, 1, 2, 1, 0, 5)
+  let x = g.input(0)
+  let out = conv.apply(g, x)
+  let b = @moongrad.TBinding::new()
+  let kernel = match
+    @moongrad.Tensor::from_data([2, 1, 3, 3], [
+      1.0, 0.0, -1.0, 0.5, 2.0, -0.5, 1.0, 1.0, 1.0, -1.0, 0.5, 1.0, 2.0, -1.0, 0.0,
+      0.5, 1.0, -2.0,
+    ]) {
+    Some(t) => t
+    None => return
+  }
+  b.set_param(0, kernel)
+  b.set_param(1, filled([2], 3.0))
+  let input = match
+    @moongrad.Tensor::from_data([1, 1, 5, 6], [
+      1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 3.0, 4.0, 5.0,
+      6.0, 7.0, 8.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
+    ]) {
+    Some(t) => t
+    None => return
+  }
+  b.set_input(0, input)
+  let values = @moongrad.t_forward(g, b)
+  // The bias is given in the shape the graph layer uses: one number
+  // per output channel, broadcast over the batch and over the image.
+  let host = match
+    @moongrad.t_conv2d(
+      input,
+      kernel,
+      Some(filled([1, 2, 1, 1], 3.0)),
+      1,
+      2,
+      1,
+      0,
+    ) {
+    Some(t) => t
+    None => return
+  }
+  assert_eq(values[out].data.length(), host.data.length())
+  for i = 0; i < host.data.length(); i = i + 1 {
+    assert_close(
+      values[out].data[i],
+      host.data[i],
+      1.0e-12,
+      "the graph-level and the host-level convolution",
+    )
+  }
+}

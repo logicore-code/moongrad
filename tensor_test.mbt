@@ -794,3 +794,43 @@ test "the_gradient_of_a_scaled_tensor_is_the_constant" {
   assert_close(grads.input_grads[0].data[0], 2.0, 1.0e-12, "the first adjoint")
   assert_close(grads.input_grads[0].data[3], 5.0, 1.0e-12, "the last adjoint")
 }
+
+///|
+test "the_concat_gradient_splits_a_gradient_that_is_not_the_same_everywhere" {
+  // With an incoming gradient of all ones, a concat that gave the
+  // second operand the first operand's slice would look right: both
+  // slices would be ones. The gradient has to differ along the axis
+  // for the split to be visible at all.
+  let g = @moongrad.TGraph::new()
+  let a = g.input(0)
+  let b = g.input(1)
+  let z = g.concat(a, b, 0)
+  // Multiplying by a constant makes the incoming gradient differ from
+  // one element to the next.
+  let scaled = g.mul(
+    z,
+    g.constant(@moongrad.Tensor::vector([10.0, 20.0, 30.0, 40.0])),
+  )
+  let b = @moongrad.TBinding::new()
+  b.set_input(0, @moongrad.Tensor::vector([1.0, 2.0]))
+  b.set_input(1, @moongrad.Tensor::vector([3.0, 4.0]))
+  let grad = @moongrad.t_grad(g, b, scaled)
+  // The first operand took the first two, the second the last two.
+  assert_close(grad.input_grads[0].data[0], 10.0, 1.0e-12, "the first slice")
+  assert_close(grad.input_grads[0].data[1], 20.0, 1.0e-12, "the first slice")
+  assert_close(grad.input_grads[1].data[0], 30.0, 1.0e-12, "the second slice")
+  assert_close(grad.input_grads[1].data[1], 40.0, 1.0e-12, "the second slice")
+}
+
+///|
+test "the_relu_gradient_at_zero_is_the_same_in_both_engines" {
+  // The kink is where the two engines could disagree, and the
+  // scalar engine says the derivative is zero there.
+  let g = @moongrad.TGraph::new()
+  let x = g.input(0)
+  let out = g.relu(x)
+  let b = @moongrad.TBinding::new()
+  b.set_input(0, @moongrad.Tensor::vector([0.0]))
+  let grad = @moongrad.t_grad(g, b, out)
+  assert_close(grad.input_grads[0].data[0], 0.0, 1.0e-12, "the kink")
+}

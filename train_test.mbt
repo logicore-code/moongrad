@@ -470,3 +470,101 @@ test "the_tensor_trainer_refuses_to_train_on_inputs_that_were_never_set" {
   let report = trainer.step()
   check(!report.ok, "training on no inputs should be refused")
 }
+
+///|
+test "the_tensor_trainer_actually_trains" {
+  // The tensor trainer's other tests check that a step succeeds and
+  // that the loss is a number. They do not check that the loss goes
+  // down, which means a trainer whose optimiser never ran would
+  // pass them. This one does.
+  let g = @moongrad.TGraph::new()
+  let b = @moongrad.TBinding::new()
+  let trainer = @moongrad.TensorTrainer::new(
+    g,
+    b,
+    @moongrad.TensorOptimizer::Adam(0.05),
+    fn(
+      graph : @moongrad.TGraph,
+      _binding : @moongrad.TBinding,
+    ) -> (Int32, Array[@moongrad.Tensor]) {
+      let x = graph.variable(0)
+      let y = graph.variable(1)
+      let layer = @moongrad.Linear::new(graph, 1, 1, 23)
+      let pred = layer.apply(graph, x)
+      let diff = graph.sub(pred, y)
+      let squared = graph.mul(diff, diff)
+      let loss = graph.sum_axis(squared, 0)
+      ignore(y)
+      (loss, layer.tensors())
+    },
+  )
+  // The target is twice the input, so the one weight has to learn a
+  // factor of two.
+  b.set_input(
+    0,
+    match @moongrad.Tensor::from_data([4, 1], [1.0, 2.0, 3.0, 4.0]) {
+      Some(t) => t
+      None => return
+    },
+  )
+  b.set_input(
+    1,
+    match @moongrad.Tensor::from_data([4, 1], [2.0, 4.0, 6.0, 8.0]) {
+      Some(t) => t
+      None => return
+    },
+  )
+  let first = trainer.step()
+  check(first.ok, "the first step should have succeeded")
+  let mut last = first.loss
+  for i = 0; i < 60; i = i + 1 {
+    let report = trainer.step()
+    check(report.ok, "a step should have succeeded")
+    last = report.loss
+  }
+  check(
+    last < first.loss * 0.1,
+    "the loss should have fallen: \{first.loss} then \{last}",
+  )
+}
+
+///|
+test "the_tensor_trainer_reports_the_loss_of_the_model" {
+  // The reported loss is the loss node's value. Here the loss is
+  // twice the sum of the inputs, which is twenty, and the sum of
+  // the inputs is ten, so a trainer that reported some other node
+  // would be caught.
+  let g = @moongrad.TGraph::new()
+  let b = @moongrad.TBinding::new()
+  let trainer = @moongrad.TensorTrainer::new(
+    g,
+    b,
+    @moongrad.TensorOptimizer::Adam(0.01),
+    fn(
+      graph : @moongrad.TGraph,
+      _binding : @moongrad.TBinding,
+    ) -> (Int32, Array[@moongrad.Tensor]) {
+      let x = graph.variable(0)
+      let layer = @moongrad.Linear::new(graph, 1, 1, 29)
+      let pred = layer.apply(graph, x)
+      // The loss does not depend on the prediction; it is twice the
+      // sum of the inputs, which is a number a reader can check.
+      let loss = graph.scale_tensor(
+        graph.sum_axis(x, 0),
+        @moongrad.Tensor::filled([], 2.0),
+      )
+      ignore(pred)
+      (loss, layer.tensors())
+    },
+  )
+  b.set_input(
+    0,
+    match @moongrad.Tensor::from_data([4, 1], [1.0, 2.0, 3.0, 4.0]) {
+      Some(t) => t
+      None => return
+    },
+  )
+  let report = trainer.step()
+  check(report.ok, "the step should have succeeded")
+  assert_close(report.loss, 20.0, 1.0e-9, "the reported loss")
+}

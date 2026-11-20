@@ -89,6 +89,15 @@ pub fn Stats::shared_away(self : Stats) -> Int32 {
 }
 
 ///|
+/// What the builder has done so far.
+///
+/// The simplifier counts what it did, and the counts are only worth
+/// having if a caller can read them.
+pub fn Graph::stats(self : Graph) -> Stats {
+  self.stats
+}
+
+///|
 /// Total subexpressions that sharing removed.
 ///
 /// `cse_hits` plus `identities` plus `annihilated` plus `folds` is

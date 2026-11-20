@@ -130,15 +130,11 @@ pub fn Graph::simplify_unary(
       _ => ()
     }
   }
-  if cv == Some(-1.0) {
-    match op {
-      UnaryOp::Tanh => {
-        self.stats.folds = self.stats.folds + 1
-        return self.constant(-1.0)
-      }
-      _ => ()
-    }
-  }
+  // There is deliberately no special case for tanh(-1) here. The
+  // general folding below computes it as @math.tanh(-1), which is
+  // right; an earlier version folded it to -1 on the assumption that
+  // the hyperbolic tangent of minus one is minus one, and the two
+  // engines then disagreed about the value of a constant.
   // `neg(neg(x))` is `x`. Trivial, and surprisingly common once a
   // caller composes several layers symbolically.
   if op == UnaryOp::Neg {
