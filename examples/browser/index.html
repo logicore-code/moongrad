@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>moongrad, in a browser tab</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 2.5rem 1.5rem;
+        background: #11151c;
+        color: #d7dde5;
+        font: 15px/1.6 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      }
+      main {
+        max-width: 46rem;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 1.35rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        margin: 0 0 0.35rem;
+      }
+      p.lead {
+        margin: 0 0 1.75rem;
+        color: #8b97a6;
+      }
+      pre {
+        background: #171c25;
+        border: 1px solid #262d38;
+        border-radius: 8px;
+        padding: 1rem 1.15rem;
+        overflow-x: auto;
+        white-space: pre-wrap;
+      }
+      .status {
+        color: #8b97a6;
+        margin-bottom: 1rem;
+      }
+      .status.error {
+        color: #e08a7a;
+      }
+      a {
+        color: #7fb2e5;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>moongrad, in a browser tab</h1>
+      <p class="lead">
+        A reverse-mode automatic differentiation engine written in
+        MoonBit, compiled to WebAssembly and running in this page. The
+        gradient is compiled once and evaluated at two different points.
+        No FFI, no runtime, no second implementation.
+      </p>
+      <div class="status" id="status">loading the module…</div>
+      <pre id="output"></pre>
+      <p class="lead">
+        The module is built from
+        <a href="https://github.com/logicore-code/moongrad">github.com/logicore-code/moongrad</a>.
+        Build it with
+        <code>moon build --target wasm examples/browser</code> and serve
+        this directory.
+      </p>
+    </main>
+    <script type="module">
+      import { runWasm } from './wasi.js'
+
+      const status = document.getElementById('status')
+      const output = document.getElementById('output')
+      try {
+        const response = await fetch('./browser.wasm')
+        if (!response.ok) {
+          throw new Error(
+            'the module could not be fetched (' + response.status + ')',
+          )
+        }
+        const bytes = await response.arrayBuffer()
+        const text = await runWasm(bytes)
+        output.textContent = text
+        status.textContent = 'the gradient below was computed in this tab'
+        status.classList.remove('error')
+      } catch (error) {
+        status.textContent = String(error)
+        status.classList.add('error')
+      }
+    </script>
+  </body>
+</html>

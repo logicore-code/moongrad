@@ -74,6 +74,32 @@ can be differentiated in the tab, with the gradient program compiled
 there rather than shipped alongside. Writing the string to a file is
 the caller's job; the library reads no files at all.
 
+## A page, not a claim
+
+`examples/browser` is a page that does the thing: it loads the
+WebAssembly module, runs it, and shows what it printed. The module is
+the gradient engine — it compiles a gradient for `x^2 * exp(x)` and
+evaluates it at two different points.
+
+The page needs one function from the WebAssembly system interface,
+`fd_write`, because that is how a program prints. The shim that
+provides it is `examples/browser/wasi.js`, and it is the same file in
+both places: `examples/browser/run.mjs` runs the module under Node
+with it, so the workflow can check that the module works before
+anybody opens a browser. The workflow does exactly that.
+
+```bash
+moon build --target wasm examples/browser
+node examples/browser/run.mjs
+```
+
+To see the page, serve the directory and open `index.html`:
+
+```bash
+cd _build/wasm/debug/build/examples/browser
+python3 -m http.server
+```
+
 ## What this does not buy you
 
 The wasm build is not fast, and it is not small. A tensor operation in

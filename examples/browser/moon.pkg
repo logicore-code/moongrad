@@ -1,0 +1,10 @@
+// The browser example — see main.mbt and index.html.
+//
+// Build it with:
+//   moon build --target wasm examples/browser
+
+import {
+  "logicore-code/moongrad",
+}
+
+pkgtype(kind: "executable")

@@ -136,6 +136,14 @@ jobs:
           moon run src
           moon build --target wasm src
 
+      - name: The browser example
+        # The page in examples/browser runs the same module through the
+        # same shim this script uses, so a build that works here works
+        # in a tab. The module is compiled and run, not merely built.
+        run: |
+          moon build --target wasm examples/browser
+          node examples/browser/run.mjs
+
       - name: Run an example on the wasm target
         # The wasm build is the reason this library is worth writing
         # in MoonBit: the whole engine, gradient compiler and all,

@@ -43,6 +43,10 @@ moon run examples/cnn        --target native --release # a convolutional network
 moon run examples/reuse       --target wasm             # the same gradient, in a WebAssembly sandbox
 ```
 
+There is also a page: `examples/browser` compiles the engine to
+WebAssembly and runs it in a tab, with no FFI and no runtime. See
+[docs/wasm.md](docs/wasm.md).
+
 `examples/reuse` is the one to start with: it compiles a gradient once and then
 evaluates it at four different inputs, including two on the other side of a
 ReLU's kink. A gradient that was frozen at its compile point would report the
