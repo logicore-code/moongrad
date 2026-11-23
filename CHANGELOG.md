@@ -7,6 +7,33 @@ project follows Semantic Versioning: bump the
 - `MINOR` part on new functionality in a backward-compatible way
 - `PATCH` part on backward-compatible bug fixes
 
+## [0.9.0] — 2026-11-20
+
+### Fixed
+- **A Newton step can be taken more than once.** Compiling a
+  Hessian-vector product leaves the direction in a slot of the binding,
+  and the next compilation against the same binding found that slot
+  already taken and refused it. `newton_cg_step` therefore succeeded
+  once and failed every time after that, which is to say that an
+  iteration over Newton steps could not be written at all. The slot is
+  now reused when it is one the primal does not use and it is as wide
+  as the product is over; a slot of the wrong width, and a slot of the
+  primal's own inputs, are still refused. The regression test takes two
+  steps from the same binding and fails on the old code with "the
+  second newton-cg iteration broke down".
+
+### Added
+- **`examples/inversion`**, a parameter inversion rather than another
+  network fitted to a task made up for it. A damped oscillator is
+  observed at forty points with noise, and four parameters — the
+  amplitude, the damping, the frequency and the phase — are recovered
+  from the measurements. The example fits the misfit twice, from the
+  same starting point: with Adam, which takes 194 steps to reach the
+  noise floor, and with a Gauss-Newton step built from
+  Hessian-vector products, which takes three. It then reports the
+  covariance of the parameters, which is what the curvature of the
+  misfit says about how well each one was measured.
+
 ## [0.8.0] — 2026-11-17
 
 ### Added

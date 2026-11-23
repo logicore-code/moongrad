@@ -256,6 +256,13 @@ of the gradient, and for symmetry.
 falls from 0.92 to 0.0003 over 400 steps and all eight predictions land on
 the right side.
 
+`examples/inversion` is the one that is not a network at all. It takes
+measurements of a damped oscillator and recovers the four parameters that
+describe it, by two routes from the same starting point: Adam, which takes
+194 steps to reach the noise floor, and a Gauss-Newton step built from
+Hessian-vector products, which takes three. It then reports how well each
+parameter was determined, which the curvature of the misfit is what says.
+
 ## Examples
 
 ```bash
@@ -276,6 +283,7 @@ moon run examples/reuse         --target native   # one gradient, evaluated at m
 moon run examples/tensor_hessian --target native  # second derivatives on the tensor side
 moon run examples/second_order  --target native   # Newton-CG, without forming the Hessian
 moon run examples/minibatch     --target native   # mini-batch training
+moon run examples/inversion     --target native   # four parameters, recovered from measurements
 ```
 
 ## Using it from another project
