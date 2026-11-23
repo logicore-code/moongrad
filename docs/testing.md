@@ -79,6 +79,41 @@ Every survivor became a regression test. That is the point of the
 exercise: the mutation is not the goal, the test that the mutation
 showed was missing is.
 
+## The check is in the repository
+
+`scripts/mutation_check.py` runs the twenty mutations that matter —
+the ones a careless edit produces — against a copy of the library, one
+at a time, and reports the ones the suite does not notice. It is not
+part of CI, because it takes a few minutes; it is a thing to run when
+the implementation changes underneath the tests.
+
+```
+python3 scripts/mutation_check.py
+```
+
+The twenty cover the optimisers' state between steps, the trainers'
+state between steps, and the conventions the library documents — the
+sign of a Cholesky factor's diagonal, the place Adagrad's epsilon
+sits, the sweep budget of the Jacobi decomposition, the length of the
+matrix exponential's series. Every one of them has a test that fails
+against the code with the convention broken, and the script is how
+that is checked rather than asserted.
+
+## A failure has to be visible where it is found
+
+The failures of a test are collected in a shared list and reported
+from a summary at the end of the suite, because a gradient is a chain
+rule and the first broken link hides the rest. The cost of that
+arrangement is that the summary is the only place a failure shows up,
+and the summary runs last — so a developer who ran one test file while
+working on one rule saw a green run for a file whose tests had failed.
+
+The failure is raised where it is found now, as well as recorded. The
+list is still there, and the summary still reports it; the difference
+is that the test that found the failure is the one that goes red. The
+mutation script depends on this: it runs one test file at a time, and
+before the fix it could not tell a caught mutation from a missed one.
+
 ## What this does not claim
 
 The suite is not a proof. It is a set of checks that have each failed
