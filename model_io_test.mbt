@@ -14,7 +14,7 @@
 
 ///|
 /// A matrix, or a failure the test should not survive.
-fn matrix_of(rows : Array[Array[Double]]) -> @moongrad.Tensor {
+fn matrix_of(rows : Array[Array[Double]]) -> @moongrad.Tensor raise {
   match @moongrad.Tensor::matrix(rows) {
     Some(t) => t
     None => {
@@ -26,7 +26,7 @@ fn matrix_of(rows : Array[Array[Double]]) -> @moongrad.Tensor {
 
 ///|
 /// A model with a few awkward numbers in it.
-fn sample_model() -> @moongrad.Model {
+fn sample_model() -> @moongrad.Model raise {
   let weights = matrix_of([
     [0.1, -2.5, 0.0],
     [1.0 / 3.0, 1.0e30, -0.0],

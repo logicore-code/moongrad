@@ -18,9 +18,16 @@
 let failures : Array[String] = []
 
 ///|
-fn check(cond : Bool, msg : String) -> Unit {
+fn check(cond : Bool, msg : String) -> Unit raise {
   if !cond {
     failures.push(msg)
+    // The failure is raised here as well as recorded. Recording it
+    // alone would mean that the failure sits in the list until the
+    // summary at the end of the suite, and a test file run on its own
+    // — which is what a developer does while working on one rule —
+    // would look green. Raising it here fails the test that found it,
+    // and the list is still there for the summary.
+    assert_true(false)
   }
 }
 
@@ -30,7 +37,12 @@ fn approx(a : Double, b : Double, tol : Double) -> Bool {
 }
 
 ///|
-fn assert_close(a : Double, b : Double, tol : Double, what : String) -> Unit {
+fn assert_close(
+  a : Double,
+  b : Double,
+  tol : Double,
+  what : String,
+) -> Unit raise {
   if !approx(a, b, tol) {
     check(
       false,

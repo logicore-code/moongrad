@@ -17,7 +17,7 @@
 ///|
 /// Unwrap a scalar that was expected to compute, recording the
 /// failure if it did not.
-fn expect_double(t : Double?, what : String) -> Double {
+fn expect_double(t : Double?, what : String) -> Double raise {
   match t {
     Some(x) => x
     None => {
@@ -30,7 +30,10 @@ fn expect_double(t : Double?, what : String) -> Double {
 ///|
 /// Unwrap a tensor that was expected to build, recording the
 /// failure if it did not.
-fn expect_tensor(t : @moongrad.Tensor?, what : String) -> @moongrad.Tensor {
+fn expect_tensor(
+  t : @moongrad.Tensor?,
+  what : String,
+) -> @moongrad.Tensor raise {
   match t {
     Some(x) => x
     None => {

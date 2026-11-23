@@ -11,7 +11,7 @@
 
 ///|
 /// A small well-separated dataset: two clusters on the unit square.
-fn toy_dataset() -> @moongrad.Dataset {
+fn toy_dataset() -> @moongrad.Dataset raise {
   let xs : Array[Array[Double]] = [
     [0.0, 0.0],
     [0.1, 0.0],

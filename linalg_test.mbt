@@ -11,7 +11,7 @@
 
 ///|
 /// The eigenvalues of a square matrix, or a failure the test reports.
-fn eigenvalues_of(m : @moongrad.Tensor) -> Array[Double] {
+fn eigenvalues_of(m : @moongrad.Tensor) -> Array[Double] raise {
   match @moongrad.eigenvalues(m) {
     Some(x) => x
     None => {
@@ -23,7 +23,7 @@ fn eigenvalues_of(m : @moongrad.Tensor) -> Array[Double] {
 
 ///|
 /// The singular values of a matrix, or a failure the test reports.
-fn singular_values_of(m : @moongrad.Tensor) -> Array[Double] {
+fn singular_values_of(m : @moongrad.Tensor) -> Array[Double] raise {
   match @moongrad.singular_values(m) {
     Some(x) => x
     None => {
@@ -35,7 +35,7 @@ fn singular_values_of(m : @moongrad.Tensor) -> Array[Double] {
 
 ///|
 /// The determinant of a square matrix, or a failure the test reports.
-fn determinant_of(m : @moongrad.Tensor) -> Double {
+fn determinant_of(m : @moongrad.Tensor) -> Double raise {
   match @moongrad.determinant(m) {
     Some(x) => x
     None => {
@@ -46,7 +46,7 @@ fn determinant_of(m : @moongrad.Tensor) -> Double {
 }
 
 ///|
-fn mat(rows : Array[Array[Double]]) -> @moongrad.Tensor {
+fn mat(rows : Array[Array[Double]]) -> @moongrad.Tensor raise {
   match @moongrad.Tensor::matrix(rows) {
     Some(t) => t
     None => {

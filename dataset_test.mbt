@@ -11,7 +11,7 @@
 
 ///|
 /// A small dataset: ten rows, two features each.
-fn toy_table() -> @moongrad.TabularDataset {
+fn toy_table() -> @moongrad.TabularDataset raise {
   let x : Array[Array[Double]] = [
     [0.0, 0.0],
     [0.1, 0.0],
