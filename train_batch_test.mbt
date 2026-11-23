@@ -436,3 +436,55 @@ test "a_batch_size_of_zero_is_not_an_epoch" {
   let report = trainer.step()
   check(!report.ok, "a batch of nothing should not be a step")
 }
+
+///|
+test "the_batch_trainer_redraws_the_stochastic_inputs_before_every_step" {
+  // A dropout mask that is not redrawn is a fixed random projection,
+  // and the layer would not be a dropout at all. The learning rate is
+  // zero here and every sample is the same, so the parameters cannot
+  // move and the batch cannot differ: any change in the loss comes
+  // from the mask alone.
+  let g = @moongrad.TGraph::new()
+  let b = @moongrad.TBinding::new()
+  let features : Array[Array[Double]] = []
+  let labels : Array[Double] = []
+  for _i = 0; _i < 4; _i = _i + 1 {
+    let row : Array[Double] = []
+    for _j = 0; _j < 64; _j = _j + 1 {
+      row.push(1.0)
+    }
+    features.push(row)
+    labels.push(0.0)
+  }
+  let trainer = @moongrad.BatchTrainer::new(
+    g,
+    b,
+    @moongrad.TensorOptimizer::Sgd(0.0),
+    features,
+    labels,
+    0,
+    1,
+    2,
+    false,
+    7,
+    fn(
+      graph : @moongrad.TGraph,
+      _binding : @moongrad.TBinding,
+    ) -> (Int32, Array[@moongrad.Tensor]) {
+      // The caller's own inputs are declared first, so that the
+      // dropout's mask slot does not land on one of them.
+      let x = graph.input(0)
+      ignore(graph.input(1))
+      let drop = @moongrad.Dropout::new(0.5, 11)
+      let masked = drop.apply(graph, x, [64])
+      let loss = graph.sum_axis(graph.mul(masked, masked), 0)
+      (loss, [@moongrad.Tensor::vector([0.0])])
+    },
+  )
+  let first = trainer.step().loss
+  let second = trainer.step().loss
+  check(
+    first != second,
+    "the mask should be redrawn between steps: \{first} and \{second}",
+  )
+}

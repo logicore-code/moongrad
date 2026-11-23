@@ -568,3 +568,103 @@ test "the_tensor_trainer_reports_the_loss_of_the_model" {
   check(report.ok, "the step should have succeeded")
   assert_close(report.loss, 20.0, 1.0e-9, "the reported loss")
 }
+
+///|
+test "the_tensor_trainer_records_the_loss_at_every_step" {
+  // The history is what a caller reads to see whether a run is going
+  // anywhere. A trainer that did not record it would report a first
+  // and a last loss of zero, which reads as "nothing happened" rather
+  // than as "the trainer forgot".
+  let g = @moongrad.TGraph::new()
+  let b = @moongrad.TBinding::new()
+  let trainer = @moongrad.TensorTrainer::new(
+    g,
+    b,
+    @moongrad.TensorOptimizer::Adam(0.01),
+    fn(
+      graph : @moongrad.TGraph,
+      _binding : @moongrad.TBinding,
+    ) -> (Int32, Array[@moongrad.Tensor]) {
+      let p = graph.param(0)
+      let loss = graph.sum_axis(graph.mul(p, p), 0)
+      (loss, [@moongrad.Tensor::vector([1.0])])
+    },
+  )
+  ignore(trainer.step())
+  ignore(trainer.step())
+  ignore(trainer.step())
+  check(
+    trainer.loss_history().length() == 3,
+    "there should be one loss per step: \{trainer.loss_history().length()}",
+  )
+  check(trainer.initial_loss() != 0.0, "the first loss should be recorded")
+  check(trainer.final_loss() != 0.0, "the last loss should be recorded")
+}
+
+///|
+test "the_tensor_trainer_tells_the_optimiser_which_step_it_is" {
+  // Adam's bias correction depends on the step index. A trainer that
+  // passed the previous step's index would mis-scale every step after
+  // the first, and the run would still look like it was learning.
+  //
+  // f(p) = p^2 with p starting at 1.0 and lr = 0.1. The first step
+  // moves the parameter by exactly one learning rate, because the
+  // gradient is 2p = 2 and the corrected moments make the update
+  // lr*g/|g|. The second step moves it by very slightly less, since
+  // the gradient is now 2 * 0.9 and the normalisation is not exactly
+  // the ratio of the two moments.
+  //
+  // A trainer that passed the previous step's index would use the
+  // first step's correction on the second step, and the parameter
+  // would land at 0.766 instead.
+  let g = @moongrad.TGraph::new()
+  let b = @moongrad.TBinding::new()
+  let trainer = @moongrad.TensorTrainer::new(
+    g,
+    b,
+    @moongrad.TensorOptimizer::Adam(0.1),
+    fn(
+      graph : @moongrad.TGraph,
+      _binding : @moongrad.TBinding,
+    ) -> (Int32, Array[@moongrad.Tensor]) {
+      let p = graph.param(0)
+      let loss = graph.sum_axis(graph.mul(p, p), 0)
+      (loss, [@moongrad.Tensor::vector([1.0])])
+    },
+  )
+  ignore(trainer.step())
+  ignore(trainer.step())
+  let p = trainer.params[0]
+  check(
+    approx(p.data[0], 0.8004, 1.0e-3),
+    "two steps should leave the parameter just under 0.8: \{p.data[0]}",
+  )
+}
+
+///|
+test "the_tensor_trainer_redraws_the_stochastic_inputs_before_every_step" {
+  // A dropout mask that is not redrawn is a fixed random projection,
+  // and a trainer that never redrew it would train a different model
+  // from the one the layer describes. The refresher is registered by
+  // the graph, and the trainer has to call it.
+  let g = @moongrad.TGraph::new()
+  let b = @moongrad.TBinding::new()
+  let trainer = @moongrad.TensorTrainer::new(
+    g,
+    b,
+    @moongrad.TensorOptimizer::Adam(0.01),
+    fn(
+      graph : @moongrad.TGraph,
+      _binding : @moongrad.TBinding,
+    ) -> (Int32, Array[@moongrad.Tensor]) {
+      let p = graph.param(0)
+      let loss = graph.sum_axis(graph.mul(p, p), 0)
+      (loss, [@moongrad.Tensor::vector([1.0])])
+    },
+  )
+  let calls = [0]
+  trainer.add_refresher(fn(_b : @moongrad.TBinding) { calls[0] = calls[0] + 1 })
+  ignore(trainer.step())
+  ignore(trainer.step())
+  check(calls[0] == 2, "the refresher should run once per step: \{calls[0]}")
+}
