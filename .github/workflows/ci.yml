@@ -75,11 +75,15 @@ jobs:
         run: moon test --deny-warn
 
       - name: Smoke-test every example on the native target
+        # The examples are found rather than listed, so that an
+        # example added later is run by this job without anyone
+        # having to remember to add it here.
         run: |
-          for ex in \
-            tensor_basics gradcheck reuse tensor_hessian \
-            second_order minibatch nn_classifier linalg_demo \
-            derivatives hessian checkpoint polyfit xor cse; do
+          for dir in examples/*/; do
+            ex="$(basename "$dir")"
+            if [ "$ex" = "browser" ]; then
+              continue
+            fi
             echo "--- examples/$ex"
             moon run "examples/$ex" --target native
           done

@@ -1,6 +1,6 @@
 # Examples
 
-Seventeen executable packages, each demonstrating one slice of the engine.
+Eighteen executable packages, each demonstrating one slice of the engine.
 
 ```bash
 moon run examples/tensor_basics  --target native
@@ -19,6 +19,7 @@ moon run examples/second_order    --target native
 moon run examples/minibatch       --target native
 moon run examples/cnn             --target native --release
 moon run examples/recipe          --target native --release
+moon run examples/inversion       --target native
 ```
 
 | Example | What it shows | Headline output |
@@ -39,6 +40,7 @@ moon run examples/recipe          --target native --release
 | `minibatch/`   | mini-batch training on a synthetic dataset | the weight converges to the true one |
 | `cnn/`         | two convolutions, a softmax head, AdamW, mini-batches | 41,828 parameters; the loss falls from 26.7 to 0.003, and unseen images are labelled correctly |
 | `recipe/`      | a whole training recipe: convolution, batch normalisation, GELU, dropout, AdamW, a cosine schedule, gradient clipping, and inference with the running averages | the loss falls from 3.7 to 0.007, and the model labels the training images correctly |
+| `inversion/`   | recovering four parameters of a damped oscillator from forty noisy measurements | Adam takes 194 steps to the noise floor, a Gauss-Newton step takes three, and the parameters come back with their uncertainties |
 
 ## Why `gradcheck` matters
 
