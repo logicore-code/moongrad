@@ -206,6 +206,28 @@ test "solve_handles_a_general_matrix" {
 }
 
 ///|
+test "solve_swaps_the_rows_when_the_pivot_is_zero" {
+  // The first pivot of [[0, 1], [1, 0]] is zero, so the only way
+  // forward is to swap the rows. A solver that divides by the pivot
+  // without looking for a larger one returns a number that is not a
+  // solution.
+  let a = match @moongrad.Tensor::matrix([[0.0, 1.0], [1.0, 0.0]]) {
+    Some(t) => t
+    None => return
+  }
+  let x = match @moongrad.solve(a, [1.0, 2.0]) {
+    Some(v) => v
+    None => {
+      check(false, "the system should be solvable")
+      return
+    }
+  }
+  // The exact solution is [2, 1].
+  check(close(x[0], 2.0, 1.0e-9), "x0 should be 2, got \{x[0]}")
+  check(close(x[1], 1.0, 1.0e-9), "x1 should be 1, got \{x[1]}")
+}
+
+///|
 test "solve_rejects_a_singular_system" {
   let m = mat([[1.0, 2.0], [2.0, 4.0]])
   let x = @moongrad.solve(m, [1.0, 2.0])
