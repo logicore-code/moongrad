@@ -110,14 +110,15 @@ whole reverse pass can be read.
 Three other MoonBit projects are worth naming, because they are the ones this
 would be compared against.
 
-- `Luna-Flow/autodiff` is a forward-mode implementation over dual numbers,
-  and it says in its own documentation that reverse mode and higher-order
-  derivatives are not part of the release.
-- `riantr/snn_mbt`, a port of SpikingNeuralNetworks.jl, carries a tape-based
-  backward pass.
-- `lyjttio/moongrad` — a different project that happens to have the same
-  name, by a different author — is a PyTorch-shaped library: a dynamic
-  graph, a `backward()` method, and a gradient accumulated into a `grad`
+- [`Luna-Flow/autodiff`](https://github.com/Luna-Flow/autodiff) is a forward-mode
+  implementation over dual numbers, and it says in its own documentation that
+  reverse mode and higher-order derivatives are not part of the release.
+- [`riantr/snn_mbt`](https://github.com/riantr/snn_mbt), a port of
+  SpikingNeuralNetworks.jl, carries a tape-based backward pass.
+- [`lyjttio/moongrad`](https://github.com/lyjttio/moongrad) — a different project
+  that happens to have the same name, by a different author — is a
+  PyTorch-shaped library: a dynamic graph, a `backward()` method, and a gradient
+  accumulated into a `grad`
   array on each tensor. If what you want is that shape of API, that is the
   one to look at.
 

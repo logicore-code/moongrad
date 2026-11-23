@@ -165,3 +165,53 @@ test "the_two_engines_agree_on_a_chain" {
   )
   assert_close(tensor, scalar, 1.0e-12, "the chained gradient")
 }
+
+///|
+test "the_two_engines_agree_on_relu_and_on_a_power" {
+  // ReLU and the power are the two operators the two engines have in
+  // common and the comparisons above did not cover. ReLU is the one
+  // whose derivative is a step, so it is also the one whose
+  // convention is easiest to let drift: both engines define the
+  // derivative at exactly zero to be zero, and neither is wrong.
+  let point = 0.7
+  let scalar_relu = scalar_grad(fn(g, x) { g.relu(x) }, point)
+  let tensor_relu = tensor_grad(fn(g, x) { g.relu(x) }, point)
+  assert_close(
+    tensor_relu, scalar_relu, 1.0e-12, "the relu gradient should be the same in both engines",
+  )
+  let scalar_power = scalar_grad(fn(g, x) { g.pow(x, 3.0) }, point)
+  let tensor_power = tensor_grad(fn(g, x) { g.pow(x, 3.0) }, point)
+  assert_close(
+    tensor_power, scalar_power, 1.0e-12, "the power gradient should be the same in both engines",
+  )
+}
+
+///|
+test "the_two_engines_agree_on_the_value_of_a_relu_derivative" {
+  // The `ReluDeriv` node is not an operator but a value: it is the
+  // step function itself, and the two engines implement it in
+  // different files. At exactly zero the two conventions have to
+  // agree as well, because that is the point where the derivative
+  // does not exist and the choice is a convention.
+  for point in [0.7, -0.7, 0.0] {
+    let sg = @moongrad.Graph::new()
+    ignore(sg.new_vars(1))
+    let sx = sg.variable(0)
+    let sd = sg.relu_deriv(sx)
+    let sb = @moongrad.Binding::new()
+    sb.set_var(0, point)
+    let sv = @moongrad.forward_values(sg, sb)
+    let tg = @moongrad.TGraph::new()
+    let tx = tg.input(0)
+    let td = tg.relu_deriv(tx)
+    let tb = @moongrad.TBinding::new()
+    tb.set_input(0, @moongrad.Tensor::vector([point]))
+    let tv = @moongrad.t_forward(tg, tb)
+    assert_close(
+      tv[td].data[0],
+      sv[sd],
+      1.0e-12,
+      "the relu derivative node should have the same value in both engines",
+    )
+  }
+}
