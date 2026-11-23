@@ -85,6 +85,13 @@ fn flat_layout(slots : Array[Tensor]) -> (Array[Int32], Int32) {
 /// one of the primal's own input slots. The binding is given a slot
 /// of the right size so that the graph and the binding agree.
 ///
+/// A slot beyond the primal's own inputs is a direction slot, and
+/// one that an earlier compilation left behind is reused: the same
+/// program can be compiled more than once against the same binding,
+/// which is what an iteration over Newton steps does. A slot of the
+/// wrong width is refused rather than used, because a program
+/// compiled for one width is not the same program for another.
+///
 /// The binding is modified in place, and the slot it was given stays
 /// in it afterwards. A caller who wants the binding back the way it
 /// was should compile against a binding of its own — the one-shot
@@ -108,10 +115,28 @@ pub fn compile_hvp(
   // it before the gradient program is compiled. Writing over one of
   // the primal's own inputs would replace it with the direction and
   // change the objective, so that is refused rather than done.
+  //
+  // A slot past the primal's own inputs is a direction slot that an
+  // earlier compilation left behind, and it is reused rather than
+  // refused. A program that is compiled once and applied many times
+  // has to be able to compile more than once against the same
+  // binding, and the compilation is what leaves the slot there.
   if slot < b.inputs.length() {
-    return None
+    if slot < g.input_count() {
+      // One of the primal's own inputs. Writing the direction over it
+      // would change the objective.
+      return None
+    }
+    // A direction slot from an earlier compilation. It has to be as
+    // wide as this product is over, or the program would be applied
+    // to a direction of the wrong shape.
+    let existing = b.inputs[slot].shape
+    if existing.length() != 1 || existing[0] != total {
+      return None
+    }
+  } else {
+    b.set_input(slot, Tensor::zeros([total]))
   }
-  b.set_input(slot, Tensor::zeros([total]))
   let first = compile_tensor_gradient(g, b, target)
   let h = first.graph
   let v = h.variable(slot)

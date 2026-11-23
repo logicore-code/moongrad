@@ -286,3 +286,54 @@ test "a_one_shot_product_leaves_the_binding_as_it_found_it" {
   let _ = @moongrad.t_input_hvp(g, b, 2, [0.0, 1.0])
   assert_eq(b.inputs.length(), width)
 }
+
+///|
+test "the_newton_step_can_be_taken_more_than_once" {
+  // Taking a Newton step compiles a Hessian-vector product, and the
+  // compilation leaves the direction in a slot of the binding. The
+  // second step compiles the product again against the same binding,
+  // and it has to reuse that slot rather than refuse it: an
+  // iteration that only works once is not an iteration.
+  let g = @moongrad.TGraph::new()
+  let w = g.param(0)
+  let d = g.sub(w, g.constant(@moongrad.Tensor::filled([], 3.0)))
+  let loss = g.sum_axis(g.mul(d, d), 0)
+  let b = @moongrad.TBinding::new()
+  b.set_param(0, @moongrad.Tensor::vector([1.0]))
+  let first = match
+    @moongrad.newton_cg_step(g, b, loss, 1.0e-6, 50, 1.0e-12, 3) {
+    Some(v) => v
+    None => {
+      check(false, "the first newton-cg iteration broke down")
+      return
+    }
+  }
+  assert_close(first[0], 2.0, 1.0e-6, "the first newton step")
+  let second = match
+    @moongrad.newton_cg_step(g, b, loss, 1.0e-6, 50, 1.0e-12, 3) {
+    Some(v) => v
+    None => {
+      check(false, "the second newton-cg iteration broke down")
+      return
+    }
+  }
+  assert_close(second[0], 2.0, 1.0e-6, "the second newton step")
+}
+
+///|
+test "a_direction_slot_of_the_wrong_width_is_refused" {
+  // A slot past the primal's own inputs is a direction slot, and it
+  // is reused. A slot that is the wrong width cannot be the one this
+  // product was compiled for, so it is refused rather than used.
+  let g = @moongrad.TGraph::new()
+  let w = g.param(0)
+  let d = g.sub(w, g.constant(@moongrad.Tensor::filled([], 3.0)))
+  let loss = g.sum_axis(g.mul(d, d), 0)
+  let b = @moongrad.TBinding::new()
+  b.set_param(0, @moongrad.Tensor::vector([1.0]))
+  // A slot the primal does not use, but which is too wide for the
+  // one-element parameter space.
+  b.set_input(0, @moongrad.Tensor::vector([1.0, 2.0]))
+  let refused = @moongrad.compile_param_hvp(g, b, loss, 0)
+  check(refused is None, "a direction slot of the wrong width must be refused")
+}
