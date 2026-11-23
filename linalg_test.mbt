@@ -477,3 +477,109 @@ test "matrix_exp_satisfies_the_power_series_to_second_order" {
   check(close(e.mget(0, 1), 1.0, 1.0e-9), "the off-diagonal is one")
   check(close(e.mget(1, 1), 1.0, 1.0e-9), "the diagonal is one")
 }
+
+///|
+test "the_matrix_exponential_of_a_matrix_that_is_not_nilpotent" {
+  // The other exponential tests use a matrix whose square is zero, and
+  // for such a matrix every truncation of the series is exact — so
+  // they cannot tell a series that stops early from one that does not.
+  // This one does: for [[0, a], [a, 0]] the exponential is
+  // `cosh(a) I + sinh(a) [[0, 1], [1, 0]]`, and the off-diagonal entry
+  // is `sinh(a)`, which the truncated series does not reach.
+  let m = mat([[0.0, 4.0], [4.0, 0.0]])
+  let e = match @moongrad.matrix_exp(m) {
+    Some(t) => t
+    None => {
+      check(false, "the exponential should exist")
+      return
+    }
+  }
+  // sinh(4) = 27.289917197127752.
+  check(
+    close(e.mget(0, 1), 27.289917197127752, 1.0e-6),
+    "the off-diagonal entry should be sinh(4): \{e.mget(0, 1)}",
+  )
+  // cosh(4) = 27.308232836016487.
+  check(
+    close(e.mget(0, 0), 27.308232836016487, 1.0e-6),
+    "the diagonal entry should be cosh(4): \{e.mget(0, 0)}",
+  )
+}
+
+///|
+test "the_eigenvalues_of_a_symmetric_matrix_are_the_exact_ones" {
+  // The eigenvalues of [[2, 1, 0], [1, 2, 1], [0, 1, 2]] are
+  // 2 - sqrt(2), 2 and 2 + sqrt(2). The decomposition sweeps a fixed
+  // number of times and stops, and a sweep budget that is too small
+  // leaves the off-diagonal entries standing: the answer is then
+  // close to the right one but not equal to it, which is the kind of
+  // wrong that a tolerance chosen to match the error would hide.
+  let m = mat([[2.0, 1.0, 0.0], [1.0, 2.0, 1.0], [0.0, 1.0, 2.0]])
+  let values = match @moongrad.eigenvalues(m) {
+    Some(v) => v
+    None => {
+      check(false, "the matrix should have eigenvalues")
+      return
+    }
+  }
+  let sorted = values.copy()
+  for i = 0; i < sorted.length(); i = i + 1 {
+    for j = i + 1; j < sorted.length(); j = j + 1 {
+      if sorted[j] < sorted[i] {
+        let t = sorted[i]
+        sorted[i] = sorted[j]
+        sorted[j] = t
+      }
+    }
+  }
+  let root = 2.0.sqrt()
+  check(
+    close(sorted[0], 2.0 - root, 1.0e-12),
+    "the smallest eigenvalue should be 2 - sqrt(2): \{sorted[0]}",
+  )
+  check(
+    close(sorted[1], 2.0, 1.0e-12),
+    "the middle eigenvalue should be 2: \{sorted[1]}",
+  )
+  check(
+    close(sorted[2], 2.0 + root, 1.0e-12),
+    "the largest eigenvalue should be 2 + sqrt(2): \{sorted[2]}",
+  )
+}
+
+///|
+test "the_r_factor_of_a_qr_decomposition_has_a_negative_diagonal" {
+  // The sign of the diagonal of R is a convention, and a convention
+  // that is not written down is one that can change. This one is:
+  // every diagonal entry of R is negative, and every one of them is
+  // non-zero.
+  let m = mat([[3.0, 1.0], [4.0, 2.0]])
+  let (q, r) = match @moongrad.qr(m) {
+    Some(t) => t
+    None => {
+      check(false, "the decomposition should exist")
+      return
+    }
+  }
+  let n = r.shape[0]
+  for i = 0; i < n; i = i + 1 {
+    check(r.mget(i, i) < 0.0, "the diagonal of R should be negative")
+    check(r.mget(i, i) != 0.0, "the diagonal of R should not be zero")
+  }
+  // The decomposition still has to reconstruct the matrix.
+  let qr = match q.matmul(r) {
+    Some(t) => t
+    None => {
+      check(false, "the product should exist")
+      return
+    }
+  }
+  for i = 0; i < 2; i = i + 1 {
+    for j = 0; j < 2; j = j + 1 {
+      check(
+        close(qr.mget(i, j), m.mget(i, j), 1.0e-9),
+        "Q R should be the matrix again",
+      )
+    }
+  }
+}

@@ -261,3 +261,12 @@ test "the_cropping_helper" {
   assert_eq(cropped.data.length(), 4)
   assert_close(cropped.data[0], 1.0, 1.0e-12, "the first value after cropping")
 }
+
+///|
+test "the_matrix_norm_is_the_euclidean_norm" {
+  let m = match @moongrad.Matrix::from_array(2, 2, [3.0, 0.0, 0.0, 4.0]) {
+    Some(x) => x
+    None => return
+  }
+  check(approx(m.norm(), 5.0, 1.0e-12), "the norm of a 3-4 matrix is 5")
+}

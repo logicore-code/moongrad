@@ -377,3 +377,26 @@ test "newton_converges_on_a_nonlinear_objective" {
     "Newton should reach the minimum at x = 3, got \{current}",
   )
 }
+
+///|
+test "the_eigenvalues_of_a_jacobi_decomposition_are_the_exact_ones" {
+  // The eigenvalues of [[2, 1, 0], [1, 2, 1], [0, 1, 2]] are
+  // 2 - sqrt(2), 2 and 2 + sqrt(2). The decomposition sweeps a fixed
+  // number of times and stops, and a sweep budget that is too small
+  // leaves the off-diagonal entries standing: the answer is then
+  // close to the right one but not equal to it, which is the kind of
+  // wrong that a tolerance chosen to match the error would hide.
+  let m = @moongrad.Matrix::zeros(3, 3)
+  m.set(0, 0, 2.0)
+  m.set(0, 1, 1.0)
+  m.set(1, 0, 1.0)
+  m.set(1, 1, 2.0)
+  m.set(1, 2, 1.0)
+  m.set(2, 1, 1.0)
+  m.set(2, 2, 2.0)
+  let ev = sorted_copy(@moongrad.jacobi_eigenvalues(m))
+  let root = 2.0.sqrt()
+  assert_close(ev[0], 2.0 - root, 1.0e-9, "the smallest eigenvalue")
+  assert_close(ev[1], 2.0, 1.0e-9, "the middle eigenvalue")
+  assert_close(ev[2], 2.0 + root, 1.0e-9, "the largest eigenvalue")
+}

@@ -438,3 +438,98 @@ test "a_schedule_can_be_replaced_mid_run" {
   ignore(st.step(params, grads, 2))
   check(params[0].data[0] < 1.0, "the new schedule should decide the next step")
 }
+
+///|
+test "a_schedule_advances_with_the_step" {
+  // The step schedule multiplies its rate by the decay every
+  // `step_size` steps. A schedule that is computed but never stepped
+  // keeps the first rate for the whole run, and the parameter moves
+  // by the same amount every time.
+  //
+  // Nesterov with no momentum is the simplest consumer: its update is
+  // exactly `lr * g`, so the rate that was used is visible in the
+  // parameter.
+  let st = @moongrad.ExtraOptState::new(
+    @moongrad.ExtraOptimizer::Nesterov(0.0, 0.0),
+    [[1]],
+  )
+  st.set_schedule(@moongrad.LrSchedule::Step(0.4, 0.5, 1))
+  let params = [@moongrad.Tensor::vector([0.0])]
+  let grads = [@moongrad.Tensor::vector([1.0])]
+  ignore(st.step(params, grads, 1))
+  check(
+    approx(params[0].data[0], -0.4, 1.0e-9),
+    "the first step should use the schedule's first rate: \{params[0].data[0]}",
+  )
+  ignore(st.step(params, grads, 2))
+  check(
+    approx(params[0].data[0], -0.6, 1.0e-9),
+    "the second step should use the halved rate: \{params[0].data[0]}",
+  )
+}
+
+///|
+test "adagrad_keeps_the_epsilon_outside_the_square_root" {
+  // The convention is `sqrt(v) + eps`, not `sqrt(v + eps)`. The two
+  // agree to within a rounding error when the epsilon is the usual
+  // 1e-8, so the epsilon here is large enough to tell them apart.
+  let st = @moongrad.ExtraOptState::new(
+    @moongrad.ExtraOptimizer::Adagrad(0.4, 1.0),
+    [[1]],
+  )
+  let params = [@moongrad.Tensor::vector([0.0])]
+  let grads = [@moongrad.Tensor::vector([1.0])]
+  ignore(st.step(params, grads, 1))
+  // v is 1 after the first step, so the update is 0.4 / (1 + 1).
+  check(
+    approx(params[0].data[0], -0.2, 1.0e-9),
+    "the epsilon belongs outside the root: \{params[0].data[0]}",
+  )
+}
+
+///|
+test "the_tensor_adam_bias_correction_advances_with_the_step" {
+  // The bias correction divides the moment estimates by `1 - beta^t`.
+  // If the step index does not advance, the correction stays at the
+  // first step's and every later step is mis-scaled.
+  let params = [one_param(1.0)]
+  let st = @moongrad.TensorOptState::new(@moongrad.TensorOptimizer::Adam(0.1), [
+    [1],
+  ])
+  ignore(st.step(params, [one_param(0.5)], 1))
+  check(
+    approx(params[0].data[0], 0.9, 1.0e-8),
+    "the first step should move the parameter by one learning rate: \{params[0].data[0]}",
+  )
+  ignore(st.step(params, [one_param(0.5)], 2))
+  // The second step's correction is 1 - 0.9^2 and 1 - 0.999^2, and
+  // the update is again exactly one learning rate.
+  check(
+    approx(params[0].data[0], 0.8, 1.0e-6),
+    "the second step should also move the parameter by one learning rate: \{params[0].data[0]}",
+  )
+}
+
+///|
+test "the_tensor_momentum_carries_the_buffer_into_the_next_step" {
+  // The momentum buffer is what makes the second step larger than the
+  // first: `v = mu*v + g`, so with a gradient of one the second step
+  // moves the parameter by `lr * (1 + mu)`. A buffer that is not
+  // carried makes the two steps the same size, which still looks like
+  // a run that is going somewhere.
+  let params = [one_param(0.0)]
+  let st = @moongrad.TensorOptState::new(
+    @moongrad.TensorOptimizer::Momentum(0.1, 0.9),
+    [[1]],
+  )
+  ignore(st.step(params, [one_param(1.0)], 1))
+  check(
+    approx(params[0].data[0], -0.1, 1.0e-9),
+    "the first step should move by one learning rate: \{params[0].data[0]}",
+  )
+  ignore(st.step(params, [one_param(1.0)], 2))
+  check(
+    approx(params[0].data[0], -0.29, 1.0e-9),
+    "the second step should move by lr * (1 + mu): \{params[0].data[0]}",
+  )
+}

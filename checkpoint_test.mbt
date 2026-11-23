@@ -424,3 +424,32 @@ test "a_report_over_an_empty_segmentation_is_harmless" {
   assert_eq(@moongrad.peak_occupancy([], 0), 0)
   assert_eq(@moongrad.recomputation_cost([]), 0)
 }
+
+///|
+test "the_arithmetic_cost_is_the_gradient_multiple_of_one_forward_pass" {
+  // The report says the evaluation spends the primal's evaluations on
+  // the forward pass the caller already paid for, and the gradient
+  // program's own evaluations on top of that, so the multiple is
+  // `1 + gradient_evals / forward_evals`. The two counts are not
+  // interchangeable — on a deep graph they differ by a factor of
+  // several — and a report that divided the other way round would
+  // still have been a number.
+  let g = @moongrad.Graph::new()
+  ignore(g.new_vars(1))
+  let x = g.variable(0)
+  let f = deep_graph(g, x, 20)
+  let b = binding_of([0.5])
+  let (_grads, report) = @moongrad.checkpointed_grad(g, b, f, 4)
+  let expected = 1.0 +
+    report.gradient_evals.to_double() / report.forward_evals.to_double()
+  assert_close(
+    report.arithmetic_cost(),
+    expected,
+    1.0e-12,
+    "the arithmetic cost should be one plus the gradient multiple",
+  )
+  // On a graph this deep the gradient program is several times the
+  // size of the primal, so the multiple is well above two. The other
+  // way round would give something below one and a half.
+  assert_true(report.arithmetic_cost() > 2.0)
+}
