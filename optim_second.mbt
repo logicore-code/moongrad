@@ -106,10 +106,22 @@ pub fn compile_hvp(
   slot : Int32,
   over_params : Bool,
 ) -> HvpProgram? raise ADError {
-  // The space is snapshotted before the direction slot is added: over
-  // the inputs, the direction is itself an input, and it must not be
-  // part of the space it is dotted with.
-  let space = if over_params { b.params.copy() } else { b.inputs.copy() }
+  // The space is the parameters, or the primal's own inputs. Over the
+  // inputs it is the slots the graph declared and not every slot the
+  // binding happens to have: a slot that an earlier compilation left
+  // behind holds a direction, and a direction is not part of the space
+  // it is dotted with. Counting it would make the product wider on
+  // every compilation, and the product would then be of a different
+  // function each time.
+  let space = if over_params {
+    b.params.copy()
+  } else {
+    let own : Array[Tensor] = []
+    for i = 0; i < g.input_count(); i = i + 1 {
+      own.push(b.inputs[i])
+    }
+    own
+  }
   let (offsets, total) = flat_layout(space)
   // The direction is an input, so the binding has to have a slot for
   // it before the gradient program is compiled. Writing over one of
