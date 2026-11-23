@@ -7,7 +7,7 @@ project follows Semantic Versioning: bump the
 - `MINOR` part on new functionality in a backward-compatible way
 - `PATCH` part on backward-compatible bug fixes
 
-## [0.9.0] — 2026-11-20
+## [0.9.0] — 2026-11-23
 
 ### Fixed
 - **A Newton step can be taken more than once.** Compiling a
@@ -98,17 +98,6 @@ project follows Semantic Versioning: bump the
   carry a rate of their own, fixed when they are built, so a schedule
   could be computed and then had nowhere to go.
 - **`Graph::stats`**, so that the simplifier's counts can be read.
-- **A gather and a scatter for the tensor graph.** The form and the
-  README had both listed a gather among the tensor operations, and
-  there was no such thing: the tensor graph had `gather_row`, which
-  reads one row of a parameter slot, and nothing else. There is now
-  `gather_rows`, which takes the rows of a tensor by index along the
-  first axis, and `scatter_rows`, which puts them back. The two are
-  inverses of each other, which is what makes them differentiable:
-  the gradient of a gather is a scatter, and the gradient of a scatter
-  is a gather. The index is a node of its own, so the same compiled
-  program can gather different rows at different bindings.
-
 ### Fixed
 - **The checkpoint module described a mechanism it did not
   implement.** It said the backward sweep visited segments right to

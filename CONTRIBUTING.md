@@ -30,8 +30,9 @@ moon build --target all
 ```
 
 `moon fmt --check` and `moon check` are both enforced in CI, and the
-suite has to be green. If you add an example, add it to the list in
-`.github/workflows/ci.yml` as well, or it will not be smoke-tested.
+suite has to be green. The CI job finds the examples rather than
+listing them, so an example that is added under `examples/` is
+smoke-tested without anything having to be edited.
 
 ## What a change should look like
 
