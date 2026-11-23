@@ -294,7 +294,7 @@ The module's name is `logicore-code/moongrad`. Once it is published to the
 registry:
 
 ```bash
-moon add logicore-code/moongrad@0.8.0
+moon add logicore-code/moongrad@0.9.0
 ```
 
 and the package that wants it imports it:
