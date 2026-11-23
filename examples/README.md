@@ -82,8 +82,9 @@ re-derive every rule a second time, and the two would disagree somewhere.
 It computes the same Newton step two ways: once from the dense
 Hessian, with a Cholesky factorisation, and once without forming the
 Hessian at all, using a Hessian-vector product inside a
-conjugate-gradient iteration. The two agree exactly, which is what
-says the matrix-free route is computing the right thing.
+conjugate-gradient iteration. The two agree to within one unit in the
+last place of the step, which is what says the matrix-free route is
+computing the right thing.
 
 ## Why `minibatch` matters
 
