@@ -1,6 +1,7 @@
 # Examples
 
-Eighteen executable packages, each demonstrating one slice of the engine.
+Eighteen packages, each demonstrating one slice of the engine. Seventeen of them
+run directly; the eighteenth is a WebAssembly module with a page around it.
 
 ```bash
 moon run examples/tensor_basics  --target native
