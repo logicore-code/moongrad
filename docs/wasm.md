@@ -12,8 +12,8 @@ The same source builds for four targets:
 |---|---|---|
 | `native` | the fastest, for training runs and servers | a native executable |
 | `wasm` | a browser or a serverless function | 112 KB of WebAssembly |
-| `wasm-gc` | the same, with the GC runtime in the module | 84 KB of WebAssembly |
-| `js` | a Node process, or a bundler that wants JavaScript | 252 KB of JavaScript |
+| `wasm-gc` | the same, with the GC runtime in the module | 83 KB of WebAssembly |
+| `js` | a Node process, or a bundler that wants JavaScript | 255 KB of JavaScript |
 
 Those are release builds, measured on the machine this was written on;
 a debug build of the same example is two to three times the size.
@@ -109,9 +109,11 @@ python3 -m http.server
 The wasm build is not fast. A tensor operation in this library is a
 loop over a flat array in MoonBit, which is fine on a native target and
 slow in a browser. On the machine this was measured on, the wasm build
-of the convolution in `examples/cnn` took about twice as long as the
-native one (42 s against 23 s), and the sizes are three to four times
-larger than a native build of the same program. What the wasm build
+of the convolution in `examples/cnn` took two and a half times as
+long as the native one (22 s against 8 s). The size goes the other
+way: the wasm module is 112 KB and the native executable of the same
+program is 594 KB, because the native one carries a runtime the wasm
+module does not need. What the wasm build
 buys is that the engine *is there* — no FFI, no Python, no second
 language, one source file compiled by one command.
 

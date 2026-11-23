@@ -1,6 +1,6 @@
 # How the tests are put together
 
-The suite is 471 cases. That number says how much there is, not how much
+The suite is 485 cases. That number says how much there is, not how much
 it checks, so this page is about the second question.
 
 ## The rules the suite follows
