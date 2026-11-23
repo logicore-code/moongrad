@@ -26,7 +26,7 @@ network's forward pass.
 | build + compile the gradient | **777 µs** | constructing the graph and running the backward sweep once |
 | forward pass | **19.7 µs** | constant propagation over 400 nodes |
 | backward pass (re-evaluate the compiled gradient) | **43.4 µs** | the compiled gradient program, evaluated at a binding |
-| backward pass with 8 checkpoint segments | **637 µs** | the same result, plus segment recomputation |
+| backward pass with 8 checkpoint segments | **637 µs** | the same result, with the scan split into eight pieces |
 | one optimiser step, 6 samples, 2-8-1 network | **462 µs** | forward + backward + Adam, end to end |
 
 ## The tensor side

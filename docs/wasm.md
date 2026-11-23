@@ -11,9 +11,12 @@ The same source builds for four targets:
 | Target | What it is for | The `reuse` example comes out as |
 |---|---|---|
 | `native` | the fastest, for training runs and servers | a native executable |
-| `wasm` | a browser or a serverless function | 264 KB of WebAssembly |
-| `wasm-gc` | the same, with the GC runtime in the module | 152 KB of WebAssembly |
-| `js` | a Node process, or a bundler that wants JavaScript | 336 KB of JavaScript |
+| `wasm` | a browser or a serverless function | 112 KB of WebAssembly |
+| `wasm-gc` | the same, with the GC runtime in the module | 84 KB of WebAssembly |
+| `js` | a Node process, or a bundler that wants JavaScript | 252 KB of JavaScript |
+
+Those are release builds, measured on the machine this was written on;
+a debug build of the same example is two to three times the size.
 
 ## Building it
 
@@ -21,9 +24,10 @@ The same source builds for four targets:
 moon build --target wasm examples/reuse
 ```
 
-The artifact is `_build/wasm/release/examples/reuse/reuse.wasm`. There
-is no JavaScript glue to ship with it: the module carries its own
-runtime.
+The artifact is `_build/wasm/debug/build/examples/reuse/reuse.wasm` —
+`moon build` writes a debug build unless `--release` is given, and the
+release artifact is under `_build/wasm/release/build/`. There is no
+JavaScript glue to ship with it: the module carries its own runtime.
 
 ## Running it
 
@@ -102,12 +106,14 @@ python3 -m http.server
 
 ## What this does not buy you
 
-The wasm build is not fast, and it is not small. A tensor operation in
-this library is a loop over a flat array in MoonBit, which is fine on
-a native target and slow in a browser; the native build is roughly an
-order of magnitude faster on the convolution in `examples/cnn`. What
-the wasm build buys is that the engine *is there* — no FFI, no Python,
-no second language, one source file compiled by one command.
+The wasm build is not fast. A tensor operation in this library is a
+loop over a flat array in MoonBit, which is fine on a native target and
+slow in a browser. On the machine this was measured on, the wasm build
+of the convolution in `examples/cnn` took about twice as long as the
+native one (42 s against 23 s), and the sizes are three to four times
+larger than a native build of the same program. What the wasm build
+buys is that the engine *is there* — no FFI, no Python, no second
+language, one source file compiled by one command.
 
 The library is not trying to be a numerical kernel. The value it
 offers is that the function being differentiated is user-supplied
