@@ -7,3 +7,6 @@
 
 perf/
 SUBMISSION.md
+# The generated interface files are build products: the toolchain
+# writes them, and it writes them again when the package is built.
+pkg.generated.mbti
