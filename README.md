@@ -243,7 +243,9 @@ of nothing.
 
 The test suite (469 cases) additionally checks each local derivative rule
 against its closed form, and each layer against a hand-computed
-backpropagation.
+backpropagation. How the suite is put together, and what came out of
+breaking the implementation on purpose to see which parts of it no test
+walked, is in [docs/testing.md](docs/testing.md).
 
 The reusability claim has its own tests, because it is the kind of property
 that can rot quietly. `tensor_program_test.mbt` compiles a gradient once and
@@ -410,6 +412,7 @@ agree to the last bit.
 - `docs/math.md` — the derivative rules the compiler emits, one operator at a time
 - `docs/benchmark.md` — measured numbers and their caveats
 - `docs/wasm.md` — running the library on the web, and what that costs
+- `docs/testing.md` — how the tests are put together, and what breaking the implementation on purpose found
 
 ## License
 
