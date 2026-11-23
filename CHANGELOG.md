@@ -10,6 +10,21 @@ project follows Semantic Versioning: bump the
 ## [0.9.0] — 2026-11-23
 
 ### Fixed
+- **A test file run on its own now fails when it should.** The
+  failures of a test were collected in a shared list and reported
+  from a summary at the end of the suite, because a gradient is a
+  chain rule and the first broken link hides the rest. The cost of
+  that was that the summary was the only place a failure showed up,
+  and the summary runs last: a developer who ran one test file while
+  working on one rule saw a green run for a file whose tests had
+  failed. The failure is raised where it is found now, as well as
+  recorded; the list is still there, and the summary still reports it.
+- **The input product is over the primal's own inputs.** The space
+  the product was taken over was every slot the binding had, and a
+  binding that had been compiled against already had the previous
+  direction in one of those slots — so the second compilation was over
+  a wider space than the first, and the product it computed was the
+  product of a different function.
 - **A Newton step can be taken more than once.** Compiling a
   Hessian-vector product leaves the direction in a slot of the binding,
   and the next compilation against the same binding found that slot
@@ -23,6 +38,18 @@ project follows Semantic Versioning: bump the
   second newton-cg iteration broke down".
 
 ### Added
+- **A mutation check, in the repository.** `scripts/mutation_check.py`
+  makes the implementation wrong on purpose, one place at a time, and
+  reports the changes the suite does not notice. Twenty mutations
+  are checked — the optimisers' state between steps, the trainers'
+  state between steps, and the conventions the library documents. It
+  was the way the last round of gaps was found: the momentum buffer
+  had no test at all, the tensor side of Adam's bias correction was
+  frozen at the first step without anything going red, the matrix
+  exponential's series could be truncated and the nilpotent matrices
+  the other tests used could not tell, and the sign of a Cholesky
+  factor's diagonal could be flipped because the reconstruction test
+  holds either way. Every one of them has a test now.
 - **`examples/inversion`**, a parameter inversion rather than another
   network fitted to a task made up for it. A damped oscillator is
   observed at forty points with noise, and four parameters — the
