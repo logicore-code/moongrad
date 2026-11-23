@@ -337,3 +337,81 @@ test "a_direction_slot_of_the_wrong_width_is_refused" {
   let refused = @moongrad.compile_param_hvp(g, b, loss, 0)
   check(refused is None, "a direction slot of the wrong width must be refused")
 }
+
+///|
+test "the_compiled_programs_can_be_compiled_again" {
+  // Every one of these leaves something behind in the binding: a
+  // direction slot, a compiled program. A second call has to find
+  // the binding in a state it can work with, because a caller who
+  // compiles once and applies many times is the ordinary case and not
+  // the exceptional one.
+  let g = @moongrad.TGraph::new()
+  let x = g.variable(0)
+  let w = g.param(0)
+  let cube = g.pow(x, 3.0)
+  let loss = g.sum_axis(g.mul(cube, g.mul(w, w)), 0)
+  let b = @moongrad.TBinding::new()
+  b.set_input(0, @moongrad.Tensor::vector([1.5, -0.5]))
+  b.set_param(0, @moongrad.Tensor::vector([2.0]))
+  // The gradient program: compiled twice, evaluated twice.
+  let first = @moongrad.compile_tensor_gradient(g, b, loss)
+  let second = @moongrad.compile_tensor_gradient(g, b, loss)
+  let (_, g1) = @moongrad.evaluate_tensor_gradient(first, b)
+  let (_, g2) = @moongrad.evaluate_tensor_gradient(second, b)
+  assert_eq(g1.length(), g2.length())
+  assert_close(g1[0].data[0], g2[0].data[0], 1.0e-12, "the two gradients")
+  // The value of the original graph is asked of the original graph.
+  let v1 = @moongrad.t_forward(g, b)
+  let v2 = @moongrad.t_forward(g, b)
+  assert_close(v1[loss].data[0], v2[loss].data[0], 1.0e-12, "the two losses")
+  // The product over the parameters: compiled twice against the same
+  // binding, with the same direction slot.
+  let slot = b.inputs.length()
+  let p1 = @moongrad.compile_param_hvp(g, b, loss, slot)
+  let p2 = @moongrad.compile_param_hvp(g, b, loss, slot)
+  check(p1 is Some(_), "the first compilation failed")
+  check(p2 is Some(_), "the second compilation failed")
+  // The product over the inputs: a direction slot of its own, because
+  // the one above belongs to the parameter product.
+  let input_slot = b.inputs.length()
+  let i1 = @moongrad.compile_input_hvp(g, b, loss, input_slot)
+  let i2 = @moongrad.compile_input_hvp(g, b, loss, input_slot)
+  check(i1 is Some(_), "the first input compilation failed")
+  check(i2 is Some(_), "the second input compilation failed")
+}
+
+///|
+test "the_input_product_is_the_same_every_time_it_is_compiled" {
+  // The direction slot that one compilation leaves behind must not
+  // become part of the space the next compilation takes the product
+  // over. If it did, the second product would be over a wider space
+  // than the first, and it would be the product of a different
+  // function.
+  let g = @moongrad.TGraph::new()
+  let x = g.variable(0)
+  let cube = g.pow(x, 3.0)
+  let loss = g.sum_axis(cube, 0)
+  let b = @moongrad.TBinding::new()
+  b.set_input(0, @moongrad.Tensor::vector([1.5, -0.5]))
+  let slot = b.inputs.length()
+  let first = @moongrad.compile_input_hvp(g, b, loss, slot)
+  let second = @moongrad.compile_input_hvp(g, b, loss, slot)
+  check(first is Some(_), "the first compilation failed")
+  check(second is Some(_), "the second compilation failed")
+  let direction : Array[Double] = [1.0, 0.0]
+  let r1 = match first {
+    Some(h) => h.apply(b, direction)
+    None => []
+  }
+  let r2 = match second {
+    Some(h) => h.apply(b, direction)
+    None => []
+  }
+  assert_eq(r1.length(), 1)
+  assert_eq(r2.length(), 1)
+  assert_close(r1[0].data[0], r2[0].data[0], 1.0e-12, "the two products")
+  // The product is a second derivative: the objective is x^3, its
+  // gradient is 3x^2, and the derivative of that along (1, 0) at
+  // x = 1.5 is 6x = 9.
+  assert_close(r1[0].data[0], 9.0, 1.0e-9, "the product")
+}

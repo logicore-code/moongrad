@@ -1404,6 +1404,13 @@ fn same_shape(a : Array[Int32], b : Array[Int32]) -> Bool {
 /// evaluation produces both. Evaluating the same program at a
 /// different binding gives the gradient at that binding, which is
 /// the whole reason the gradient is a program and not a number.
+///
+/// The first array is the value of every node of the *gradient* graph,
+/// and the second is the adjoint of each parameter slot, in the order
+/// the slots were declared. The node values are the ones of the
+/// gradient graph, so the loss of the original graph is not at the
+/// index the original graph gave it; a caller who wants the value of
+/// the original graph asks the original graph for it, with `t_forward`.
 pub fn evaluate_tensor_gradient(
   grad : TGradGraph,
   b : TBinding,
