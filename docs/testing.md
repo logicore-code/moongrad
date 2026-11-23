@@ -1,6 +1,6 @@
 # How the tests are put together
 
-The suite is 485 cases. That number says how much there is, not how much
+The suite is 518 cases. That number says how much there is, not how much
 it checks, so this page is about the second question.
 
 ## The rules the suite follows
@@ -36,11 +36,12 @@ failures of the files after it — and a suite that cannot see its own
 failures is worse than one that has none.
 
 **The public surface is exercised.** `public_api_test.mbt` calls every
-public function that no other test in the repository used — the ones
+public function that no other test in the repository calls — the ones
 that had been exported and never called, which is how a function ends
-up exported and never checked. The package exports several hundred
-public names; this file covers the ones the rest of the suite left
-alone.
+up exported and never checked. There are seventy-five of them, and the
+file reaches all seventy-five: the list comes from the toolchain's own
+generated interface, and every name in it is called from here and from
+nowhere else.
 
 ## What breaking the implementation on purpose found
 
