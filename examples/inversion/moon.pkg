@@ -1,0 +1,8 @@
+// The parameter-inversion example — see main.mbt.
+
+import {
+  "logicore-code/moongrad",
+  "moonbitlang/core/math",
+}
+
+pkgtype(kind: "executable")
