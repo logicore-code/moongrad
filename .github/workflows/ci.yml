@@ -162,3 +162,62 @@ jobs:
         # A type check does not link, so it would miss a target that
         # compiles and then fails to build.
         run: moon build --target all
+
+  registry:
+    name: the published module installs and runs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the MoonBit toolchain
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Check the toolchain version
+        run: python3 scripts/check_toolchain.py --min 1.0.0-rc1
+
+      - name: Install the published module and run it
+        # The acceptance requires the project to be published to
+        # mooncakes.io, and the way to check that is to install it the
+        # way anybody else would and run it. This job deliberately
+        # does not have the repository on the module's search path: the
+        # import has to resolve to the registry copy, not to the
+        # checkout that is sitting next to it.
+        #
+        # The version comes out of moon.mod, so publishing a new one
+        # without updating the manifest fails here rather than
+        # silently checking the old release.
+        run: |
+          mkdir -p "$RUNNER_TEMP/from-registry/src"
+          cd "$RUNNER_TEMP/from-registry"
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$GITHUB_WORKSPACE/moon.mod" | head -1)
+          cat > moon.mod <<MOD
+          name = "registry-check"
+          version = "0.1.0"
+
+          import {
+            "logicore-code/moongrad@$version",
+          }
+          MOD
+          cat > src/moon.pkg <<'PKG'
+          import {
+            "logicore-code/moongrad",
+          }
+          pkgtype(kind: "executable")
+          PKG
+          cat > src/main.mbt <<'MBI'
+          fn main raise @moongrad.ADError {
+            let g = @moongrad.TGraph::new()
+            let b = @moongrad.TBinding::new()
+            b.set_input(0, @moongrad.Tensor::vector([0.7, -1.3]))
+            let x = g.slice(g.variable(0), 0, 0, 1)
+            let y = g.slice(g.variable(0), 0, 1, 1)
+            let f = g.add(g.mul(g.pow(x, 2.0), y), g.exp(x))
+            let grads = @moongrad.t_grad(g, b, f)
+            println(Repr(grads.input_grads[0].data))
+          }
+          MBI
+          moon update
+          moon run src
+          moon build --target wasm src
