@@ -109,11 +109,11 @@ python3 -m http.server
 The wasm build is not fast. A tensor operation in this library is a
 loop over a flat array in MoonBit, which is fine on a native target and
 slow in a browser. On the machine this was measured on, the wasm build
-of the convolution in `examples/cnn` took two and a half times as
-long as the native one (22 s against 8 s). The size goes the other
-way: the wasm module is 112 KB and the native executable of the same
-program is 595 KB, because the native one carries a runtime the wasm
-module does not need. What the wasm build
+of the convolution in `examples/cnn` took about twice as long as the
+native one (27 s against 13 s, both measured on moonc 1.0.0-rc1). The
+size goes the other way: the wasm module is 112 KB and the native
+executable of the same program is 595 KB, because the native one
+carries a runtime the wasm module does not need. What the wasm build
 buys is that the engine *is there* — no FFI, no Python, no second
 language, one source file compiled by one command.
 
