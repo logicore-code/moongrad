@@ -7,7 +7,19 @@ project follows Semantic Versioning: bump the
 - `MINOR` part on new functionality in a backward-compatible way
 - `PATCH` part on backward-compatible bug fixes
 
-## [0.9.0] — 2026-11-23
+## [0.9.0] — 2026-11-27
+
+### Changed
+- **The compiler requirement is now moonc 1.0.0-rc1 or newer.**
+  `scripts/check_toolchain.py` checks it, and the CI workflow runs
+  that script as its first step, so the badge says which compiler the
+  build ran on. The script distinguishes a final release from a
+  pre-release, so `1.0.0-rc1`, `1.0.0-rc2` and `1.0.0` all pass and
+  `1.0.0-rc0`, `1.0.0-beta` and `0.10.20` all fail.
+- The benchmark and wasm figures were re-measured on 1.0.0-rc1. The
+  timings moved by a couple of per cent and the artifact sizes by a
+  few kilobytes; the wasm and native builds of the same program still
+  agree to the last digit of the gradient check.
 
 ### Fixed
 - **A test file run on its own now fails when it should.** The

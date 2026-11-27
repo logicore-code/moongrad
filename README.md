@@ -312,8 +312,8 @@ moon run examples/inversion     --target native   # four parameters, recovered f
 
 ## Using it from another project
 
-The module's name is `logicore-code/moongrad`. Once it is published to the
-registry:
+The module's name is `logicore-code/moongrad`, and it is published on
+[mooncakes.io](https://mooncakes.io/docs/logicore-code/moongrad):
 
 ```bash
 moon add logicore-code/moongrad@0.9.0
@@ -326,6 +326,11 @@ and the package that wants it imports it:
 import { "logicore-code/moongrad" }
 pkgtype(kind: "executable")
 ```
+
+The import resolves to the published package rather than to this checkout.
+The quick-start above was run against the published version, from a
+throwaway module outside this repository, and printed the same
+`[0.1937527074704768, 0.48999999999999994]`.
 
 From a local checkout the same import works, with a workspace manifest
 telling the toolchain where the module lives:
