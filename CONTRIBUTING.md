@@ -6,18 +6,18 @@ before you push.
 
 ## Toolchain
 
-moongrad is written against MoonBit `0.1.20261104` or newer, and it
+moongrad is written against **moonc 1.0.0-rc1 or newer**, and it
 uses `Int32` as the integer type — the formatter rewrites `Int` to
 `Int32`, so please do not hand-edit that back.
 
 ```bash
-moon version          # 0.1.20261104 or newer
+python3 scripts/check_toolchain.py --min 1.0.0-rc1
 ```
 
 Older toolchains will not build the project. The CI installs the
-latest release and fails if it is older than that, so a change that
-only builds on a newer toolchain is fine; a change that needs an
-older one is not.
+latest release and fails if the compiler is older than that, so a
+change that only builds on a newer toolchain is fine; a change that
+needs an older one is not.
 
 ## Before you push
 

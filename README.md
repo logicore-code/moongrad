@@ -32,6 +32,27 @@ import { "logicore-code/moongrad" }
 pkgtype(kind: "executable")
 ```
 
+## Requirements
+
+The compiler has to be **moonc 1.0.0-rc1 or newer**. The library uses
+`Int32`, `#derive(...)` and the `suberror` shape that the 1.0 line settled on;
+it is developed and tested against moonc 1.0.0-rc1.
+
+The toolchain cannot be pinned to a release download — the versioned archives
+are not served — so the version is checked at build time instead:
+
+```bash
+python3 scripts/check_toolchain.py --min 1.0.0-rc1
+```
+
+```
+moonc is 1.0.0-rc1
+moonc 1.0.0-rc1 satisfies the requirement of 1.0.0-rc1 or newer
+```
+
+The same script runs as the first step of the CI workflow, so the badge is
+evidence rather than decoration.
+
 ## Try it
 
 ```bash

@@ -1,7 +1,7 @@
 # Benchmarks
 
 Numbers below are the median wall-clock time per operation on
-**MoonBit 0.1.20261104, native target, Linux x86_64, release build**,
+**moonc 1.0.0-rc1, native target, Linux x86_64, release build**,
 taken on a shared two-virtual-CPU sandbox. Each is the median of 10
 samples taken by `@bench.single_bench`, and the harness measures in
 microseconds. The absolute figures move with the host — a colleague's
@@ -23,11 +23,11 @@ network's forward pass.
 
 | Operation | Median | What it covers |
 |---|---|---|
-| build + compile the gradient | **777 µs** | constructing the graph and running the backward sweep once |
-| forward pass | **19.7 µs** | constant propagation over 400 nodes |
-| backward pass (re-evaluate the compiled gradient) | **43.4 µs** | the compiled gradient program, evaluated at a binding |
-| backward pass with 8 checkpoint segments | **637 µs** | the same result, with the scan split into eight pieces |
-| one optimiser step, 6 samples, 2-8-1 network | **462 µs** | forward + backward + Adam, end to end |
+| build + compile the gradient | **767 µs** | constructing the graph and running the backward sweep once |
+| forward pass | **19.4 µs** | constant propagation over 400 nodes |
+| backward pass (re-evaluate the compiled gradient) | **38.8 µs** | the compiled gradient program, evaluated at a binding |
+| backward pass with 8 checkpoint segments | **617 µs** | the same result, with the scan split into eight pieces |
+| one optimiser step, 6 samples, 2-8-1 network | **407 µs** | forward + backward + Adam, end to end |
 
 ## The tensor side
 
@@ -36,23 +36,23 @@ because the two sides have very different shapes.
 
 | Operation | Median | What it covers |
 |---|---|---|
-| compile the tensor gradient | **217 µs** | the forward pass plus the backward sweep, once |
-| re-evaluate the compiled gradient | **1 203 µs** | evaluating the gradient program at a binding |
+| compile the tensor gradient | **199 µs** | the forward pass plus the backward sweep, once |
+| re-evaluate the compiled gradient | **1 189 µs** | evaluating the gradient program at a binding |
 
 Reading the two tables together is the point of this file.
 
-- **The forward pass is cheap.** 19.7 µs for 803 nodes is a couple of tens
+- **The forward pass is cheap.** 19.4 µs for 803 nodes is a couple of tens
   of nanoseconds per node, which is what a hash-consed flat array with a
   linear scan should cost. The figure was taken on one machine; the
   per-node number moves with the host, and the ratio between the rows is
   the part that carries.
-- **On the scalar side, compiling is about eighteen times evaluating.**
-  777 µs against 43 µs. That is the price of the "the gradient is a program"
+- **On the scalar side, compiling is about twenty times evaluating.**
+  767 µs against 39 µs. That is the price of the "the gradient is a program"
   design, and it is a price worth paying only once: the training loop
   compiles the gradient at construction and re-evaluates it every step.
 - **On the tensor side the ratio is the other way round.** Compiling
-  costs 217 µs and evaluating costs 1 203 µs, so a single evaluation is
-  about five and a half times a compilation. The reason is the shape of the work:
+  costs 199 µs and evaluating costs 1 189 µs, so a single evaluation is
+  about six times a compilation. The reason is the shape of the work:
   a tensor node is a whole array, so the backward sweep's job is to
   *emit* expressions — cheap — while the evaluation's job is to
   *compute* them, and computing a matmul is not cheap.
@@ -63,8 +63,8 @@ Reading the two tables together is the point of this file.
   four hundred compilations. The saving is real, but it is not the
   twenty-to-one the scalar number suggests, and quoting that number
   for the tensor side would be wrong.
-- **Checkpointing costs about fifteen times the plain backward pass.**
-  637 µs against 43 µs. The segmentation does not rebuild anything —
+- **Checkpointing costs about sixteen times the plain backward pass.**
+  617 µs against 39 µs. The segmentation does not rebuild anything —
   the gradient program's nodes refer back into the primal at
   arbitrary indices, so a segment cannot be re-derived on its own —
   and the extra time is the scan being split rather than the program
@@ -93,9 +93,10 @@ For a two-layer network — a 2×2 input, one hidden layer, one output
 layer — the primal is 12 nodes and the gradient program is **48**. Before
 the tensor engine grew a simplifier it was **64**.
 
-That is worth forty per cent of the evaluation time, measured on the
-same machine with the same build: without the simplifier, evaluating
-the tensor gradient takes 2 001 µs; with it, 1 203 µs.
+That is worth about forty per cent of the evaluation time. The two
+figures were measured on the same machine with the same build:
+without the simplifier, evaluating the tensor gradient took 2 001 µs;
+with it, 1 189 µs on the current toolchain.
 
 The gap is the backward sweep. It expands every local derivative rule
 into arithmetic, and that arithmetic is where the nodes go: the adjoint
@@ -148,10 +149,12 @@ worth writing down:
 
 ## Caveats
 
-- Numbers are sensitive to the MoonBit version and the host CPU. Treat
+- Numbers are sensitive to the compiler version and the host CPU. Treat
   them as relative order-of-magnitude, not absolute. The table above was
-  taken on 0.1.20261104; an earlier table on 0.1.20260915 read about 20%
-  higher across the board, which is the toolchain rather than the code.
+  taken on moonc 1.0.0-rc1; an earlier table on 0.1.20261104 read within
+  a couple of per cent across the board, and an earlier one on
+  0.1.20260915 read about 20% higher — that is the toolchain rather than
+  the code.
 - The benchmark harness itself runs inside the test binary, so the
   absolute figures include some harness overhead. The *ratios* between
   rows are the meaningful part.

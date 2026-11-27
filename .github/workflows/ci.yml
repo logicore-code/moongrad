@@ -22,24 +22,18 @@ jobs:
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
 
       - name: Check the toolchain version
-        # The source uses `Int32` and `#derive(...)`, which arrived in
-        # 0.1.20261104. The versioned downloads are not served, so
-        # the toolchain cannot be pinned to that release; what can be
-        # done is to refuse to build with one that is too old.
+        # The project is accepted with moonc 1.0.0-rc1 or newer, and
+        # the versioned downloads are not served, so the toolchain
+        # cannot be pinned to a release. What can be done is to
+        # refuse to build with a compiler that is too old, and to
+        # write the version out.
         #
-        # The version is also written out, because the core library
-        # has to match the compiler exactly: a toolchain generates
-        # code against the core it was built with, and a core from a
-        # different release will not compile against it.
+        # The check is the same script the README tells a reader to
+        # run, so a reviewer gets the same answer as the build.
         id: toolchain
         run: |
-          version=$(moon version | grep -oE '0\.1\.[0-9]+' | head -1)
-          oldest=$(printf '%s\n' 0.1.20261104 "$version" | sort -V | head -1)
-          if [ "$oldest" != "0.1.20261104" ]; then
-            echo "::error::the toolchain is $version; the source needs 0.1.20261104 or newer"
-            exit 1
-          fi
-          echo "the toolchain is $version"
+          python3 scripts/check_toolchain.py --min 1.0.0-rc1
+          version=$(python3 scripts/check_toolchain.py --min 1.0.0-rc1 | tail -1 | cut -d= -f2)
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Cache the MoonBit core library
